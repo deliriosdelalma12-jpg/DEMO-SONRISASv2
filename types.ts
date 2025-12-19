@@ -8,19 +8,42 @@ export interface FileAttachment {
   url: string;
   size: string;
   date: string;
+  description?: string;
+  isAiGenerated?: boolean;
+}
+
+export interface MedicalReport {
+  id: string;
+  date: string;
+  doctorName: string;
+  content: string;
+  title: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
 }
 
 export interface Patient {
   id: string;
   name: string;
-  age: string;
+  birthDate: string; 
+  gender: 'Masculino' | 'Femenino' | 'Otro';
+  identityDocument: string;
   img: string;
   phone: string;
   email: string;
   address: string;
-  lastVisit?: string;
   medicalHistory: string;
+  associatedDoctorId?: string;
+  associatedDoctorName?: string;
+  weight?: string;
+  height?: string;
+  bloodType?: string;
+  allergies?: string[];
   attachments: FileAttachment[];
+  savedReports: MedicalReport[];
   history: {
     date: string;
     action: string;
@@ -35,7 +58,7 @@ export interface Appointment {
   doctorName: string;
   doctorId: string;
   time: string;
-  date: string; // YYYY-MM-DD
+  date: string; 
   treatment: string;
   status: AppointmentStatus;
   notes?: string;
@@ -47,6 +70,35 @@ export interface User {
   name: string;
   role: 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
   img?: string;
+  corporateEmail: string;
+}
+
+export interface Shift {
+  start: string;
+  end: string;
+  active: boolean;
+}
+
+export interface DaySchedule {
+  morning: Shift;
+  afternoon: Shift;
+}
+
+export interface VacationRequest {
+  id: string;
+  start: string;
+  end: string;
+  status: 'Aprobada' | 'Pendiente' | 'Rechazada';
+  type: 'Vacaciones' | 'Asuntos Propios' | 'Baja';
+}
+
+export interface AttendanceRecord {
+  id: string;
+  date: string;
+  type: 'Retraso' | 'Ausencia' | 'Baja Médica' | 'Permiso';
+  duration?: string; // Ejemplo: "45 min" o "3 días"
+  status: 'Justificado' | 'No Justificado' | 'Pendiente';
+  notes?: string;
 }
 
 export interface Doctor extends User {
@@ -54,18 +106,25 @@ export interface Doctor extends User {
   status: 'Active' | 'Vacation' | 'Inactive';
   branch: string;
   phone: string;
-  email: string;
   docs: FileAttachment[];
+  schedule?: Record<string, DaySchedule>;
+  // Datos Laborales
+  contractType?: string;
+  overtimeHours?: number;
+  totalHoursWorked?: number;
+  vacationDaysTotal?: number;
+  vacationDaysTaken?: number;
+  vacationHistory?: VacationRequest[];
+  attendanceHistory?: AttendanceRecord[];
+  hourlyRate?: number;
 }
 
-export interface Branch {
-  id: string;
+export interface ClinicSettings {
   name: string;
-  address: string;
-  location: string;
-  status: 'Operativa' | 'Mantenimiento' | 'Cerrada';
+  logo: string;
   phone: string;
-  staffCount: number;
+  email: string;
+  address: string;
 }
 
 export interface Task {
@@ -76,9 +135,4 @@ export interface Task {
   priority: 'High' | 'Medium' | 'Low';
   assigneeId?: string;
   assigneeName?: string;
-}
-
-export interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
 }

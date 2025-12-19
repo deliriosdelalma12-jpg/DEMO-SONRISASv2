@@ -508,9 +508,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
 
       {isCreating && (
         <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-slate-900/60 modal-backdrop">
-          <div className="bg-[#e9ecef] dark:bg-surface-dark w-full max-w-[480px] rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-200">
+          <div className="bg-[#e9ecef] dark:bg-surface-dark w-full max-w-[480px] rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-200 border border-border-light dark:border-border-dark">
             <div className="p-10 pb-4 flex justify-between items-center">
-              <h3 className="text-3xl font-display font-bold text-[#334155] dark:text-white">Agendar Cita</h3>
+              <h3 className="text-2xl font-display font-bold text-[#334155] dark:text-white">Agendar Cita</h3>
               <button onClick={() => setIsCreating(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <span className="material-symbols-outlined text-4xl">close</span>
               </button>
@@ -522,7 +522,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                   required autoFocus type="text" placeholder="Nombre completo del paciente"
                   value={newAptData.patientName}
                   onChange={e => setNewAptData({...newAptData, patientName: e.target.value})}
-                  className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border-none rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white focus:ring-4 focus:ring-primary/10"
+                  className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white focus:ring-4 focus:ring-primary/10 transition-all"
                 />
               </div>
               <div className="grid grid-cols-2 gap-6">
@@ -533,7 +533,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                     min={new Date().toISOString().split('T')[0]}
                     value={newAptData.date}
                     onChange={e => setNewAptData({...newAptData, date: e.target.value})}
-                    className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border-none rounded-[1.75rem] px-6 py-5 text-base font-medium text-black dark:text-white"
+                    className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-[1.75rem] px-6 py-5 text-base font-bold text-black dark:text-white transition-all"
                   />
                 </div>
                 <div>
@@ -541,7 +541,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                   <input 
                     type="time" value={newAptData.time}
                     onChange={e => setNewAptData({...newAptData, time: e.target.value})}
-                    className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border-none rounded-[1.75rem] px-6 py-5 text-base font-medium text-black dark:text-white"
+                    className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-[1.75rem] px-6 py-5 text-base font-bold text-black dark:text-white transition-all"
                   />
                 </div>
               </div>
@@ -550,7 +550,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                 <select 
                   value={newAptData.treatment}
                   onChange={e => setNewAptData({...newAptData, treatment: e.target.value})}
-                  className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border-none rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white appearance-none"
+                  className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white appearance-none transition-all"
                 >
                   <option>Consulta General</option>
                   <option>Limpieza Dental</option>
@@ -567,7 +567,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                     const doc = doctors.find(d => d.id === e.target.value);
                     setNewAptData({...newAptData, doctorId: e.target.value, doctorName: doc?.name || ''});
                   }}
-                  className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border-none rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white appearance-none"
+                  className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white appearance-none transition-all"
                 >
                   {doctors.map(doc => (
                     <option key={doc.id} value={doc.id}>{doc.name} ({doc.specialty})</option>
@@ -575,8 +575,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                 </select>
               </div>
               <div className="flex gap-4 pt-6">
-                <button type="button" onClick={() => setIsCreating(false)} className="flex-1 py-6 rounded-[2.25rem] bg-[#f1f5f9] dark:bg-slate-800 font-bold text-[#64748b]">Cancelar</button>
-                <button type="submit" className="flex-1 py-6 rounded-[2.25rem] bg-[#4285f4] text-white font-bold shadow-2xl">Confirmar Cita</button>
+                <button type="button" onClick={() => setIsCreating(false)} className="flex-1 py-6 rounded-[2.25rem] bg-[#f1f5f9] dark:bg-slate-800 font-bold text-[#64748b] hover:bg-slate-200 transition-all">Cancelar</button>
+                <button type="submit" className="flex-1 py-6 rounded-[2.25rem] bg-[#4285f4] text-white font-bold shadow-2xl hover:brightness-110 transition-all">Confirmar Cita</button>
               </div>
             </form>
           </div>

@@ -74,6 +74,18 @@
         /* Drag & Drop Visuals */
         .dragging { opacity: 0.5; border: 2px dashed #3b82f6 !important; }
         .drop-zone { border: 2px dashed #3b82f6; background-color: rgba(59, 130, 246, 0.05); }
+
+        /* Iconos de inputs nativos: Negro en modo claro, Blanco en modo oscuro */
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="time"]::-webkit-calendar-picker-indicator {
+            filter: invert(0) !important;
+            cursor: pointer;
+            opacity: 1;
+        }
+        .dark input[type="date"]::-webkit-calendar-picker-indicator,
+        .dark input[type="time"]::-webkit-calendar-picker-indicator {
+            filter: invert(1) !important;
+        }
     </style>
 <script type="importmap">
 {

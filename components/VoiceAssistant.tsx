@@ -19,7 +19,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
-  // Manually implement decode as per guidelines
   const decode = (base64: string) => {
     const binaryString = atob(base64);
     const bytes = new Uint8Array(binaryString.length);
@@ -27,7 +26,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
     return bytes;
   };
 
-  // Manually implement encode as per guidelines
   const encode = (bytes: Uint8Array) => {
     let binary = '';
     const len = bytes.byteLength;
@@ -51,7 +49,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
   const startSession = async () => {
     setIsConnecting(true);
     try {
-      // Create instance right before use with correct parameter mapping
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -72,11 +69,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
               const l = inputData.length;
               const int16 = new Int16Array(l);
               for (let i = 0; i < l; i++) int16[i] = inputData[i] * 32768;
-              
-              // Use manual encode for raw PCM data and proper blob format
               const base64 = encode(new Uint8Array(int16.buffer));
-              
-              // Ensure sendRealtimeInput is only called after the session is resolved
               sessionPromise.then(s => s.sendRealtimeInput({ 
                 media: { 
                   data: base64, 
@@ -100,8 +93,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
               source.buffer = buffer;
               source.connect(ctx.destination);
               source.addEventListener('ended', () => sourcesRef.current.delete(source));
-              
-              // Schedule playback to start at nextStartTime for gapless audio
               source.start(nextStartTimeRef.current);
               nextStartTimeRef.current += buffer.duration;
               sourcesRef.current.add(source);
@@ -122,7 +113,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction: 'Eres un asistente de voz profesional para MediClinic.'
+          systemInstruction: 'Eres un asistente de voz telefónico profesional para MediClinic.'
         }
       });
       sessionRef.current = await sessionPromise;
@@ -176,13 +167,13 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
                     ))}
                  </div>
                ) : (
-                 <span className="material-symbols-outlined text-8xl text-primary">mic</span>
+                 <span className="material-symbols-outlined text-8xl text-primary">call</span>
                )}
             </div>
             {isActive && <div className="absolute -inset-4 rounded-[4rem] border-8 border-primary/10 animate-ping"></div>}
           </div>
           <h2 className="text-white text-5xl font-display font-black tracking-tight mt-10">
-            {isActive ? 'Te escucho...' : isConnecting ? 'Conectando...' : 'Asistente Inteligente'}
+            {isActive ? 'Te escucho...' : isConnecting ? 'Conectando...' : 'Asistente Telefónico IA'}
           </h2>
         </div>
 
@@ -192,17 +183,17 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
               <p className="text-white text-2xl font-medium leading-relaxed">{transcription || (isActive ? 'Empieza a hablar...' : 'Esperando...')}</p>
            </div>
            <div className="bg-primary/5 border border-primary/20 p-10 rounded-[2.5rem] min-h-[140px] text-left">
-              <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-4">MediClinic AI</p>
+              <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-4">MediClinic Voice</p>
               <p className="text-white text-2xl font-medium leading-relaxed italic">{aiTranscription || '---'}</p>
            </div>
         </div>
 
         <div className="flex gap-8">
           {!isActive && !isConnecting && (
-            <button onClick={startSession} className="bg-primary text-white px-16 py-6 rounded-[2rem] font-black text-2xl hover:bg-primary-dark transition-all shadow-2xl shadow-primary/40 hover:scale-105 active:scale-95">Iniciar Llamada</button>
+            <button onClick={startSession} className="bg-primary text-white px-16 py-6 rounded-[2rem] font-black text-2xl hover:bg-primary-dark transition-all shadow-2xl shadow-primary/40 hover:scale-105 active:scale-95">Llamar Ahora</button>
           )}
           {isActive && (
-            <button onClick={() => { stopSession(); onClose(); }} className="bg-danger text-white px-16 py-6 rounded-[2rem] font-black text-2xl hover:brightness-110 transition-all shadow-2xl shadow-danger/40 hover:scale-105 active:scale-95">Terminar Sesión</button>
+            <button onClick={() => { stopSession(); onClose(); }} className="bg-danger text-white px-16 py-6 rounded-[2rem] font-black text-2xl hover:brightness-110 transition-all shadow-2xl shadow-danger/40 hover:scale-105 active:scale-95">Colgar Llamada</button>
           )}
         </div>
       </div>

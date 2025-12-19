@@ -22,10 +22,11 @@ const Dashboard: React.FC<DashboardProps> = ({ appointments, setAppointments, ta
   
   // Mock Team for delegation
   const team: User[] = [
-    { id: '1', name: 'Dr. Carlos Vega', role: 'Admin' },
-    { id: '2', name: 'Miguel Rodriguez', role: 'Recepción' },
-    { id: '3', name: 'Dra. Sarah Jenkins', role: 'Doctor' },
-    { id: '4', name: 'Ana Lucia Torres', role: 'Enfermería' },
+    // Added missing corporateEmail property to satisfy User interface
+    { id: '1', name: 'Dr. Carlos Vega', role: 'Admin', corporateEmail: 'c.vega@mediclinic.com' },
+    { id: '2', name: 'Miguel Rodriguez', role: 'Recepción', corporateEmail: 'm.rod@mediclinic.com' },
+    { id: '3', name: 'Dra. Sarah Jenkins', role: 'Doctor', corporateEmail: 's.jenkins@mediclinic.com' },
+    { id: '4', name: 'Ana Lucia Torres', role: 'Enfermería', corporateEmail: 'a.torres@mediclinic.com' },
   ];
 
   // Current User (simulated)
