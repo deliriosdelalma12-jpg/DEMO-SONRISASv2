@@ -26,6 +26,19 @@ const App: React.FC = () => {
     { id: '2', patientName: 'Maria Garcia', patientId: 'P002', doctorName: 'Dra. Lopez', doctorId: 'D002', time: '10:30', date: '2023-10-24', treatment: 'Consulta', status: 'Pending', avatar: 'https://picsum.photos/40/40?random=2' },
     { id: '3', patientName: 'Carlos Ruiz', patientId: 'P003', doctorName: 'Dr. Vega', doctorId: 'D001', time: '11:00', date: '2023-10-25', treatment: 'Ortodoncia', status: 'Rescheduled' },
     { id: '4', patientName: 'Elena Gomez', patientId: 'P004', doctorName: 'Dr. Vega', doctorId: 'D001', time: '12:00', date: '2023-10-24', treatment: 'Cirugía', status: 'Cancelled' },
+    
+    // December 2023
+    { id: 'd1', patientName: 'Roberto Solis', patientId: 'P005', doctorName: 'Dr. Vega', doctorId: 'D001', time: '09:00', date: '2023-12-05', treatment: 'Limpieza', status: 'Confirmed' },
+    { id: 'd2', patientName: 'Laura Mendez', patientId: 'P006', doctorName: 'Dr. Vega', doctorId: 'D001', time: '10:00', date: '2023-12-15', treatment: 'Ortodoncia', status: 'Confirmed' },
+    { id: 'd3', patientName: 'Ignacio Ruiz', patientId: 'P008', doctorName: 'Dra. Lopez', doctorId: 'D002', time: '16:00', date: '2023-12-24', treatment: 'Revisión', status: 'Confirmed' },
+    
+    // January 2024
+    { id: 'j1', patientName: 'Sofia Vergara', patientId: 'P007', doctorName: 'Dr. Vega', doctorId: 'D001', time: '11:00', date: '2024-01-10', treatment: 'Consulta', status: 'Confirmed' },
+    { id: 'j2', patientName: 'Marcos Aurelio', patientId: 'P009', doctorName: 'Dr. Vega', doctorId: 'D001', time: '09:30', date: '2024-01-15', treatment: 'Cirugía', status: 'Confirmed' },
+    { id: 'j3', patientName: 'Lucía Fernández', patientId: 'P010', doctorName: 'Dra. Lopez', doctorId: 'D002', time: '12:00', date: '2024-01-20', treatment: 'Limpieza', status: 'Pending' },
+    
+    // February 2024 (Future)
+    { id: 'f1', patientName: 'Antonio Banderas', patientId: 'P011', doctorName: 'Dr. Vega', doctorId: 'D001', time: '10:00', date: '2024-02-02', treatment: 'Revision Semestral', status: 'Confirmed' }
   ]);
 
   const [patients, setPatients] = useState<Patient[]>([
@@ -38,10 +51,15 @@ const App: React.FC = () => {
       id: 'P002', name: "Maria Garcia", age: "42 años", img: "https://picsum.photos/200/200?random=11", phone: "+34 600 000 200", 
       email: "maria@example.com", address: "Av. Diagonal 45, BCN", medicalHistory: "Sin antecedentes relevantes.", attachments: [], history: [] 
     },
+    { 
+      id: 'P003', name: "Carlos Ruiz", age: "35 años", img: "https://picsum.photos/200/200?random=12", phone: "+34 600 000 300", 
+      email: "carlos@example.com", address: "Calle Real 10, Sevilla", medicalHistory: "Sin antecedentes relevantes.", attachments: [], history: [] 
+    },
   ]);
 
   const [doctors, setDoctors] = useState<Doctor[]>([
     { id: 'D001', name: "Dr. Carlos Vega", specialty: "Odontología", status: "Active", img: "https://picsum.photos/200/200?random=20", branch: "Centro", phone: "123", email: "vega@clinic.com", docs: [] },
+    { id: 'D002', name: "Dra. Ana Lopez", specialty: "Ortodoncia", status: "Active", img: "https://picsum.photos/200/200?random=21", branch: "Norte", phone: "456", email: "lopez@clinic.com", docs: [] },
   ]);
 
   const [tasks, setTasks] = useState<Task[]>([
@@ -67,8 +85,8 @@ const App: React.FC = () => {
     <HashRouter>
       <Layout darkMode={darkMode} onToggleTheme={toggleTheme}>
         <Routes>
-          <Route path="/" element={<Dashboard appointments={appointments} tasks={tasks} setTasks={setTasks} />} />
-          <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} />} />
+          <Route path="/" element={<Dashboard appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} />} />
+          <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} />} />
           <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} />} />
           <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} />} />
           <Route path="/metrics" element={<Metrics />} />
@@ -82,7 +100,7 @@ const App: React.FC = () => {
       <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-50">
         <button
           onClick={() => { setIsVoiceOpen(true); setIsChatOpen(false); }}
-          className="size-14 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform group"
+          className="size-14 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform group shadow-primary/40"
           title="Asistente de Voz"
         >
           <span className="material-symbols-outlined text-3xl group-hover:animate-pulse">audio_spark</span>

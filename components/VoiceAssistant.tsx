@@ -19,11 +19,22 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
+  // Manually implement decode as per guidelines
   const decode = (base64: string) => {
     const binaryString = atob(base64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
     return bytes;
+  };
+
+  // Manually implement encode as per guidelines
+  const encode = (bytes: Uint8Array) => {
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
   };
 
   const decodeAudioData = async (data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> => {
@@ -40,7 +51,8 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
   const startSession = async () => {
     setIsConnecting(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Create instance right before use with correct parameter mapping
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
 
@@ -57,10 +69,20 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
             const scriptProcessor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
             scriptProcessor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
-              const int16 = new Int16Array(inputData.length);
-              for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
-              const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
-              sessionPromise.then(s => s.sendRealtimeInput({ media: { data: base64, mimeType: 'audio/pcm;rate=16000' } }));
+              const l = inputData.length;
+              const int16 = new Int16Array(l);
+              for (let i = 0; i < l; i++) int16[i] = inputData[i] * 32768;
+              
+              // Use manual encode for raw PCM data and proper blob format
+              const base64 = encode(new Uint8Array(int16.buffer));
+              
+              // Ensure sendRealtimeInput is only called after the session is resolved
+              sessionPromise.then(s => s.sendRealtimeInput({ 
+                media: { 
+                  data: base64, 
+                  mimeType: 'audio/pcm;rate=16000' 
+                } 
+              }));
             };
             source.connect(scriptProcessor);
             scriptProcessor.connect(audioContextRef.current!.destination);
@@ -68,6 +90,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
           onmessage: async (m: LiveServerMessage) => {
             if (m.serverContent?.inputTranscription) setTranscription(t => t + ' ' + m.serverContent?.inputTranscription?.text);
             if (m.serverContent?.outputTranscription) setAiTranscription(t => t + ' ' + m.serverContent?.outputTranscription?.text);
+            
             const base64 = m.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
             if (base64 && outputAudioContextRef.current) {
               const ctx = outputAudioContextRef.current;
@@ -77,9 +100,19 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
               source.buffer = buffer;
               source.connect(ctx.destination);
               source.addEventListener('ended', () => sourcesRef.current.delete(source));
+              
+              // Schedule playback to start at nextStartTime for gapless audio
               source.start(nextStartTimeRef.current);
               nextStartTimeRef.current += buffer.duration;
               sourcesRef.current.add(source);
+            }
+
+            if (m.serverContent?.interrupted) {
+              for (const source of sourcesRef.current) {
+                source.stop();
+              }
+              sourcesRef.current.clear();
+              nextStartTimeRef.current = 0;
             }
           },
           onclose: () => { setIsActive(false); setIsConnecting(false); },
@@ -97,12 +130,10 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
   };
 
   const stopSession = () => {
-    // 1. Close session
     if (sessionRef.current) {
       sessionRef.current.close();
       sessionRef.current = null;
     }
-    // 2. Stop audio contexts
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
@@ -111,13 +142,13 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose }) => {
       outputAudioContextRef.current.close();
       outputAudioContextRef.current = null;
     }
-    // 3. Stop MediaStream tracks (This makes the red indicator go away)
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-    // 4. Cleanup sources
-    sourcesRef.current.forEach(s => s.stop());
+    sourcesRef.current.forEach(s => {
+      try { s.stop(); } catch (e) {}
+    });
     sourcesRef.current.clear();
     
     setIsActive(false);

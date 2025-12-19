@@ -3,11 +3,12 @@ import React from 'react';
 import { Doctor } from '../types';
 
 const Doctors: React.FC = () => {
-  // Added missing properties (id, branch, phone, email, docs) to satisfy the Doctor interface
+  // Added missing properties (id, branch, phone, email, docs) and 'role' to satisfy the Doctor interface
   const doctors: Doctor[] = [
     { 
       id: 'D001', 
       name: "Dr. Juan Pérez", 
+      role: 'Doctor',
       specialty: "Odontología", 
       status: "Active", 
       img: "https://picsum.photos/200/200?random=20",
@@ -19,6 +20,7 @@ const Doctors: React.FC = () => {
     { 
       id: 'D002', 
       name: "Dra. Ana García", 
+      role: 'Doctor',
       specialty: "Ortodoncia", 
       status: "Active", 
       img: "https://picsum.photos/200/200?random=21",
@@ -30,6 +32,7 @@ const Doctors: React.FC = () => {
     { 
       id: 'D003', 
       name: "Dr. Luis Rodríguez", 
+      role: 'Doctor',
       specialty: "Cirugía Maxilofacial", 
       status: "Vacation", 
       img: "https://picsum.photos/200/200?random=22",
@@ -41,6 +44,7 @@ const Doctors: React.FC = () => {
     { 
       id: 'D004', 
       name: "Dra. Sarah Jenkins", 
+      role: 'Doctor',
       specialty: "Endodoncia", 
       status: "Active", 
       img: "https://picsum.photos/200/200?random=23",

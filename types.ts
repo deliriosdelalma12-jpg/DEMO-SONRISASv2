@@ -42,12 +42,16 @@ export interface Appointment {
   avatar?: string;
 }
 
-export interface Doctor {
+export interface User {
   id: string;
   name: string;
+  role: 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
+  img?: string;
+}
+
+export interface Doctor extends User {
   specialty: string;
   status: 'Active' | 'Vacation' | 'Inactive';
-  img: string;
   branch: string;
   phone: string;
   email: string;
@@ -70,6 +74,8 @@ export interface Task {
   sub: string;
   completed: boolean;
   priority: 'High' | 'Medium' | 'Low';
+  assigneeId?: string;
+  assigneeName?: string;
 }
 
 export interface ChatMessage {
