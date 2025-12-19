@@ -1,0 +1,8 @@
+{
+  "name": "Demo Sonrisas",
+  "description": "An advanced medical management system featuring an AI-powered text chatbot and a real-time conversational voice assistant using Gemini.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
