@@ -153,6 +153,20 @@ export interface ColorTemplate {
   light: string;
 }
 
+export type VoiceAccent = 'es-ES-Madrid' | 'es-ES-Canarias' | 'es-LATAM' | 'en-GB' | 'en-US';
+
+export interface AiPhoneSettings {
+  phoneNumber: string;
+  assistantName: string;
+  systemPrompt: string;
+  knowledgeBase: string;
+  knowledgeFiles: FileAttachment[];
+  voiceName: string;
+  voicePitch: number;
+  voiceSpeed: number;
+  accent: VoiceAccent;
+}
+
 export interface ClinicSettings {
   name: string;
   logo: string;
@@ -163,6 +177,7 @@ export interface ClinicSettings {
   description: string;
   specialties: string[];
   services: ClinicService[];
+  aiPhoneSettings: AiPhoneSettings;
   defaultTheme: 'light' | 'dark';
   colorTemplate: string;
   roles: RoleDefinition[];

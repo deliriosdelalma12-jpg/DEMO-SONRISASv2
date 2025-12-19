@@ -62,6 +62,17 @@ const App: React.FC = () => {
       { id: 'S3', name: 'Implante Titanio', price: 1100 },
       { id: 'S4', name: 'Blanqueamiento Zoom', price: 250 }
     ],
+    aiPhoneSettings: {
+      phoneNumber: "+34 900 123 456",
+      assistantName: "Sara",
+      systemPrompt: "Eres la asistente virtual experta. Tienes capacidad para agendar citas pidiendo nombre y servicio, reprogramar si el paciente lo solicita y cancelar citas. Eres amable pero eficiente.",
+      knowledgeBase: "Horario: L-V 9:00 a 20:00. Ubicación: Paseo de la Castellana 100. Especialidades: Ortodoncia, Implantes y Estética. Aceptamos seguros: Sanitas, Adeslas y Mapfre.",
+      knowledgeFiles: [],
+      voiceName: "Zephyr",
+      voicePitch: 1.0,
+      voiceSpeed: 1.0,
+      accent: 'es-ES-Madrid'
+    },
     defaultTheme: 'light',
     colorTemplate: 'ocean',
     roles: [
@@ -143,7 +154,7 @@ const App: React.FC = () => {
       </div>
 
       {isChatOpen && <ChatBot onClose={() => setIsChatOpen(false)} />}
-      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} />}
+      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} />}
     </HashRouter>
   );
 };
