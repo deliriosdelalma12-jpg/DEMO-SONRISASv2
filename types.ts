@@ -29,7 +29,31 @@ export interface ClinicService {
   id: string;
   name: string;
   price: number;
-  category?: string;
+}
+
+// Added missing interface for attendance tracking
+export interface AttendanceRecord {
+  id: string;
+  date: string;
+  type: 'Retraso' | 'Ausencia' | 'Baja Médica' | 'Permiso';
+  duration?: string;
+  status: 'Pendiente' | 'Justificado' | 'No Justificado';
+  notes?: string;
+}
+
+// Added missing interface for vacation management
+export interface VacationRequest {
+  id: string;
+  start: string;
+  end: string;
+  type: 'Vacaciones' | 'Asuntos Propios' | 'Baja';
+  status: 'Pendiente' | 'Aprobada' | 'Rechazada';
+}
+
+// Added missing interface for scheduling shifts
+export interface DaySchedule {
+  morning: { start: string; end: string; active: boolean };
+  afternoon: { start: string; end: string; active: boolean };
 }
 
 export interface Patient {
@@ -68,8 +92,6 @@ export interface Appointment {
   date: string; 
   treatment: string;
   status: AppointmentStatus;
-  notes?: string;
-  avatar?: string;
 }
 
 export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
@@ -77,37 +99,9 @@ export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
 export interface User {
   id: string;
   username: string;
-  password?: string;
   name: string;
   role: UserRole;
-  jobTitle: string;
-  phone: string;
-  identityDocument: string;
   img?: string;
-  corporateEmail: string;
-  status: 'Activo' | 'Inactivo';
-}
-
-export interface DaySchedule {
-  morning: { start: string; end: string; active: boolean };
-  afternoon: { start: string; end: string; active: boolean };
-}
-
-export interface VacationRequest {
-  id: string;
-  start: string;
-  end: string;
-  status: 'Pendiente' | 'Aprobada' | 'Rechazada';
-  type: 'Vacaciones' | 'Asuntos Propios' | 'Baja';
-}
-
-export interface AttendanceRecord {
-  id: string;
-  date: string;
-  type: 'Retraso' | 'Ausencia' | 'Baja Médica' | 'Permiso';
-  duration?: string;
-  status: 'Pendiente' | 'Justificado' | 'No Justificado';
-  notes?: string;
 }
 
 export interface Doctor {
@@ -121,6 +115,7 @@ export interface Doctor {
   phone: string;
   corporateEmail: string;
   docs: FileAttachment[];
+  // Added missing HR and scheduling properties
   schedule?: Record<string, DaySchedule>;
   contractType?: string;
   hourlyRate?: number;
@@ -162,12 +157,15 @@ export interface AiPhoneSettings {
   knowledgeBase: string;
   knowledgeFiles: FileAttachment[];
   voiceName: string;
-  voicePitch: number;
-  voiceSpeed: number;
+  voicePitch: number; // Actúa como temperatura emocional
+  voiceSpeed: number; // Velocidad de habla
+  temperature: number; // Temperatura del modelo LLM
   accent: VoiceAccent;
   model: string;
   hasPaidKey: boolean;
 }
+
+export type AppLanguage = 'es-ES' | 'es-LATAM' | 'en-GB' | 'en-US';
 
 export interface ClinicSettings {
   name: string;
@@ -183,14 +181,14 @@ export interface ClinicSettings {
   defaultTheme: 'light' | 'dark';
   colorTemplate: string;
   roles: RoleDefinition[];
+  currency: string;
+  language: AppLanguage;
 }
 
 export interface Task {
   id: string;
   text: string;
-  sub: string;
   completed: boolean;
   priority: 'High' | 'Medium' | 'Low';
-  assigneeId?: string;
-  assigneeName?: string;
+  sub?: string; // Added missing field used in Dashboard
 }

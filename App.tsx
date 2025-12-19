@@ -25,8 +25,6 @@ const generateMassiveMockData = () => {
   const doctors: Doctor[] = [
     { id: 'D001', name: "Dr. Carlos Vega", role: 'Admin', specialty: "Odontología Estética", status: "Active", img: "https://i.pravatar.cc/150?u=D001", branch: "Centro", phone: "+34 600 001", corporateEmail: "c.vega@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
     { id: 'D002', name: "Dra. Ana Lopez", role: 'Doctor', specialty: "Ortodoncia Avanzada", status: "Active", img: "https://i.pravatar.cc/150?u=D002", branch: "Norte", phone: "+34 600 002", corporateEmail: "a.lopez@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
-    { id: 'D003', name: "Dr. Mario Ruiz", role: 'Doctor', specialty: "Cirugía Maxilofacial", status: "Active", img: "https://i.pravatar.cc/150?u=D003", branch: "Sur", phone: "+34 600 003", corporateEmail: "m.ruiz@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
-    { id: 'D004', name: "Dra. Elena Sanz", role: 'Doctor', specialty: "Periodoncia", status: "Active", img: "https://i.pravatar.cc/150?u=D004", branch: "Este", phone: "+34 600 004", corporateEmail: "e.sanz@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
   ];
 
   const patients: Patient[] = [
@@ -53,35 +51,31 @@ const App: React.FC = () => {
     email: "central@mediclinic-premium.com",
     address: "Paseo de la Castellana 100, Madrid",
     sector: "Odontología y Estética Dental",
-    description: "Clínica líder en tratamientos de vanguardia con enfoque en la salud integral del paciente.",
-    specialties: ["Ortodoncia", "Implantología", "Periodoncia", "Estética Dental"],
+    description: "Clínica líder en tratamientos de vanguardia.",
+    specialties: ["Ortodoncia", "Implantología"],
     services: [
       { id: 'S1', name: 'Limpieza Dental Profunda', price: 65 },
-      { id: 'S2', name: 'Ortodoncia Invisible', price: 3200 },
-      { id: 'S3', name: 'Implante Titanio', price: 1100 },
-      { id: 'S4', name: 'Blanqueamiento Zoom', price: 250 }
+      { id: 'S2', name: 'Ortodoncia Invisible', price: 3200 }
     ],
     aiPhoneSettings: {
       phoneNumber: "+34 900 123 456",
       assistantName: "Sara",
-      systemPrompt: "Eres la asistente virtual experta. Tienes capacidad para agendar citas pidiendo nombre y servicio, reprogramar si el paciente lo solicita y cancelar citas. Eres amable pero eficiente.",
-      knowledgeBase: "Horario: L-V 9:00 a 20:00. Ubicación: Paseo de la Castellana 100. Especialidades: Ortodoncia, Implantes y Estética. Aceptamos seguros: Sanitas, Adeslas y Mapfre.",
+      systemPrompt: "Eres la asistente virtual experta.",
+      knowledgeBase: "Horario: L-V 9:00 a 20:00.",
       knowledgeFiles: [],
       voiceName: "Zephyr",
       voicePitch: 1.0,
       voiceSpeed: 1.0,
+      temperature: 0.7,
       accent: 'es-ES-Madrid',
       model: 'gemini-2.5-flash-native-audio-preview-09-2025',
       hasPaidKey: false
     },
     defaultTheme: 'light',
     colorTemplate: 'ocean',
-    roles: [
-      { id: 'Admin', name: 'Administrador', permissions: { visualize: true, create: true, modify: true, delete: true } },
-      { id: 'Doctor', name: 'Especialista', permissions: { visualize: true, create: true, modify: true, delete: false } },
-      { id: 'Recepción', name: 'Atención al Cliente', permissions: { visualize: true, create: true, modify: true, delete: false } },
-      { id: 'Enfermería', name: 'Asistente Clínico', permissions: { visualize: true, create: false, modify: true, delete: false } },
-    ]
+    currency: '€',
+    language: 'es-ES',
+    roles: []
   });
 
   const [systemUsers, setSystemUsers] = useState<User[]>([
@@ -90,24 +84,7 @@ const App: React.FC = () => {
       username: 'cvega_admin',
       name: 'Dr. Carlos Vega',
       role: 'Admin',
-      jobTitle: 'Director Médico',
-      phone: '+34 600 000 001',
-      identityDocument: '12345678A',
-      corporateEmail: 'c.vega@mediclinic.com',
-      img: 'https://i.pravatar.cc/150?u=D001',
-      status: 'Activo'
-    },
-    {
-      id: 'U002',
-      username: 'mrodriguez_recep',
-      name: 'María Rodríguez',
-      role: 'Recepción',
-      jobTitle: 'Coordinadora de Pacientes',
-      phone: '+34 600 000 002',
-      identityDocument: '87654321B',
-      corporateEmail: 'm.rodriguez@mediclinic.com',
-      img: 'https://i.pravatar.cc/150?u=U002',
-      status: 'Activo'
+      img: 'https://i.pravatar.cc/150?u=D001'
     }
   ]);
 
@@ -153,7 +130,15 @@ const App: React.FC = () => {
       </div>
 
       {isChatOpen && <ChatBot onClose={() => setIsChatOpen(false)} />}
-      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} />}
+      {isVoiceOpen && (
+        <VoiceAssistant 
+          onClose={() => setIsVoiceOpen(false)} 
+          settings={settings} 
+          appointments={appointments}
+          setAppointments={setAppointments}
+          doctors={doctors}
+        />
+      )}
     </HashRouter>
   );
 };
