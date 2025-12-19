@@ -3,13 +3,86 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Doctor, Appointment, AppointmentStatus, DaySchedule, FileAttachment, AttendanceRecord } from '../types';
 import AppointmentDetailModal from '../components/AppointmentDetailModal';
 
+const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+
+// COMPONENTES AUXILIARES FUERA PARA EVITAR PÉRDIDA DE FOCO
+const DataField = ({ label, value, onChange, type = "text", options = [], editing = true, placeholder = "", required = false }: any) => (
+  <div className="flex flex-col gap-1.5 w-full">
+    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
+      {label} {required && <span className="text-danger">*</span>}
+    </label>
+    {editing ? (
+      type === 'select' ? (
+        <div className="relative">
+          <select 
+            value={value} 
+            onChange={e => onChange(e.target.value)} 
+            className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none transition-all appearance-none"
+          >
+            {options.map((opt: any) => (
+              <option key={opt.value || opt} value={opt.value || opt}>{opt.label || opt}</option>
+            ))}
+          </select>
+          <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">unfold_more</span>
+        </div>
+      ) : (
+        <input 
+          type={type} 
+          value={value} 
+          placeholder={placeholder}
+          onChange={e => onChange(type === 'number' ? parseFloat(e.target.value) : e.target.value)}
+          className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none transition-all"
+        />
+      )
+    ) : (
+      <div className="bg-white/40 dark:bg-white/5 border border-transparent rounded-2xl px-5 py-3.5 flex items-center min-h-[50px]">
+        <span className="text-sm font-black text-slate-800 dark:text-white leading-none">{value || '---'}</span>
+      </div>
+    )}
+  </div>
+);
+
+const ScheduleRow = ({ day, schedule, onChange, editing }: any) => {
+  const safeSchedule = schedule || {
+    morning: { start: '09:00', end: '14:00', active: true },
+    afternoon: { start: '16:00', end: '20:00', active: true }
+  };
+
+  return (
+    <div className="bg-white/60 dark:bg-bg-dark/40 p-6 rounded-[2.5rem] border border-white dark:border-border-dark flex flex-col md:flex-row items-center gap-8 shadow-sm">
+      <div className="w-32 shrink-0">
+        <p className="text-sm font-black uppercase text-slate-800 dark:text-white tracking-widest">{day}</p>
+      </div>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+        {['morning', 'afternoon'].map((shift) => (
+          <div key={shift} className="flex items-center gap-4 bg-white/80 dark:bg-surface-dark p-4 rounded-[1.75rem] border border-slate-100 dark:border-slate-700 shadow-sm">
+            <div className={`size-12 rounded-2xl flex items-center justify-center ${shift === 'morning' ? 'bg-primary/10 text-primary' : 'bg-orange-400/10 text-orange-400'}`}>
+              <span className="material-symbols-outlined text-2xl">{shift === 'morning' ? 'wb_sunny' : 'nights_stay'}</span>
+            </div>
+            <div className="flex-1 flex items-center gap-2">
+              {editing ? (
+                <div className="flex items-center gap-2 w-full">
+                  <input type="time" value={safeSchedule[shift].start} onChange={e => onChange(day, shift, 'start', e.target.value)} className="bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-bold w-full text-center" />
+                  <span className="text-slate-400 font-bold">-</span>
+                  <input type="time" value={safeSchedule[shift].end} onChange={e => onChange(day, shift, 'end', e.target.value)} className="bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-bold w-full text-center" />
+                </div>
+              ) : (
+                <span className="text-sm font-black text-slate-700 dark:text-slate-300 ml-2">{safeSchedule[shift].start} - {safeSchedule[shift].end}</span>
+              )}
+            </div>
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{shift === 'morning' ? 'MAÑANA' : 'TARDE'}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 interface DoctorsProps {
   doctors: Doctor[];
   appointments: Appointment[];
   setDoctors?: React.Dispatch<React.SetStateAction<Doctor[]>>;
 }
-
-const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
 const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) => {
   const [selectedDoctorForAgenda, setSelectedDoctorForAgenda] = useState<Doctor | null>(null);
@@ -29,6 +102,8 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const createFileInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const editAvatarInputRef = useRef<HTMLInputElement>(null);
 
   const getInitialSchedule = (): Record<string, DaySchedule> => DAYS.reduce((acc, day) => ({
     ...acc,
@@ -39,7 +114,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
   }), {});
 
   const [newDocData, setNewDocData] = useState<Doctor>({
-    id: `D${Math.floor(Math.random() * 900) + 100}`,
+    id: '',
     name: '',
     role: 'Doctor',
     specialty: '',
@@ -82,22 +157,48 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
 
   const handleSaveProfile = () => {
     if (editDocData && setDoctors) {
+      // Validaciones al guardar cambios en perfil
+      const missing = [];
+      if (!editDocData.name?.trim()) missing.push("Nombre");
+      if (!editDocData.specialty?.trim()) missing.push("Especialidad");
+      if (!editDocData.corporateEmail?.trim()) missing.push("Email Corporativo");
+
+      if (missing.length > 0) {
+        alert(`⚠️ No se pueden guardar los cambios:\n\n${missing.map(m => `• ${m}`).join('\n')}`);
+        return;
+      }
+
       setDoctors(prev => prev.map(d => d.id === editDocData.id ? editDocData : d));
       setSelectedDoctorForProfile(editDocData);
       setIsEditing(false);
     }
   };
 
-  const handleCreateDoctor = () => {
-    if (!newDocData.name || !newDocData.specialty || !newDocData.corporateEmail) {
-      alert("Por favor, rellena los campos obligatorios (Nombre, Especialidad y Email).");
+  const handleCreateDoctor = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validación detallada con alertas
+    const missing = [];
+    if (!newDocData.name?.trim()) missing.push("Nombre y Apellidos");
+    if (!newDocData.specialty?.trim()) missing.push("Especialidad Clínica");
+    if (!newDocData.corporateEmail?.trim()) missing.push("Email Corporativo");
+
+    if (missing.length > 0) {
+      alert(`⚠️ Faltan campos obligatorios para registrar al médico:\n\n${missing.map(m => `• ${m}`).join('\n')}`);
       return;
     }
+    
     if (setDoctors) {
-      setDoctors(prev => [...prev, newDocData]);
-      setIsCreating(false);
-      setNewDocData({
+      const doctorToAdd: Doctor = {
+        ...newDocData,
         id: `D${Math.floor(Math.random() * 900) + 100}`,
+      };
+      
+      setDoctors(prev => [...prev, doctorToAdd]);
+      setIsCreating(false);
+      // Reset form
+      setNewDocData({
+        id: '',
         name: '',
         role: 'Doctor',
         specialty: '',
@@ -117,6 +218,21 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
         vacationHistory: [],
         attendanceHistory: []
       });
+    }
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>, target: 'edit' | 'create') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (target === 'edit' && editDocData) {
+          setEditDocData({ ...editDocData, img: reader.result as string });
+        } else {
+          setNewDocData({ ...newDocData, img: reader.result as string });
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -155,75 +271,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
     });
     setIsAddingAttendance(false);
     setNewAttendance({ type: 'Retraso', date: new Date().toISOString().split('T')[0], status: 'Pendiente' });
-  };
-
-  // Componente de Campo de Datos estandarizado para alineación perfecta
-  const DataField = ({ label, value, onChange, type = "text", options = [], editing = true, placeholder = "" }: any) => (
-    <div className="flex flex-col gap-1.5 w-full">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">{label}</label>
-      {editing ? (
-        type === 'select' ? (
-          <div className="relative">
-            <select 
-              value={value} 
-              onChange={e => onChange(e.target.value)} 
-              className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none transition-all appearance-none"
-            >
-              {options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
-            </select>
-            <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">unfold_more</span>
-          </div>
-        ) : (
-          <input 
-            type={type} 
-            value={value} 
-            placeholder={placeholder}
-            onChange={e => onChange(type === 'number' ? parseFloat(e.target.value) : e.target.value)}
-            className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none transition-all"
-          />
-        )
-      ) : (
-        <div className="bg-white/40 dark:bg-white/5 border border-transparent rounded-2xl px-5 py-3.5 flex items-center min-h-[50px]">
-          <span className="text-sm font-black text-slate-800 dark:text-white leading-none">{value || '---'}</span>
-        </div>
-      )}
-    </div>
-  );
-
-  const ScheduleRow = ({ day, schedule, onChange, editing }: any) => {
-    const safeSchedule = schedule || {
-      morning: { start: '09:00', end: '14:00', active: true },
-      afternoon: { start: '16:00', end: '20:00', active: true }
-    };
-
-    return (
-      <div className="bg-white/60 dark:bg-bg-dark/40 p-6 rounded-[2.5rem] border border-white dark:border-border-dark flex flex-col md:flex-row items-center gap-8 shadow-sm">
-        <div className="w-32 shrink-0">
-          <p className="text-sm font-black uppercase text-slate-800 dark:text-white tracking-widest">{day}</p>
-        </div>
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
-          {['morning', 'afternoon'].map((shift) => (
-            <div key={shift} className="flex items-center gap-4 bg-white/80 dark:bg-surface-dark p-4 rounded-[1.75rem] border border-slate-100 dark:border-slate-700 shadow-sm">
-              <div className={`size-12 rounded-2xl flex items-center justify-center ${shift === 'morning' ? 'bg-primary/10 text-primary' : 'bg-orange-400/10 text-orange-400'}`}>
-                <span className="material-symbols-outlined text-2xl">{shift === 'morning' ? 'wb_sunny' : 'nights_stay'}</span>
-              </div>
-              <div className="flex-1 flex items-center gap-2">
-                {editing ? (
-                  <div className="flex items-center gap-2 w-full">
-                    <input type="time" value={safeSchedule[shift].start} onChange={e => onChange(day, shift, 'start', e.target.value)} className="bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-bold w-full text-center" />
-                    <span className="text-slate-400 font-bold">-</span>
-                    <input type="time" value={safeSchedule[shift].end} onChange={e => onChange(day, shift, 'end', e.target.value)} className="bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-bold w-full text-center" />
-                  </div>
-                ) : (
-                  <span className="text-sm font-black text-slate-700 dark:text-slate-300 ml-2">{safeSchedule[shift].start} - {safeSchedule[shift].end}</span>
-                )}
-              </div>
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{shift === 'morning' ? 'MAÑANA' : 'TARDE'}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -301,17 +348,31 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-12 custom-scrollbar space-y-12 bg-transparent">
+            <form onSubmit={handleCreateDoctor} className="flex-1 overflow-y-auto p-12 custom-scrollbar space-y-12 bg-transparent">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                 <div className="space-y-10 p-10 bg-white/70 dark:bg-surface-dark/60 rounded-[3rem] border border-white dark:border-border-dark shadow-sm">
-                  <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">contact_page</span> Identidad y Contacto</h4>
-                  <div className="grid grid-cols-1 gap-8">
-                    <DataField label="Nombre y Apellidos" value={newDocData.name} onChange={(val: string) => setNewDocData({...newDocData, name: val})} />
-                    <DataField label="Especialidad Clínica" value={newDocData.specialty} onChange={(val: string) => setNewDocData({...newDocData, specialty: val})} />
-                    <div className="grid grid-cols-2 gap-8">
-                      <DataField label="Email Corporativo" value={newDocData.corporateEmail} onChange={(val: string) => setNewDocData({...newDocData, corporateEmail: val})} />
-                      <DataField label="Extensión / Teléfono" value={newDocData.phone} onChange={(val: string) => setNewDocData({...newDocData, phone: val})} />
+                  <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">contact_page</span> Identidad y Foto</h4>
+                  
+                  <div className="flex flex-col md:flex-row gap-8 items-center">
+                    <div className="shrink-0 group relative">
+                      <div className="size-40 rounded-[2.5rem] bg-cover bg-center border-4 border-white dark:border-slate-700 shadow-xl overflow-hidden" style={{ backgroundImage: `url("${newDocData.img}")` }}>
+                        <div className="absolute inset-0 bg-primary/60 backdrop-blur-sm flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
+                          <span className="material-symbols-outlined text-4xl">photo_camera</span>
+                          <span className="text-[10px] font-black uppercase mt-1">Subir Foto</span>
+                        </div>
+                      </div>
+                      <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={(e) => handleAvatarChange(e, 'create')} />
                     </div>
+
+                    <div className="flex-1 grid grid-cols-1 gap-6 w-full">
+                      <DataField required label="Nombre y Apellidos" value={newDocData.name} onChange={(val: string) => setNewDocData({...newDocData, name: val})} />
+                      <DataField required label="Especialidad Clínica" value={newDocData.specialty} onChange={(val: string) => setNewDocData({...newDocData, specialty: val})} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-8">
+                    <DataField required label="Email Corporativo" value={newDocData.corporateEmail} onChange={(val: string) => setNewDocData({...newDocData, corporateEmail: val})} />
+                    <DataField label="Extensión / Teléfono" value={newDocData.phone} onChange={(val: string) => setNewDocData({...newDocData, phone: val})} />
                   </div>
                 </div>
 
@@ -350,7 +411,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
               <div className="p-10 bg-white/70 dark:bg-surface-dark/60 rounded-[3rem] border border-white dark:border-border-dark shadow-sm space-y-10">
                 <div className="flex justify-between items-center">
                   <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">folder_managed</span> Documentación Administrativa</h4>
-                  <button onClick={() => createFileInputRef.current?.click()} className="px-6 py-3 bg-primary/10 text-primary rounded-[1.25rem] font-black text-[10px] uppercase tracking-widest hover:bg-primary hover:text-white transition-all">Subir Documentos</button>
+                  <button type="button" onClick={() => createFileInputRef.current?.click()} className="px-6 py-3 bg-primary/10 text-primary rounded-[1.25rem] font-black text-[10px] uppercase tracking-widest hover:bg-primary hover:text-white transition-all">Subir Documentos</button>
                   <input type="file" ref={createFileInputRef} className="hidden" onChange={e => handleFileUpload(e, 'create')} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -360,13 +421,13 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                         <span className="material-symbols-outlined text-slate-400">description</span>
                         <p className="text-[14px] font-black text-slate-700 dark:text-white truncate">{doc.name}</p>
                       </div>
-                      <button onClick={() => setNewDocData({...newDocData, docs: newDocData.docs.filter(d => d.id !== doc.id)})} className="text-danger p-2 hover:bg-danger/10 rounded-xl transition-all"><span className="material-symbols-outlined text-2xl">delete</span></button>
+                      <button type="button" onClick={() => setNewDocData({...newDocData, docs: newDocData.docs.filter(d => d.id !== doc.id)})} className="text-danger p-2 hover:bg-danger/10 rounded-xl transition-all"><span className="material-symbols-outlined text-2xl">delete</span></button>
                     </div>
                   ))}
                   {newDocData.docs.length === 0 && <p className="col-span-full py-12 text-center italic text-slate-400 text-sm font-medium">No se han adjuntado credenciales para este especialista.</p>}
                 </div>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -377,7 +438,16 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
            <div className="bg-[#f1f5f9] dark:bg-bg-dark w-full max-w-6xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col border border-border-light dark:border-border-dark h-[92vh]">
               <header className="px-12 py-10 bg-white/80 dark:bg-surface-dark/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
                  <div className="flex items-center gap-8">
-                    <div className="size-24 rounded-[2.5rem] bg-cover bg-center shadow-2xl border-4 border-white dark:border-slate-700" style={{ backgroundImage: `url("${editDocData.img}")` }}></div>
+                    <div className="relative group">
+                      <div className="size-24 rounded-[2.5rem] bg-cover bg-center shadow-2xl border-4 border-white dark:border-slate-700" style={{ backgroundImage: `url("${editDocData.img}")` }}>
+                        {isEditing && (
+                          <div className="absolute inset-0 bg-primary/60 backdrop-blur-sm rounded-[2.5rem] flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all cursor-pointer" onClick={() => editAvatarInputRef.current?.click()}>
+                            <span className="material-symbols-outlined text-3xl">photo_camera</span>
+                          </div>
+                        )}
+                      </div>
+                      <input type="file" ref={editAvatarInputRef} className="hidden" accept="image/*" onChange={(e) => handleAvatarChange(e, 'edit')} />
+                    </div>
                     <div>
                        <h2 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">{editDocData.name}</h2>
                        <div className="flex items-center gap-4 mt-2">
@@ -422,10 +492,10 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                          <div className="bg-white/70 dark:bg-surface-dark/60 p-10 rounded-[3rem] border border-white dark:border-border-dark shadow-sm">
                             <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3 mb-10"><span className="material-symbols-outlined text-sm">badge</span> Información del Facultativo</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-                               <DataField label="Nombre Completo" value={editDocData.name} onChange={(v:any) => isEditing && setEditDocData({...editDocData, name: v})} editing={isEditing} />
-                               <DataField label="Especialidad Principal" value={editDocData.specialty} onChange={(v:any) => isEditing && setEditDocData({...editDocData, specialty: v})} editing={isEditing} />
+                               <DataField label="Nombre Completo" value={editDocData.name} onChange={(v:any) => isEditing && setEditDocData({...editDocData, name: v})} editing={isEditing} required={true} />
+                               <DataField label="Especialidad Principal" value={editDocData.specialty} onChange={(v:any) => isEditing && setEditDocData({...editDocData, specialty: v})} editing={isEditing} required={true} />
                                <DataField label="Sede / Sucursal" value={editDocData.branch} onChange={(v:any) => isEditing && setEditDocData({...editDocData, branch: v})} editing={isEditing} />
-                               <DataField label="Email de Empresa" value={editDocData.corporateEmail} onChange={(v:any) => isEditing && setEditDocData({...editDocData, corporateEmail: v})} editing={isEditing} />
+                               <DataField label="Email de Empresa" value={editDocData.corporateEmail} onChange={(v:any) => isEditing && setEditDocData({...editDocData, corporateEmail: v})} editing={isEditing} required={true} />
                                <DataField label="Teléfono de Contacto" value={editDocData.phone} onChange={(v:any) => isEditing && setEditDocData({...editDocData, phone: v})} editing={isEditing} />
                                <div className="flex flex-col gap-1.5 w-full">
                                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Estado Operativo</label>
@@ -474,7 +544,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
 
                     {activeTab === 'laboral' && (
                       <div className="space-y-12 animate-in fade-in slide-in-from-right-4">
-                         {/* Gestión de Contrato y Horas */}
                          <div className="bg-white/70 dark:bg-surface-dark/60 p-10 rounded-[3rem] border border-white dark:border-border-dark shadow-sm">
                             <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3 mb-10"><span className="material-symbols-outlined text-sm">work</span> Gestión de Recursos Humanos</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -485,7 +554,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                             </div>
                          </div>
 
-                         {/* Control de Asistencia */}
                          <div className="bg-white/70 dark:bg-surface-dark/60 p-10 rounded-[3rem] border border-white dark:border-border-dark shadow-sm space-y-10">
                             <div className="flex justify-between items-center">
                               <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">assignment_ind</span> Registro de Asistencia</h4>
@@ -570,7 +638,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                             </div>
                          </div>
 
-                         {/* Gestión de Vacaciones */}
                          <div className="bg-white/70 dark:bg-surface-dark/60 p-10 rounded-[3rem] border border-white dark:border-border-dark shadow-sm space-y-10">
                             <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">beach_access</span> Consumo de Vacaciones y Permisos</h4>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
@@ -633,7 +700,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                               <div key={idx} className="bg-white dark:bg-slate-900/50 p-10 rounded-[3rem] shadow-xl flex flex-col items-center gap-4 border border-white dark:border-slate-800 hover:scale-105 transition-transform">
                                 <div className={`size-20 rounded-[1.75rem] bg-${m.c}/10 flex items-center justify-center text-${m.c}`}><span className="material-symbols-outlined text-5xl">{m.i}</span></div>
                                 <p className="text-4xl font-black text-slate-900 dark:text-white leading-tight mt-2">{m.v}</p>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{m.l}</p>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{m.l}</p>
                               </div>
                             ))}
                          </div>
@@ -715,7 +782,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
       {/* PANEL LATERAL: AGENDA 48H */}
       {selectedDoctorForAgenda && (
         <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in zoom-in duration-300">
-           <div className="bg-[#f1f5f9] dark:bg-bg-dark w-full max-w-5xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col border border-border-light dark:border-border-dark h-[85vh]">
+           <div className="bg-[#f1f5f9] dark:bg-bg-dark w-full max-w-6xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col border border-border-light dark:border-border-dark h-[85vh]">
               <header className="px-12 py-10 bg-white/80 dark:bg-surface-dark/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
                  <div className="flex items-center gap-8">
                     <div className="size-16 rounded-[1.5rem] bg-primary/10 text-primary flex items-center justify-center shadow-inner"><span className="material-symbols-outlined text-4xl">event_note</span></div>

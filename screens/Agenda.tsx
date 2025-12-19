@@ -52,11 +52,22 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
 
   const handleCreateAppointment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAptData.patientName) return;
+    
+    // Validación exhaustiva de campos obligatorios
+    const missing = [];
+    if (!newAptData.patientName.trim()) missing.push("Paciente");
+    if (!newAptData.doctorId) missing.push("Médico Responsable");
+    if (!newAptData.date) missing.push("Fecha");
+    if (!newAptData.time) missing.push("Hora");
+
+    if (missing.length > 0) {
+      alert(`⚠️ No se puede agendar la cita:\n\n${missing.map(m => `• ${m}`).join('\n')}`);
+      return;
+    }
 
     const todayStr = new Date().toISOString().split('T')[0];
     if (newAptData.date < todayStr) {
-      alert("No se pueden agendar citas en fechas pasadas.");
+      alert("❌ Error: No se pueden agendar citas en fechas pasadas.");
       return;
     }
 
@@ -65,7 +76,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
       patientId: 'P' + Math.floor(Math.random() * 1000),
       doctorName: newAptData.doctorName,
       doctorId: newAptData.doctorId,
-      patientName: newAptData.patientName,
+      patientName: newAptData.patientName.trim(),
       treatment: newAptData.treatment,
       date: newAptData.date,
       time: newAptData.time,
@@ -99,11 +110,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
     const original = appointments.find(a => a.id === id);
     if (!original) return;
 
-    // 1. Mark original as cancelled
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: 'Cancelled' } : a));
     setSelectedApt(null);
 
-    // 2. Handle replacement
     if (replacement === 'NEW') {
       setNewAptData({
         ...newAptData,
@@ -297,8 +306,6 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                       >
                         <div className="truncate mb-1">{apt.time} - {apt.patientName}</div>
                         <div className="opacity-80 uppercase tracking-tighter text-[8px]">{apt.treatment}</div>
-                        {apt.status === 'Cancelled' && <div className="mt-1 opacity-50 text-[7px] italic">Hueco libre</div>}
-                        {apt.status === 'Completed' && <div className="mt-1 opacity-70 text-[7px] font-black uppercase">Atendido</div>}
                       </div>
                     ) : (
                       !isPast && (
@@ -364,8 +371,6 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                         <div>
                           <p className="text-xl font-bold">{apt.time} - {apt.patientName}</p>
                           <p className="text-xs opacity-90 uppercase font-black tracking-widest mt-1">{apt.treatment} (Médico: {apt.doctorName})</p>
-                          {apt.status === 'Cancelled' && <p className="text-[10px] font-black uppercase mt-1 opacity-60">Cancelada - Espacio disponible</p>}
-                          {apt.status === 'Completed' && <p className="text-[10px] font-black uppercase mt-1 opacity-80">Atendido / Finalizado</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -425,7 +430,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
             </button>
           ))}
           
-          <div className="w-px h-8 bg-border-light dark:bg-border-dark mx-2 hidden lg:block"></div>
+          <div className="w-px h-8 bg-border-light dark:border-border-dark mx-2 hidden lg:block"></div>
           
           <div className="flex items-center gap-2 px-2">
             <select 
@@ -517,9 +522,11 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
             </div>
             <form onSubmit={handleCreateAppointment} className="p-10 pt-6 space-y-8">
               <div>
-                <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">Paciente</label>
+                <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">
+                  Paciente <span className="text-danger">*</span>
+                </label>
                 <input 
-                  required autoFocus type="text" placeholder="Nombre completo del paciente"
+                  autoFocus type="text" placeholder="Nombre completo del paciente"
                   value={newAptData.patientName}
                   onChange={e => setNewAptData({...newAptData, patientName: e.target.value})}
                   className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white focus:ring-4 focus:ring-primary/10 transition-all"
@@ -527,7 +534,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">Fecha</label>
+                  <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">
+                    Fecha <span className="text-danger">*</span>
+                  </label>
                   <input 
                     type="date" 
                     min={new Date().toISOString().split('T')[0]}
@@ -537,7 +546,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">Hora</label>
+                  <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">
+                    Hora <span className="text-danger">*</span>
+                  </label>
                   <input 
                     type="time" value={newAptData.time}
                     onChange={e => setNewAptData({...newAptData, time: e.target.value})}
@@ -560,7 +571,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                 </select>
               </div>
               <div>
-                <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">Médico Responsable</label>
+                <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">
+                  Médico Responsable <span className="text-danger">*</span>
+                </label>
                 <select 
                   value={newAptData.doctorId}
                   onChange={e => {

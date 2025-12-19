@@ -21,9 +21,9 @@
                 extend: {
                     colors: {
                         "primary": {
-                            DEFAULT: "#3b82f6",
-                            dark: "#2563eb",
-                            light: "#dbeafe"
+                            DEFAULT: "var(--color-primary, #3b82f6)",
+                            dark: "var(--color-primary-dark, #2563eb)",
+                            light: "var(--color-primary-light, #dbeafe)"
                         },
                         "success": "#10b981",
                         "warning": "#f59e0b",
@@ -45,9 +45,14 @@
         }
     </script>
     <style>
+        :root {
+            --color-primary: #3b82f6;
+            --color-primary-dark: #2563eb;
+            --color-primary-light: #dbeafe;
+        }
         body {
             font-family: 'Inter', sans-serif;
-            transition: background-color 0.3s ease;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         .font-display { font-family: 'Outfit', sans-serif; }
         .material-symbols-outlined {

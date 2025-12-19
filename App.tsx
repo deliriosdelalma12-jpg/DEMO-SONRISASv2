@@ -7,162 +7,133 @@ import Metrics from './screens/Metrics';
 import Patients from './screens/Patients';
 import Doctors from './screens/Doctors';
 import HRManagement from './screens/HRManagement';
+import Settings from './screens/Settings';
 import Layout from './components/Layout';
 import ChatBot from './components/ChatBot';
 import VoiceAssistant from './components/VoiceAssistant';
-import { Appointment, Patient, Doctor, User, ClinicSettings } from './types';
+import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate } from './types';
 
-// Motor de generación MASIVA para métricas (Densidad extrema en los últimos 30 días)
+export const COLOR_TEMPLATES: ColorTemplate[] = [
+  { id: 'ocean', name: 'Océano (Blue)', primary: '#3b82f6', dark: '#1d4ed8', light: '#dbeafe' },
+  { id: 'emerald', name: 'Esmeralda (Green)', primary: '#10b981', dark: '#047857', light: '#d1fae5' },
+  { id: 'amethyst', name: 'Amatista (Purple)', primary: '#8b5cf6', dark: '#6d28d9', light: '#ede9fe' },
+  { id: 'sunset', name: 'Atardecer (Orange)', primary: '#f59e0b', dark: '#d97706', light: '#fef3c7' },
+  { id: 'coal', name: 'Carbón (Slate)', primary: '#475569', dark: '#1e293b', light: '#f1f5f9' },
+];
+
 const generateMassiveMockData = () => {
   const doctors: Doctor[] = [
     { id: 'D001', name: "Dr. Carlos Vega", role: 'Admin', specialty: "Odontología Estética", status: "Active", img: "https://i.pravatar.cc/150?u=D001", branch: "Centro", phone: "+34 600 001", corporateEmail: "c.vega@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
     { id: 'D002', name: "Dra. Ana Lopez", role: 'Doctor', specialty: "Ortodoncia Avanzada", status: "Active", img: "https://i.pravatar.cc/150?u=D002", branch: "Norte", phone: "+34 600 002", corporateEmail: "a.lopez@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
     { id: 'D003', name: "Dr. Mario Ruiz", role: 'Doctor', specialty: "Cirugía Maxilofacial", status: "Active", img: "https://i.pravatar.cc/150?u=D003", branch: "Sur", phone: "+34 600 003", corporateEmail: "m.ruiz@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
     { id: 'D004', name: "Dra. Elena Sanz", role: 'Doctor', specialty: "Periodoncia", status: "Active", img: "https://i.pravatar.cc/150?u=D004", branch: "Este", phone: "+34 600 004", corporateEmail: "e.sanz@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
-    { id: 'D005', name: "Dr. Roberto Soler", role: 'Doctor', specialty: "Endodoncia", status: "Active", img: "https://i.pravatar.cc/150?u=D005", branch: "Centro", phone: "+34 600 005", corporateEmail: "r.soler@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
-    { id: 'D006', name: "Dra. Laura Gil", role: 'Doctor', specialty: "Odontopediatría", status: "Active", img: "https://i.pravatar.cc/150?u=D006", branch: "Norte", phone: "+34 600 006", corporateEmail: "l.gil@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
-    { id: 'D007', name: "Dr. Sergio Maza", role: 'Doctor', specialty: "Implantología", status: "Active", img: "https://i.pravatar.cc/150?u=D007", branch: "Sur", phone: "+34 600 007", corporateEmail: "s.maza@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
-    { id: 'D008', name: "Dra. Marta Vidal", role: 'Doctor', specialty: "Higiene Bucodental", status: "Active", img: "https://i.pravatar.cc/150?u=D008", branch: "Este", phone: "+34 600 008", corporateEmail: "m.vidal@clinic.com", docs: [], vacationHistory: [], attendanceHistory: [] },
   ];
 
-  const patientNames = [
-    "Juan Pérez", "Maria Garcia", "Pedro Sanchez", "Lucia Diaz", "Roberto Soler", "Elena Martinez", 
-    "Carlos Ruiz", "Ana Belen", "Javier Gomez", "Sofia Vega", "Diego Lopez", "Carmen Sanz",
-    "Luis Miguel", "Isabel Pantoja", "Fernando Alonso", "Pau Gasol", "Rafael Nadal", "Marta Sanchez",
-    "Antonio Banderas", "Penelope Cruz", "Jordi Evole", "Julia Otero", "Andreu Buenafuente", "Berto Romero",
-    "David Broncano", "Ibai Llanos", "Rosalia Vila", "C. Tangana", "Nathy Peluso", "Aitana Ocaña"
+  const patients: Patient[] = [
+    { id: 'P001', name: "Juan Pérez", birthDate: "1985-05-12", gender: 'Masculino', identityDocument: "12345678X", img: "https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Felix&backgroundColor=e2e8f0", phone: "+34 600 000 01", email: "juan@example.com", address: "Calle Mayor 1", medicalHistory: "Revisiones al día.", attachments: [], savedReports: [], history: [] }
   ];
 
-  const patients: Patient[] = patientNames.map((name, i) => ({
-    id: `P${(i + 1).toString().padStart(3, '0')}`,
-    name,
-    birthDate: `${1950 + Math.floor(Math.random() * 50)}-0${1 + Math.floor(Math.random() * 9)}-${10 + Math.floor(Math.random() * 18)}`,
-    gender: Math.random() > 0.5 ? 'Masculino' : 'Femenino',
-    identityDocument: `${10000000 + i}X`,
-    img: `https://i.pravatar.cc/150?u=P${i}`,
-    phone: `+34 600 000 ${i.toString().padStart(2, '0')}`,
-    email: `${name.toLowerCase().replace(' ', '.')}@example.com`,
-    address: `Calle Falsa ${i + 1}, Ciudad`,
-    medicalHistory: "Paciente con revisiones periódicas.",
-    attachments: [],
-    savedReports: [],
-    history: [],
-    weight: (60 + Math.random() * 30).toFixed(1),
-    height: (155 + Math.random() * 35).toFixed(0),
-    bloodType: ['A+', 'O-', 'B+', 'AB+'][Math.floor(Math.random() * 4)],
-    allergies: Math.random() > 0.7 ? ["Penicilina"] : []
-  }));
-
-  const treatments = [
-    'Limpieza Dental Profunda', 'Ortodoncia', 'Ortodoncia Invisible', 
-    'Cirugía Maxilofacial', 'Consulta General', 'Revisión Periódica', 
-    'Implante Titanio', 'Endodoncia Molar', 'Blanqueamiento'
-  ];
-  
   const appointments: Appointment[] = [];
-  const now = new Date();
-  
-  // Generamos 2000 citas con distribución específica
-  for (let i = 0; i < 2000; i++) {
-    let date: Date;
-    const rand = Math.random();
-    
-    // 60% de las citas en los ÚLTIMOS 30 DÍAS (Para que el KPI de Metrics se vea masivo)
-    if (rand > 0.4) {
-      const daysAgo = Math.floor(Math.random() * 30);
-      date = new Date();
-      date.setDate(now.getDate() - daysAgo);
-    } 
-    // 20% en el resto del año (2025)
-    else if (rand > 0.2) {
-      const daysAgo = Math.floor(Math.random() * 365);
-      date = new Date();
-      date.setDate(now.getDate() - daysAgo);
-    }
-    // 20% en el futuro (Hasta Enero 2026)
-    else {
-      const daysAhead = Math.floor(Math.random() * 300);
-      date = new Date();
-      date.setDate(now.getDate() + daysAhead);
-    }
-
-    const dateStr = date.toISOString().split('T')[0];
-    const doc = doctors[Math.floor(Math.random() * doctors.length)];
-    const pat = patients[Math.floor(Math.random() * patients.length)];
-    const treat = treatments[Math.floor(Math.random() * treatments.length)];
-    
-    let status: any = 'Pending';
-    if (date < now) {
-      // Pasado: 90% completadas para métricas de facturación real potentes
-      status = Math.random() > 0.1 ? 'Completed' : 'Cancelled';
-    } else {
-      // Futuro
-      const r = Math.random();
-      if (r > 0.6) status = 'Confirmed';
-      else if (r > 0.2) status = 'Pending';
-      else status = 'Rescheduled';
-    }
-
-    appointments.push({
-      id: `APT-${i.toString().padStart(4, '0')}`,
-      patientName: pat.name,
-      patientId: pat.id,
-      doctorName: doc.name,
-      doctorId: doc.id,
-      time: `${Math.floor(Math.random() * 11 + 9).toString().padStart(2, '0')}:00`,
-      date: dateStr,
-      treatment: treat,
-      status: status
-    });
-  }
-
-  appointments.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
-
   return { doctors, patients, appointments };
 };
 
 const App: React.FC = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
   
   const mock = useMemo(() => generateMassiveMockData(), []);
-
   const [doctors, setDoctors] = useState<Doctor[]>(mock.doctors);
   const [patients, setPatients] = useState<Patient[]>(mock.patients);
   const [appointments, setAppointments] = useState<Appointment[]>(mock.appointments);
 
-  const [clinicSettings] = useState<ClinicSettings>({
+  // ESTADO GLOBAL DE CONFIGURACIÓN AMPLIADO
+  const [settings, setSettings] = useState<ClinicSettings>({
     name: "MediClinic Premium",
     logo: "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/hospital.svg",
     phone: "+34 910 000 001",
     email: "central@mediclinic-premium.com",
-    address: "Paseo de la Castellana 100, Madrid"
+    address: "Paseo de la Castellana 100, Madrid",
+    sector: "Odontología y Estética Dental",
+    description: "Clínica líder en tratamientos de vanguardia con enfoque en la salud integral del paciente.",
+    specialties: ["Ortodoncia", "Implantología", "Periodoncia", "Estética Dental"],
+    services: [
+      { id: 'S1', name: 'Limpieza Dental Profunda', price: 65 },
+      { id: 'S2', name: 'Ortodoncia Invisible', price: 3200 },
+      { id: 'S3', name: 'Implante Titanio', price: 1100 },
+      { id: 'S4', name: 'Blanqueamiento Zoom', price: 250 }
+    ],
+    defaultTheme: 'light',
+    colorTemplate: 'ocean',
+    roles: [
+      { id: 'Admin', name: 'Administrador', permissions: { visualize: true, create: true, modify: true, delete: true } },
+      { id: 'Doctor', name: 'Especialista', permissions: { visualize: true, create: true, modify: true, delete: false } },
+      { id: 'Recepción', name: 'Atención al Cliente', permissions: { visualize: true, create: true, modify: true, delete: false } },
+      { id: 'Enfermería', name: 'Asistente Clínico', permissions: { visualize: true, create: false, modify: true, delete: false } },
+    ]
   });
 
-  const [currentUser] = useState<User>({
-    id: 'D001',
-    name: 'Dr. Carlos Vega',
-    role: 'Admin',
-    corporateEmail: 'c.vega@mediclinic.com',
-    img: 'https://i.pravatar.cc/150?u=D001'
-  });
+  const [systemUsers, setSystemUsers] = useState<User[]>([
+    {
+      id: 'D001',
+      username: 'cvega_admin',
+      name: 'Dr. Carlos Vega',
+      role: 'Admin',
+      jobTitle: 'Director Médico',
+      phone: '+34 600 000 001',
+      identityDocument: '12345678A',
+      corporateEmail: 'c.vega@mediclinic.com',
+      img: 'https://i.pravatar.cc/150?u=D001',
+      status: 'Activo'
+    },
+    {
+      id: 'U002',
+      username: 'mrodriguez_recep',
+      name: 'María Rodríguez',
+      role: 'Recepción',
+      jobTitle: 'Coordinadora de Pacientes',
+      phone: '+34 600 000 002',
+      identityDocument: '87654321B',
+      corporateEmail: 'm.rodriguez@mediclinic.com',
+      img: 'https://i.pravatar.cc/150?u=U002',
+      status: 'Activo'
+    }
+  ]);
 
+  const [darkMode, setDarkMode] = useState(settings.defaultTheme === 'dark');
+
+  // Aplicar colores dinámicos
+  useEffect(() => {
+    const template = COLOR_TEMPLATES.find(t => t.id === settings.colorTemplate) || COLOR_TEMPLATES[0];
+    const root = document.documentElement;
+    root.style.setProperty('--color-primary', template.primary);
+    root.style.setProperty('--color-primary-dark', template.dark);
+    root.style.setProperty('--color-primary-light', template.light);
+  }, [settings.colorTemplate]);
+
+  // Aplicar modo oscuro
   useEffect(() => {
     if (darkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
+  const currentUser = systemUsers[0]; // Simulación de login
+
   return (
     <HashRouter>
-      <Layout darkMode={darkMode} onToggleTheme={() => setDarkMode(!darkMode)} currentUser={currentUser}>
+      <Layout 
+        darkMode={darkMode} 
+        onToggleTheme={() => setDarkMode(!darkMode)} 
+        currentUser={currentUser}
+        settings={settings}
+      >
         <Routes>
           <Route path="/" element={<Dashboard appointments={appointments} setAppointments={setAppointments} tasks={[]} setTasks={() => {}} patients={patients} doctors={doctors} />} />
           <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} />} />
-          <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={clinicSettings} currentUser={currentUser} team={doctors} />} />
+          <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={currentUser} team={doctors} />} />
           <Route path="/doctors" element={<Doctors doctors={doctors} appointments={appointments} setDoctors={setDoctors} />} />
           <Route path="/hr" element={<HRManagement doctors={doctors} setDoctors={setDoctors} />} />
           <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} />} />
+          <Route path="/settings" element={<Settings settings={settings} setSettings={setSettings} onToggleTheme={() => setDarkMode(!darkMode)} darkMode={darkMode} systemUsers={systemUsers} setSystemUsers={setSystemUsers} />} />
         </Routes>
       </Layout>
 

@@ -25,6 +25,13 @@ export interface ChatMessage {
   text: string;
 }
 
+export interface ClinicService {
+  id: string;
+  name: string;
+  price: number;
+  category?: string;
+}
+
 export interface Patient {
   id: string;
   name: string;
@@ -65,30 +72,32 @@ export interface Appointment {
   avatar?: string;
 }
 
+export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
+
 export interface User {
   id: string;
+  username: string;
+  password?: string;
   name: string;
-  role: 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
+  role: UserRole;
+  jobTitle: string;
+  phone: string;
+  identityDocument: string;
   img?: string;
   corporateEmail: string;
-}
-
-export interface Shift {
-  start: string;
-  end: string;
-  active: boolean;
+  status: 'Activo' | 'Inactivo';
 }
 
 export interface DaySchedule {
-  morning: Shift;
-  afternoon: Shift;
+  morning: { start: string; end: string; active: boolean };
+  afternoon: { start: string; end: string; active: boolean };
 }
 
 export interface VacationRequest {
   id: string;
   start: string;
   end: string;
-  status: 'Aprobada' | 'Pendiente' | 'Rechazada';
+  status: 'Pendiente' | 'Aprobada' | 'Rechazada';
   type: 'Vacaciones' | 'Asuntos Propios' | 'Baja';
 }
 
@@ -96,27 +105,52 @@ export interface AttendanceRecord {
   id: string;
   date: string;
   type: 'Retraso' | 'Ausencia' | 'Baja Médica' | 'Permiso';
-  duration?: string; // Ejemplo: "45 min" o "3 días"
-  status: 'Justificado' | 'No Justificado' | 'Pendiente';
+  duration?: string;
+  status: 'Pendiente' | 'Justificado' | 'No Justificado';
   notes?: string;
 }
 
-export interface Doctor extends User {
+export interface Doctor {
+  id: string;
+  name: string;
+  role: UserRole;
   specialty: string;
-  status: 'Active' | 'Vacation' | 'Inactive';
+  status: 'Active' | 'Inactive' | 'Vacation';
+  img: string;
   branch: string;
   phone: string;
+  corporateEmail: string;
   docs: FileAttachment[];
   schedule?: Record<string, DaySchedule>;
-  // Datos Laborales
   contractType?: string;
+  hourlyRate?: number;
   overtimeHours?: number;
   totalHoursWorked?: number;
   vacationDaysTotal?: number;
   vacationDaysTaken?: number;
   vacationHistory?: VacationRequest[];
   attendanceHistory?: AttendanceRecord[];
-  hourlyRate?: number;
+}
+
+export interface RolePermissions {
+  visualize: boolean;
+  create: boolean;
+  modify: boolean;
+  delete: boolean;
+}
+
+export interface RoleDefinition {
+  id: UserRole;
+  name: string;
+  permissions: RolePermissions;
+}
+
+export interface ColorTemplate {
+  id: string;
+  name: string;
+  primary: string;
+  dark: string;
+  light: string;
 }
 
 export interface ClinicSettings {
@@ -125,6 +159,13 @@ export interface ClinicSettings {
   phone: string;
   email: string;
   address: string;
+  sector: string;
+  description: string;
+  specialties: string[];
+  services: ClinicService[];
+  defaultTheme: 'light' | 'dark';
+  colorTemplate: string;
+  roles: RoleDefinition[];
 }
 
 export interface Task {
