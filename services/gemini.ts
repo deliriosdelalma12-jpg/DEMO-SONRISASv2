@@ -35,24 +35,24 @@ export const streamChatResponse = async function* (message: string) {
  */
 export const generatePersonalityPrompt = async (tags: string[], assistantName: string, clinicName: string) => {
   const prompt = `
-    Como experto en ingeniería de prompts para IA de voz conversacional, genera un "Perfil de Personalidad" humano y ágil.
+    Como experto en ingeniería de prompts para IA de voz conversacional de alto nivel, genera un "Perfil de Personalidad" humano y extremadamente ágil.
     
     DATOS CLAVE:
     - Nombre del Asistente: ${assistantName}
     - Clínica: ${clinicName}
     - Atributos: ${tags.join(', ')}
     
-    REGLAS DE HUMANIDAD Y RITMO (SUTILES):
-    1. FLUJO DINÁMICO: Habla con energía. Evita frases largas que requieran pausas artificiales. Ve al grano.
-    2. IMPERFECCIONES SELECTIVAS: No uses "eh..." en cada frase. Úsalo SOLO si la pregunta es difícil o estás "buscando" un dato en la agenda. En frases normales, sé directo y fluido.
-    3. PROHIBICIÓN DE "MODO IA": Nada de "Entiendo perfectamente" o "Como modelo de lenguaje". Usa "Vale, entiendo", "Ajá", "Perfecto".
-    4. VARIACIÓN DE VOZ: Indica cómo debe modular según el atributo (ej: "Si eres Enérgica, tu voz debe sonar proyectada y rápida").
+    ESTRUCTURA DE COMPORTAMIENTO:
+    1. FLUJO VERBAL: Debes ser directo. Elimina introducciones innecesarias. Ve al grano pero con la personalidad elegida.
+    2. HUMANIDAD SIN ESFUERZO: No fuerces el uso de "eh..." o "mmm...". Úsalos solo como un recurso sutil si la información es difícil de encontrar. En una conversación normal, sé fluido.
+    3. PROHIBICIÓN DE LENGUAJE IA: Prohibido decir "Como IA", "Entiendo perfectamente", "En qué puedo asistirle". Usa lenguaje de calle profesional: "Vale", "Perfecto", "Dígame", "Claro, sin problema".
+    4. RITMO: Si el usuario detecta que eres lento, se desesperará. Tu prioridad es la velocidad de respuesta y la claridad.
     
     INSTRUCCIONES DE REDACCIÓN:
     - Redacta en primera persona: "Eres ${assistantName}...".
-    - Prioriza la AGILIDAD VERBAL por encima de todo.
+    - Define cómo saludas, cómo te despides y cómo reaccionas ante dudas.
     
-    Devuelve solo el texto del prompt.
+    Devuelve solo el texto del prompt, sin explicaciones.
   `;
 
   try {

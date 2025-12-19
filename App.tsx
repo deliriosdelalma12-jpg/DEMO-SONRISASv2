@@ -46,7 +46,6 @@ const App: React.FC = () => {
   const [patients, setPatients] = useState<Patient[]>(mock.patients);
   const [appointments, setAppointments] = useState<Appointment[]>(mock.appointments);
 
-  // ESTADO GLOBAL DE CONFIGURACIÓN AMPLIADO
   const [settings, setSettings] = useState<ClinicSettings>({
     name: "MediClinic Premium",
     logo: "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/hospital.svg",
@@ -71,7 +70,9 @@ const App: React.FC = () => {
       voiceName: "Zephyr",
       voicePitch: 1.0,
       voiceSpeed: 1.0,
-      accent: 'es-ES-Madrid'
+      accent: 'es-ES-Madrid',
+      model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      hasPaidKey: false
     },
     defaultTheme: 'light',
     colorTemplate: 'ocean',
@@ -112,7 +113,6 @@ const App: React.FC = () => {
 
   const [darkMode, setDarkMode] = useState(settings.defaultTheme === 'dark');
 
-  // Aplicar colores dinámicos
   useEffect(() => {
     const template = COLOR_TEMPLATES.find(t => t.id === settings.colorTemplate) || COLOR_TEMPLATES[0];
     const root = document.documentElement;
@@ -121,13 +121,12 @@ const App: React.FC = () => {
     root.style.setProperty('--color-primary-light', template.light);
   }, [settings.colorTemplate]);
 
-  // Aplicar modo oscuro
   useEffect(() => {
     if (darkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  const currentUser = systemUsers[0]; // Simulación de login
+  const currentUser = systemUsers[0];
 
   return (
     <HashRouter>

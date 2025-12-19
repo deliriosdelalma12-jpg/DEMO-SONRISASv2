@@ -165,6 +165,8 @@ export interface AiPhoneSettings {
   voicePitch: number;
   voiceSpeed: number;
   accent: VoiceAccent;
+  model: string;
+  hasPaidKey: boolean;
 }
 
 export interface ClinicSettings {
