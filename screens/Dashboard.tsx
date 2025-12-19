@@ -1,104 +1,118 @@
 
-import React from 'react';
-import { Appointment } from '../types';
+import React, { useState } from 'react';
+import { Appointment, Task } from '../types';
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+  appointments: Appointment[];
+  tasks: Task[];
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ appointments, tasks, setTasks }) => {
+  const [newTaskText, setNewTaskText] = useState('');
+  const [isAddingTask, setIsAddingTask] = useState(false);
+
   const stats = [
-    { icon: 'event_available', label: 'Citas de hoy', value: '24', change: '+2%', color: 'text-primary' },
-    { icon: 'person_add', label: 'Pacientes nuevos', value: '12', change: '+12%', color: 'text-primary' },
-    { icon: 'payments', label: 'Ingresos del mes', value: '$42.5k', change: '+5%', color: 'text-primary' },
-    { icon: 'timer', label: 'Tiempo prom.', value: '24m', change: '0%', color: 'text-gray-400' },
+    { icon: 'event_available', label: 'Citas de hoy', value: '24', change: '+2%', color: 'text-success' },
+    { icon: 'person_add', label: 'Pacientes nuevos', value: '12', change: '+12%', color: 'text-success' },
+    { icon: 'payments', label: 'Ingresos del mes', value: '$42.5k', change: '+5%', color: 'text-success' },
+    { icon: 'timer', label: 'Tiempo prom.', value: '24m', change: '0%', color: 'text-slate-400' },
   ];
 
-  const appointments: Appointment[] = [
-    { id: 'PT-4920', patientName: 'Juan Pérez', patientId: '#48291', doctorName: 'Dr. Smith', time: '09:00 AM', treatment: 'Limpieza', status: 'Confirmed' },
-    { id: 'PT-4922', patientName: 'Maria Garcia', patientId: '#48293', doctorName: 'Dra. Lopez', time: '10:30 AM', treatment: 'Consulta', status: 'Pending', avatar: 'https://picsum.photos/40/40?random=2' },
-  ];
+  const toggleTask = (id: string) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  };
+
+  const addTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTaskText.trim()) return;
+    const newTask: Task = {
+      id: Math.random().toString(),
+      text: newTaskText,
+      sub: 'Añadido ahora',
+      completed: false,
+      priority: 'Medium'
+    };
+    setTasks([newTask, ...tasks]);
+    setNewTaskText('');
+    setIsAddingTask(false);
+  };
+
+  const deleteTask = (id: string) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+  };
 
   return (
-    <div className="p-6 md:p-8 xl:p-10 max-w-[1600px] mx-auto w-full">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+    <div className="p-10 max-w-[1600px] mx-auto w-full space-y-10">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">Buenos días, Dr. Vega</h1>
-          <p className="text-text-secondary mt-2 text-base">Aquí está el resumen de tu agenda hoy.</p>
+          <h1 className="text-4xl font-display font-bold text-slate-900 dark:text-white">Buenos días, Dr. Vega</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 text-lg">Resumen de actividad para hoy, 24 de Octubre.</p>
         </div>
-        <div className="flex items-center bg-surface-dark rounded-full px-4 py-2 border border-border-dark shadow-sm">
-          <span className="material-symbols-outlined text-primary mr-2 text-[20px]">calendar_today</span>
-          <span className="text-sm font-medium text-white">Octubre 24, 2023</span>
+        <div className="flex items-center gap-3 bg-white dark:bg-surface-dark rounded-2xl p-4 border border-border-light dark:border-border-dark shadow-sm">
+           <div className="size-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+              <span className="material-symbols-outlined">calendar_today</span>
+           </div>
+           <div>
+              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Fecha</p>
+              <p className="text-sm font-bold text-slate-900 dark:text-white">24 Octubre, 2023</p>
+           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         {stats.map((stat, i) => (
-          <div key={i} className="bg-surface-dark p-6 rounded-2xl border border-border-dark shadow-sm hover:shadow-md hover:border-primary/20 transition-all group relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-              <span className="material-symbols-outlined text-6xl text-white">{stat.icon}</span>
+          <div key={i} className="bg-white dark:bg-surface-dark p-6 rounded-3xl border border-border-light dark:border-border-dark shadow-sm hover:shadow-xl transition-all group overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform">
+               <span className="material-symbols-outlined text-7xl">{stat.icon}</span>
             </div>
-            <div className="flex flex-col gap-1 relative z-10">
-              <p className="text-text-secondary text-sm font-medium">{stat.label}</p>
-              <div className="flex items-baseline gap-2">
-                <h3 className="text-3xl font-bold text-white">{stat.value}</h3>
-                <span className={`inline-flex items-center text-xs font-bold ${stat.color === 'text-primary' ? 'text-primary bg-primary/10' : 'text-gray-400 bg-white/5'} px-2 py-0.5 rounded-full`}>
-                  {stat.change}
-                </span>
-              </div>
+            <p className="text-slate-500 dark:text-slate-400 text-sm font-semibold">{stat.label}</p>
+            <div className="flex items-baseline gap-3 mt-2">
+              <h3 className="text-3xl font-black text-slate-900 dark:text-white">{stat.value}</h3>
+              <span className={`text-xs font-black ${stat.color} bg-bg-light dark:bg-bg-dark px-2.5 py-1 rounded-full`}>{stat.change}</span>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 md:gap-8">
-        <div className="xl:col-span-2 flex flex-col gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+        <div className="xl:col-span-2 space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white">Próximas Citas</h2>
-            <button className="text-sm text-primary font-bold hover:underline">Ver todas</button>
+            <h2 className="text-2xl font-display font-bold text-slate-900 dark:text-white">Próximas Citas</h2>
+            <button className="text-sm font-bold text-primary hover:underline">Ver todas</button>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-border-dark bg-surface-dark shadow-sm">
+          <div className="overflow-hidden rounded-3xl border border-border-light dark:border-border-dark bg-white dark:bg-surface-dark shadow-xl">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#1a2418] border-b border-border-dark">
-                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-text-secondary">Paciente</th>
-                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-text-secondary">Doctor</th>
-                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-text-secondary">Hora</th>
-                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-text-secondary">Tratamiento</th>
-                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-text-secondary">Estado</th>
+              <table className="w-full text-left">
+                <thead className="bg-bg-light dark:bg-slate-900/50 border-b border-border-light dark:border-border-dark">
+                  <tr>
+                    <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-400">Paciente</th>
+                    <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-400">Hora</th>
+                    <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-400">Tratamiento</th>
+                    <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-400">Estado</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border-dark">
-                  {appointments.map((apt) => (
-                    <tr key={apt.id} className="group hover:bg-white/5 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                          {apt.avatar ? (
-                            <img src={apt.avatar} className="size-8 rounded-full border border-border-dark" alt="" />
-                          ) : (
-                            <div className="size-8 rounded-full bg-blue-900 text-blue-200 flex items-center justify-center text-xs font-bold">
-                              {apt.patientName.split(' ').map(n => n[0]).join('')}
-                            </div>
-                          )}
-                          <div>
-                            <p className="text-sm font-bold text-white">{apt.patientName}</p>
-                            <p className="text-xs text-text-secondary">{apt.patientId}</p>
+                <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                  {appointments.slice(0, 5).map((apt) => (
+                    <tr key={apt.id} className="group hover:bg-bg-light dark:hover:bg-white/5 transition-colors cursor-pointer">
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-4">
+                          <div className="size-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-primary">
+                            {apt.patientName[0]}
                           </div>
+                          <span className="font-bold text-slate-900 dark:text-white">{apt.patientName}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{apt.doctorName}</td>
-                      <td className="px-6 py-4 whitespace-nowrap"><span className="text-sm font-bold text-white">{apt.time}</span></td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                          apt.treatment === 'Limpieza' ? 'bg-purple-900/30 text-purple-300' : 'bg-blue-900/30 text-blue-300'
-                        }`}>
-                          {apt.treatment}
-                        </span>
+                      <td className="px-8 py-5 text-sm font-bold text-slate-600 dark:text-slate-300">{apt.time}</td>
+                      <td className="px-8 py-5">
+                        <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-black uppercase">{apt.treatment}</span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <div className={`size-1.5 rounded-full ${apt.status === 'Confirmed' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
-                          <span className={`text-sm font-medium ${apt.status === 'Confirmed' ? 'text-green-400' : 'text-yellow-400'}`}>
-                            {apt.status === 'Confirmed' ? 'Confirmada' : 'En sala'}
-                          </span>
-                        </div>
+                      <td className="px-8 py-5">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
+                          apt.status === 'Confirmed' ? 'bg-success text-white' : 
+                          apt.status === 'Cancelled' ? 'bg-danger text-white' : 
+                          'bg-warning text-white'
+                        }`}>{apt.status}</span>
                       </td>
                     </tr>
                   ))}
@@ -108,33 +122,50 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex flex-col gap-6">
-          <div className="bg-surface-dark rounded-2xl border border-border-dark shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Tareas Urgentes</h3>
-              <button className="text-primary hover:bg-primary/10 p-1 rounded-md transition-colors">
-                <span className="material-symbols-outlined text-[20px]">add</span>
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-surface-dark rounded-3xl border border-border-light dark:border-border-dark shadow-xl p-8">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-xl font-display font-bold text-slate-900 dark:text-white">Tareas Urgentes</h3>
+              <button 
+                onClick={() => setIsAddingTask(!isAddingTask)}
+                className={`p-2 rounded-xl transition-all ${isAddingTask ? 'bg-danger text-white rotate-45' : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'}`}
+              >
+                <span className="material-symbols-outlined">add</span>
               </button>
             </div>
-            <div className="flex flex-col gap-3">
-              {[
-                { icon: 'lab_profile', text: 'Revisar laboratorio #402', sub: 'Pendiente desde ayer', color: 'orange' },
-                { icon: 'call', text: 'Llamar a seguro médico', sub: 'Autorización Paciente Luis G.', color: 'blue' },
-                { icon: 'inventory_2', text: 'Stock de anestesia bajo', sub: 'Hacer pedido mensual', color: 'purple' }
-              ].map((task, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-background-dark/50 border border-transparent hover:border-primary/30 transition-colors cursor-pointer group">
-                  <div className={`mt-0.5 p-1.5 rounded-lg ${
-                    task.color === 'orange' ? 'text-orange-500 bg-orange-900/20' :
-                    task.color === 'blue' ? 'text-blue-500 bg-blue-900/20' :
-                    'text-purple-500 bg-purple-900/20'
-                  }`}>
-                    <span className="material-symbols-outlined text-[18px] block">{task.icon}</span>
+
+            {isAddingTask && (
+              <form onSubmit={addTask} className="mb-6 animate-in slide-in-from-top-4 duration-200">
+                <input 
+                  autoFocus
+                  value={newTaskText}
+                  onChange={e => setNewTaskText(e.target.value)}
+                  placeholder="¿Qué hay que hacer?"
+                  className="w-full bg-bg-light dark:bg-bg-dark border border-border-light dark:border-border-dark rounded-2xl px-5 py-4 text-sm focus:ring-2 focus:ring-primary mb-3"
+                />
+                <button type="submit" className="w-full py-3 bg-primary text-white font-bold rounded-2xl hover:brightness-110 transition-all">Añadir Tarea</button>
+              </form>
+            )}
+
+            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+              {tasks.length === 0 && <p className="text-center text-slate-400 py-10 italic">No hay tareas pendientes.</p>}
+              {tasks.map((task) => (
+                <div key={task.id} className="group flex items-start gap-4 p-5 rounded-2xl bg-bg-light dark:bg-bg-dark border border-transparent hover:border-primary/30 transition-all">
+                  <button 
+                    onClick={() => toggleTask(task.id)}
+                    className={`mt-1 size-5 rounded-lg border-2 flex items-center justify-center transition-colors ${
+                      task.completed ? 'bg-success border-success text-white' : 'border-slate-300 dark:border-slate-600'
+                    }`}
+                  >
+                    {task.completed && <span className="material-symbols-outlined text-[14px] font-bold">check</span>}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-bold truncate transition-all ${task.completed ? 'text-slate-400 line-through' : 'text-slate-900 dark:text-white'}`}>{task.text}</p>
+                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">{task.sub}</p>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-white group-hover:text-primary transition-colors">{task.text}</p>
-                    <p className="text-xs text-text-secondary mt-0.5">{task.sub}</p>
-                  </div>
-                  <input className="rounded border-border-dark text-primary focus:ring-primary bg-transparent" type="checkbox" />
+                  <button onClick={() => deleteTask(task.id)} className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/10 rounded-lg transition-all">
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
                 </div>
               ))}
             </div>

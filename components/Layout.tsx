@@ -2,7 +2,13 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
-const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+interface LayoutProps {
+  children: React.ReactNode;
+  darkMode: boolean;
+  onToggleTheme: () => void;
+}
+
+const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme }) => {
   const location = useLocation();
 
   const isActive = (path: string) => location.pathname === path;
@@ -20,17 +26,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background-dark">
+    <div className="flex h-screen overflow-hidden bg-bg-light dark:bg-bg-dark transition-colors duration-300">
       {/* Sidebar */}
-      <aside className="w-[280px] border-r border-border-dark flex flex-col hidden lg:flex shrink-0">
-        <div className="p-6">
+      <aside className="w-[280px] border-r border-border-light dark:border-border-dark flex flex-col hidden lg:flex shrink-0 bg-white dark:bg-surface-dark">
+        <div className="p-8">
           <Link to="/" className="flex items-center gap-3">
             <div className="size-10 text-primary">
               <svg className="w-full h-full" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <path d="M44 11.2727C44 14.0109 39.8386 16.3957 33.69 17.6364C39.8386 18.877 44 21.2618 44 24C44 26.7382 39.8386 29.123 33.69 30.3636C39.8386 31.6043 44 33.9891 44 36.7273C44 40.7439 35.0457 44 24 44C12.9543 44 4 40.7439 4 36.7273C4 33.9891 8.16144 31.6043 14.31 30.3636C8.16144 29.123 4 26.7382 4 24C4 21.2618 8.16144 18.877 14.31 17.6364C8.16144 16.3957 4 14.0109 4 11.2727C4 7.25611 12.9543 4 24 4C35.0457 4 44 7.25611 44 11.2727Z" fill="currentColor"></path>
+                 <rect x="8" y="8" width="32" height="32" rx="8" fill="currentColor" fillOpacity="0.1" />
+                 <path d="M24 12V36M12 24H36" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
               </svg>
             </div>
-            <h2 className="text-white text-2xl font-black tracking-tight">MediClinic</h2>
+            <h2 className="text-slate-900 dark:text-white text-2xl font-display font-bold tracking-tight">MediClinic</h2>
           </Link>
         </div>
 
@@ -42,24 +49,32 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${
                 isActive(item.path)
                   ? 'bg-primary/10 text-primary'
-                  : 'text-text-secondary-dark hover:bg-surface-dark hover:text-white'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-bg-light dark:hover:bg-bg-dark hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <span className={`material-symbols-outlined ${isActive(item.path) ? 'filled' : ''}`}>
                 {item.icon}
               </span>
-              <span className="text-sm font-bold">{item.label}</span>
+              <span className="text-sm font-semibold">{item.label}</span>
             </Link>
           ))}
         </nav>
 
-        <div className="p-4 mt-auto">
-          <div className="bg-surface-dark p-4 rounded-2xl border border-border-dark">
+        <div className="p-6 border-t border-border-light dark:border-border-dark space-y-4">
+          <button 
+            onClick={onToggleTheme}
+            className="flex items-center gap-3 w-full p-3 rounded-xl bg-bg-light dark:bg-bg-dark text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+          >
+            <span className="material-symbols-outlined">{darkMode ? 'light_mode' : 'dark_mode'}</span>
+            <span className="text-xs font-bold uppercase tracking-wider">{darkMode ? 'Tema Claro' : 'Tema Oscuro'}</span>
+          </button>
+          
+          <div className="bg-bg-light dark:bg-bg-dark p-4 rounded-2xl border border-border-light dark:border-border-dark">
             <div className="flex items-center gap-3">
               <div className="size-10 rounded-full bg-cover bg-center" style={{ backgroundImage: 'url("https://picsum.photos/100/100?random=1")' }}></div>
-              <div>
-                <p className="text-sm font-bold text-white">Dr. Carlos Vega</p>
-                <p className="text-xs text-text-secondary">Administrador</p>
+              <div className="min-w-0">
+                <p className="text-sm font-bold truncate text-slate-900 dark:text-white">Dr. Carlos Vega</p>
+                <p className="text-[10px] text-slate-500 uppercase font-black">Admin</p>
               </div>
             </div>
           </div>
@@ -68,29 +83,29 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       {/* Main Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-border-dark flex items-center justify-between px-6 bg-background-dark/80 backdrop-blur shrink-0 z-30">
+        <header className="h-20 border-b border-border-light dark:border-border-dark flex items-center justify-between px-8 bg-white/80 dark:bg-bg-dark/80 backdrop-blur shrink-0 z-30 transition-colors">
           <div className="flex items-center flex-1 max-w-xl">
             <div className="relative w-full">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-sm">search</span>
+              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
               <input
                 type="text"
-                placeholder="Buscar paciente o cita..."
-                className="w-full bg-surface-dark border-none rounded-full pl-10 pr-4 text-sm text-white placeholder-text-secondary focus:ring-1 focus:ring-primary h-9"
+                placeholder="Pacientes, citas, informes..."
+                className="w-full bg-bg-light dark:bg-surface-dark border-none rounded-2xl pl-12 pr-4 text-sm focus:ring-2 focus:ring-primary h-12 transition-colors"
               />
             </div>
           </div>
-          <div className="flex items-center gap-4 ml-4">
-             <button className="flex items-center gap-2 h-9 px-4 bg-primary hover:bg-primary-dark text-background-dark text-sm font-bold rounded-full transition-colors">
-                <span className="material-symbols-outlined text-[18px]">add</span>
-                <span className="hidden sm:inline">Nueva cita</span>
+          <div className="flex items-center gap-4 ml-6">
+            <button className="flex lg:hidden items-center p-2 text-slate-600 dark:text-slate-400">
+               <span className="material-symbols-outlined">menu</span>
             </button>
-            <button className="p-2 text-text-secondary hover:text-white transition-colors">
+            <button className="p-3 text-slate-500 hover:bg-bg-light dark:hover:bg-surface-dark rounded-xl transition-colors relative">
               <span className="material-symbols-outlined">notifications</span>
+              <span className="absolute top-3 right-3 size-2 bg-danger rounded-full border-2 border-white dark:border-bg-dark"></span>
             </button>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-[#131811]">
+        <main className="flex-1 overflow-y-auto">
           {children}
         </main>
       </div>

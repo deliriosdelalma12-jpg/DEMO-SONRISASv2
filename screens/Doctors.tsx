@@ -3,11 +3,52 @@ import React from 'react';
 import { Doctor } from '../types';
 
 const Doctors: React.FC = () => {
+  // Added missing properties (id, branch, phone, email, docs) to satisfy the Doctor interface
   const doctors: Doctor[] = [
-    { name: "Dr. Juan Pérez", specialty: "Odontología", status: "Active", img: "https://picsum.photos/200/200?random=20" },
-    { name: "Dra. Ana García", specialty: "Ortodoncia", status: "Active", img: "https://picsum.photos/200/200?random=21" },
-    { name: "Dr. Luis Rodríguez", specialty: "Cirugía Maxilofacial", status: "Vacation", img: "https://picsum.photos/200/200?random=22" },
-    { name: "Dra. Sarah Jenkins", specialty: "Endodoncia", status: "Active", img: "https://picsum.photos/200/200?random=23" },
+    { 
+      id: 'D001', 
+      name: "Dr. Juan Pérez", 
+      specialty: "Odontología", 
+      status: "Active", 
+      img: "https://picsum.photos/200/200?random=20",
+      branch: "Centro",
+      phone: "+34 600 000 001",
+      email: "juan@clinic.com",
+      docs: []
+    },
+    { 
+      id: 'D002', 
+      name: "Dra. Ana García", 
+      specialty: "Ortodoncia", 
+      status: "Active", 
+      img: "https://picsum.photos/200/200?random=21",
+      branch: "Norte",
+      phone: "+34 600 000 002",
+      email: "ana@clinic.com",
+      docs: []
+    },
+    { 
+      id: 'D003', 
+      name: "Dr. Luis Rodríguez", 
+      specialty: "Cirugía Maxilofacial", 
+      status: "Vacation", 
+      img: "https://picsum.photos/200/200?random=22",
+      branch: "Sur",
+      phone: "+34 600 000 003",
+      email: "luis@clinic.com",
+      docs: []
+    },
+    { 
+      id: 'D004', 
+      name: "Dra. Sarah Jenkins", 
+      specialty: "Endodoncia", 
+      status: "Active", 
+      img: "https://picsum.photos/200/200?random=23",
+      branch: "Centro",
+      phone: "+34 600 000 004",
+      email: "sarah@clinic.com",
+      docs: []
+    },
   ];
 
   return (
