@@ -145,6 +145,43 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
     return { uniquePatients, completed, satisfaction, avgTime };
   }, [selectedDoctorForProfile, appointments]);
 
+  // CÁLCULO EN TIEMPO REAL DE VACACIONES
+  const realTimeVacationStats = useMemo(() => {
+    if (!editDocData) return { consumed: 0, pending: 0, balance: 30 };
+    
+    const today = new Date();
+    today.setHours(0,0,0,0); // Normalizar a medianoche para comparar solo fechas
+
+    let consumed = 0;
+    let pending = 0;
+
+    (editDocData.vacationHistory || []).forEach(v => {
+      if (v.status === 'Rechazada') return; // Ignorar rechazadas
+
+      const start = new Date(v.start);
+      const end = new Date(v.end);
+      
+      // Iterar día por día dentro del rango
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        // Normalizar día actual del bucle
+        const currentCheck = new Date(d);
+        currentCheck.setHours(0,0,0,0);
+
+        if (currentCheck <= today) {
+          consumed++; // Ya pasó o es hoy
+        } else {
+          pending++; // Es futuro
+        }
+      }
+    });
+
+    const totalAllowed = editDocData.vacationDaysTotal || 30;
+    // Saldo disponible se reduce conforme se consumen los días (pasan los días)
+    const balance = totalAllowed - consumed;
+
+    return { consumed, pending, balance, totalAllowed };
+  }, [editDocData]);
+
   const handleOpenProfile = (doc: Doctor) => {
     setSelectedDoctorForProfile(doc);
     setEditDocData({ 
@@ -157,7 +194,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
 
   const handleSaveProfile = () => {
     if (editDocData && setDoctors) {
-      // Validaciones al guardar cambios en perfil
       const missing = [];
       if (!editDocData.name?.trim()) missing.push("Nombre");
       if (!editDocData.specialty?.trim()) missing.push("Especialidad");
@@ -176,8 +212,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
 
   const handleCreateDoctor = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validación detallada con alertas
     const missing = [];
     if (!newDocData.name?.trim()) missing.push("Nombre y Apellidos");
     if (!newDocData.specialty?.trim()) missing.push("Especialidad Clínica");
@@ -196,27 +230,8 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
       
       setDoctors(prev => [...prev, doctorToAdd]);
       setIsCreating(false);
-      // Reset form
       setNewDocData({
-        id: '',
-        name: '',
-        role: 'Doctor',
-        specialty: '',
-        status: 'Active',
-        img: 'https://i.pravatar.cc/150?u=' + Math.random(),
-        branch: 'Centro',
-        phone: '',
-        corporateEmail: '',
-        docs: [],
-        schedule: getInitialSchedule(),
-        contractType: 'Indefinido - Jornada Completa',
-        hourlyRate: 0,
-        overtimeHours: 0,
-        totalHoursWorked: 0,
-        vacationDaysTotal: 30,
-        vacationDaysTaken: 0,
-        vacationHistory: [],
-        attendanceHistory: []
+        id: '', name: '', role: 'Doctor', specialty: '', status: 'Active', img: 'https://i.pravatar.cc/150?u=' + Math.random(), branch: 'Centro', phone: '', corporateEmail: '', docs: [], schedule: getInitialSchedule(), contractType: 'Indefinido - Jornada Completa', hourlyRate: 0, overtimeHours: 0, totalHoursWorked: 0, vacationDaysTotal: 30, vacationDaysTaken: 0, vacationHistory: [], attendanceHistory: []
       });
     }
   };
@@ -241,11 +256,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
     if (file) {
       const newDoc: FileAttachment = {
         id: Math.random().toString(36).substr(2, 9),
-        name: file.name,
-        type: file.type,
-        size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-        date: new Date().toISOString().split('T')[0],
-        url: URL.createObjectURL(file)
+        name: file.name, type: file.type, size: (file.size / 1024 / 1024).toFixed(2) + ' MB', date: new Date().toISOString().split('T')[0], url: URL.createObjectURL(file)
       };
       if (target === 'edit' && editDocData) {
         setEditDocData({ ...editDocData, docs: [...(editDocData.docs || []), newDoc] });
@@ -259,11 +270,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
     if (!editDocData || !newAttendance.date) return;
     const record: AttendanceRecord = {
       id: Math.random().toString(36).substr(2, 9),
-      date: newAttendance.date,
-      type: newAttendance.type as any,
-      duration: newAttendance.duration,
-      status: newAttendance.status as any,
-      notes: newAttendance.notes
+      date: newAttendance.date, type: newAttendance.type as any, duration: newAttendance.duration, status: newAttendance.status as any, notes: newAttendance.notes
     };
     setEditDocData({
       ...editDocData,
@@ -326,7 +333,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
         ))}
       </div>
 
-      {/* MODAL: REGISTRO NUEVO MÉDICO */}
+      {/* ... (MODAL REGISTRO NUEVO MÉDICO - Mismo contenido) ... */}
       {isCreating && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in zoom-in duration-300">
           <div className="bg-[#f1f5f9] dark:bg-bg-dark w-full max-w-6xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col border border-border-light dark:border-border-dark h-[90vh]">
@@ -352,7 +359,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                 <div className="space-y-10 p-10 bg-white/70 dark:bg-surface-dark/60 rounded-[3rem] border border-white dark:border-border-dark shadow-sm">
                   <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">contact_page</span> Identidad y Foto</h4>
-                  
                   <div className="flex flex-col md:flex-row gap-8 items-center">
                     <div className="shrink-0 group relative">
                       <div className="size-40 rounded-[2.5rem] bg-cover bg-center border-4 border-white dark:border-slate-700 shadow-xl overflow-hidden" style={{ backgroundImage: `url("${newDocData.img}")` }}>
@@ -363,19 +369,16 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                       </div>
                       <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={(e) => handleAvatarChange(e, 'create')} />
                     </div>
-
                     <div className="flex-1 grid grid-cols-1 gap-6 w-full">
                       <DataField required label="Nombre y Apellidos" value={newDocData.name} onChange={(val: string) => setNewDocData({...newDocData, name: val})} />
                       <DataField required label="Especialidad Clínica" value={newDocData.specialty} onChange={(val: string) => setNewDocData({...newDocData, specialty: val})} />
                     </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-8">
                     <DataField required label="Email Corporativo" value={newDocData.corporateEmail} onChange={(val: string) => setNewDocData({...newDocData, corporateEmail: val})} />
                     <DataField label="Extensión / Teléfono" value={newDocData.phone} onChange={(val: string) => setNewDocData({...newDocData, phone: val})} />
                   </div>
                 </div>
-
                 <div className="space-y-10 p-10 bg-white/70 dark:bg-surface-dark/60 rounded-[3rem] border border-white dark:border-border-dark shadow-sm">
                   <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">work</span> Condiciones del Contrato</h4>
                   <div className="grid grid-cols-1 gap-8">
@@ -388,26 +391,15 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                   </div>
                 </div>
               </div>
-
+              {/* ... Resto del formulario igual ... */}
               <div className="p-10 bg-white/70 dark:bg-surface-dark/60 rounded-[3rem] border border-white dark:border-border-dark shadow-sm space-y-10">
                 <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">calendar_month</span> Disponibilidad de Turnos (Doble Jornada)</h4>
                 <div className="grid grid-cols-1 gap-6">
                   {DAYS.map(day => (
-                    <ScheduleRow 
-                      key={day} day={day} editing={true}
-                      schedule={newDocData.schedule?.[day]}
-                      onChange={(d: string, s: string, p: string, v: string) => {
-                        const newSched = { ...newDocData.schedule };
-                        if (newSched[d]) {
-                          (newSched[d] as any)[s][p] = v;
-                          setNewDocData({ ...newDocData, schedule: newSched });
-                        }
-                      }}
-                    />
+                    <ScheduleRow key={day} day={day} editing={true} schedule={newDocData.schedule?.[day]} onChange={(d: string, s: string, p: string, v: string) => { const newSched = { ...newDocData.schedule }; if (newSched[d]) { (newSched[d] as any)[s][p] = v; setNewDocData({ ...newDocData, schedule: newSched }); } }} />
                   ))}
                 </div>
               </div>
-
               <div className="p-10 bg-white/70 dark:bg-surface-dark/60 rounded-[3rem] border border-white dark:border-border-dark shadow-sm space-y-10">
                 <div className="flex justify-between items-center">
                   <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3"><span className="material-symbols-outlined text-sm">folder_managed</span> Documentación Administrativa</h4>
@@ -486,7 +478,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                  </nav>
 
                  <div className="flex-1 overflow-y-auto p-12 custom-scrollbar space-y-12 bg-transparent">
-                    
+                    {/* ... (TABS PERFIL Y HORARIO - Mismo contenido) ... */}
                     {activeTab === 'perfil' && (
                       <div className="space-y-12 animate-in fade-in slide-in-from-right-4">
                          <div className="bg-white/70 dark:bg-surface-dark/60 p-10 rounded-[3rem] border border-white dark:border-border-dark shadow-sm">
@@ -644,18 +636,25 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                                <div className="space-y-8 flex flex-col justify-center">
                                   <div className="flex justify-between items-end mb-2">
                                      <div>
-                                        <p className="text-5xl font-black text-slate-800 dark:text-white leading-none">{(editDocData.vacationDaysTotal || 30) - (editDocData.vacationDaysTaken || 0)}</p>
+                                        <p className="text-5xl font-black text-slate-800 dark:text-white leading-none">
+                                          {realTimeVacationStats.balance}
+                                        </p>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-3">Días de Saldo Disponible</p>
                                      </div>
                                      <div className="text-right">
-                                        <p className="text-2xl font-black text-slate-500 dark:text-slate-400 leading-none">{editDocData.vacationDaysTaken || 0}</p>
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Días Disfrutados</p>
+                                        <p className="text-2xl font-black text-slate-500 dark:text-slate-400 leading-none">
+                                          {realTimeVacationStats.consumed}
+                                        </p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Días Disfrutados (Pasados)</p>
+                                        {realTimeVacationStats.pending > 0 && (
+                                          <p className="text-[10px] font-bold text-primary uppercase tracking-[0.2em] mt-1">{realTimeVacationStats.pending} Días Pendientes (Futuros)</p>
+                                        )}
                                      </div>
                                   </div>
                                   <div className="w-full h-6 bg-slate-100 dark:bg-bg-dark rounded-full overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner">
                                      <div 
                                         className="h-full bg-gradient-to-r from-primary to-primary-dark transition-all duration-1000 shadow-lg" 
-                                        style={{ width: `${((editDocData.vacationDaysTaken || 0) / (editDocData.vacationDaysTotal || 30)) * 100}%` }}
+                                        style={{ width: `${(realTimeVacationStats.consumed / realTimeVacationStats.totalAllowed) * 100}%` }}
                                      ></div>
                                   </div>
                                </div>
@@ -687,6 +686,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                       </div>
                     )}
 
+                    {/* ... (RESTO DE TABS IGUAL) ... */}
                     {activeTab === 'rendimiento' && metrics && (
                       <div className="space-y-12 animate-in fade-in slide-in-from-right-4 text-center">
                          <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3 text-left mb-10"><span className="material-symbols-outlined text-sm">analytics</span> Analítica de Impacto Clínico</h4>
@@ -779,7 +779,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
         />
       )}
 
-      {/* PANEL LATERAL: AGENDA 48H */}
+      {/* ... (PANEL LATERAL AGENDA - Mismo contenido) ... */}
       {selectedDoctorForAgenda && (
         <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in zoom-in duration-300">
            <div className="bg-[#f1f5f9] dark:bg-bg-dark w-full max-w-6xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col border border-border-light dark:border-border-dark h-[85vh]">

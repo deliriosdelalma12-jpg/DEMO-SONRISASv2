@@ -9,9 +9,10 @@ interface LayoutProps {
   onToggleTheme: () => void;
   currentUser: User;
   settings: ClinicSettings;
+  onOpenVoiceAssistant: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, currentUser, settings }) => {
+const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, currentUser, settings, onOpenVoiceAssistant }) => {
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
 
@@ -30,11 +31,19 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
       {/* SIDEBAR: Ahora solo contiene el logo y la navegación */}
       <aside className="w-[280px] border-r border-border-light dark:border-border-dark flex flex-col hidden lg:flex shrink-0 bg-white dark:bg-surface-dark transition-colors">
         <div className="p-8">
-          <Link to="/" className="flex items-center gap-3">
-            <div className="size-10 text-primary">
-              <img src={settings.logo} alt="Logo" className="w-full h-full object-contain" />
+          <Link to="/" className={`flex items-center gap-3 ${!settings.name ? 'justify-center' : ''}`}>
+            <div className={`${settings.name ? 'size-10' : 'w-full h-16'} text-primary transition-all duration-300`}>
+              <img 
+                src={settings.logo} 
+                alt="Logo" 
+                className={`w-full h-full object-contain ${!settings.name ? 'object-left' : ''}`} 
+              />
             </div>
-            <h2 className="text-slate-900 dark:text-white text-2xl font-display font-bold tracking-tight truncate">{settings.name}</h2>
+            {settings.name && (
+              <h2 className="text-slate-900 dark:text-white text-2xl font-display font-bold tracking-tight truncate">
+                {settings.name}
+              </h2>
+            )}
           </Link>
         </div>
 
@@ -63,22 +72,26 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
 
       <div className="flex-1 flex flex-col min-w-0 relative">
         {/* HEADER: Rediseñado para incluir el perfil arriba a la derecha en grande */}
-        <header className="h-24 border-b border-border-light dark:border-border-dark flex items-center justify-between px-10 bg-white/80 dark:bg-surface-dark/80 backdrop-blur-xl shrink-0 z-30 transition-all no-print">
+        <header className="h-24 border-b border-border-light dark:border-border-dark flex items-center justify-between px-10 bg-white/80 dark:bg-surface-dark/80 backdrop-blur-xl shrink-0 z-30 transition-all no-print relative">
           
-          {/* Lado Izquierdo: Buscador */}
-          <div className="flex items-center flex-1 max-w-xl">
-            <div className="relative w-full group">
-              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-primary transition-colors">search</span>
-              <input 
-                type="text" 
-                placeholder={`Buscar en ${settings.name}...`} 
-                className="w-full bg-bg-light dark:bg-bg-dark border-2 border-transparent rounded-[1.25rem] pl-14 pr-4 text-sm font-medium focus:ring-0 focus:border-primary/20 h-14 transition-all" 
-              />
-            </div>
+          {/* Spacer izquierdo para equilibrar el layout */}
+          <div className="flex-1"></div>
+
+          {/* Botón Asistente Telefónico (Centrado y más pequeño) */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <button 
+              onClick={onOpenVoiceAssistant}
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:scale-105 transition-transform shadow-lg shadow-primary/30 group"
+            >
+              <div className="p-1 bg-white/20 rounded-full group-hover:animate-pulse">
+                <span className="material-symbols-outlined text-base">call</span>
+              </div>
+              Asistente AI
+            </button>
           </div>
 
           {/* Lado Derecho: Perfil y Tema (ARRIBA A LA DERECHA EN GRANDE) */}
-          <div className="flex items-center gap-8 pl-8">
+          <div className="flex items-center gap-8 pl-8 flex-1 justify-end">
             
             {/* Toggle de Tema Discreto */}
             <button 

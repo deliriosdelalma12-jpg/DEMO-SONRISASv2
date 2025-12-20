@@ -42,6 +42,40 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
     return doctors.find(d => d.id === selectedDoctorId);
   }, [doctors, selectedDoctorId]);
 
+  // CALCULO EN TIEMPO REAL PARA EL MODAL DE RRHH (IGUAL QUE EN DOCTORS.TSX)
+  const realTimeVacationStats = useMemo(() => {
+    if (!selectedDoctorDetails) return { consumed: 0, pending: 0, balance: 30 };
+    
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    let consumed = 0;
+    let pending = 0;
+
+    (selectedDoctorDetails.vacationHistory || []).forEach(v => {
+      if (v.status === 'Rechazada') return;
+
+      const start = new Date(v.start);
+      const end = new Date(v.end);
+      
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const currentCheck = new Date(d);
+        currentCheck.setHours(0,0,0,0);
+
+        if (currentCheck <= today) {
+          consumed++;
+        } else {
+          pending++;
+        }
+      }
+    });
+
+    const totalAllowed = selectedDoctorDetails.vacationDaysTotal || 30;
+    const balance = totalAllowed - consumed; // Saldo solo baja si se consume el día
+
+    return { consumed, pending, balance, totalAllowed };
+  }, [selectedDoctorDetails]);
+
   const allVacations = useMemo(() => {
     return doctors.flatMap(doc => 
       (doc.vacationHistory || []).map(v => ({ ...v, doctorName: doc.name, doctorImg: doc.img, doctorId: doc.id }))
@@ -116,19 +150,16 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
           newHistory = [vacation, ...newHistory];
         }
 
-        // AUTO-CALCULAR: Sumar todos los días de vacaciones que NO estén rechazados
-        const totalTaken = newHistory
-          .filter(v => v.status !== 'Rechazada')
-          .reduce((acc, curr) => acc + curr.daysUsed, 0);
-
+        // Ya no guardamos vacationDaysTaken estático porque se calcula al vuelo en la visualización
+        // Pero para compatibilidad si alguna parte lo usa, podemos guardar un estimado
+        
         return { 
           ...doc, 
           vacationHistory: newHistory,
-          vacationDaysTaken: totalTaken // Actualizamos el contador global del empleado
+          // vacationDaysTaken se recalculará dinámicamente en la vista
         };
 
       } else {
-        // Lógica para Incidencias (Ausencias, Retrasos, Bajas)
         const attendance: AttendanceRecord = {
           id: editingRecordId || Math.random().toString(36).substr(2, 9),
           date: formData.date,
@@ -145,7 +176,6 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
           newHistory = [attendance, ...newHistory];
         }
         
-        // Si es una baja médica activa, podríamos cambiar el estado del doctor
         let newStatus = doc.status;
         if (attendance.type === 'Baja Médica' && attendance.status === 'Justificado') {
              newStatus = 'Medical Leave';
@@ -164,17 +194,7 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
       
       if (type === 'v') {
         const newHistory = doc.vacationHistory?.map(v => v.id === recordId ? { ...v, status: newStatus as any } : v) || [];
-        
-        // Recalcular saldo siempre que cambia un estado
-        const totalTaken = newHistory
-          .filter(v => v.status !== 'Rechazada')
-          .reduce((acc, curr) => acc + curr.daysUsed, 0);
-
-        return {
-          ...doc,
-          vacationHistory: newHistory,
-          vacationDaysTaken: totalTaken
-        };
+        return { ...doc, vacationHistory: newHistory };
       } else {
         return {
           ...doc,
@@ -202,6 +222,7 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
         </button>
       </div>
 
+      {/* ... (KPI Cards y Tabla - Igual que antes) ... */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="bg-white dark:bg-surface-dark p-8 rounded-[3rem] border-2 border-border-light dark:border-border-dark flex flex-col items-center gap-4 text-center shadow-sm">
           <div className="size-20 rounded-3xl bg-blue-500/10 text-blue-500 flex items-center justify-center"><span className="material-symbols-outlined text-5xl">beach_access</span></div>
@@ -243,7 +264,7 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
                 <tr>
                   <th className="px-10 py-6">Empleado / Doctor</th>
                   <th className="px-10 py-6">Periodo</th>
-                  <th className="px-10 py-6">Días Consumidos</th>
+                  <th className="px-10 py-6">Duración Total</th>
                   <th className="px-10 py-6">Estado</th>
                   <th className="px-10 py-6 text-right">Acciones</th>
                 </tr>
@@ -400,7 +421,7 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
                 </select>
               </div>
 
-              {/* CARD DE RESUMEN DEL EMPLEADO SELECCIONADO (CLAVE PARA EL REQUERIMIENTO) */}
+              {/* CARD DE RESUMEN DEL EMPLEADO SELECCIONADO (CON CALCULOS REAL-TIME) */}
               {selectedDoctorDetails && (
                 <div className="p-6 bg-slate-100 dark:bg-slate-800/50 rounded-3xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row gap-6 animate-in fade-in slide-in-from-top-2">
                    <div className="flex items-center gap-4 border-r border-slate-300 dark:border-slate-600 pr-6 mr-2">
@@ -415,15 +436,15 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
                      <div className="flex-1 flex justify-around items-center text-center">
                         <div>
                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Totales</p>
-                           <p className="text-xl font-black text-slate-800 dark:text-white">{selectedDoctorDetails.vacationDaysTotal || 30}</p>
+                           <p className="text-xl font-black text-slate-800 dark:text-white">{realTimeVacationStats.totalAllowed}</p>
                         </div>
                         <div>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Consumidos</p>
-                           <p className="text-xl font-black text-orange-500">{selectedDoctorDetails.vacationDaysTaken || 0}</p>
+                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Consumidos (Hoy)</p>
+                           <p className="text-xl font-black text-orange-500">{realTimeVacationStats.consumed}</p>
                         </div>
                         <div>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Restantes</p>
-                           <p className="text-xl font-black text-primary">{(selectedDoctorDetails.vacationDaysTotal || 30) - (selectedDoctorDetails.vacationDaysTaken || 0)}</p>
+                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saldo Disp.</p>
+                           <p className="text-xl font-black text-primary">{realTimeVacationStats.balance}</p>
                         </div>
                      </div>
                    ) : (
@@ -437,6 +458,7 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
                 </div>
               )}
 
+              {/* ... (Resto del formulario igual) ... */}
               <div className="grid grid-cols-2 gap-6">
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Tipo de Evento</label>
@@ -473,7 +495,7 @@ const HRManagement: React.FC<HRManagementProps> = ({ doctors, setDoctors }) => {
                 <div className="flex flex-col gap-2 animate-in slide-in-from-top-2">
                   <div className="flex justify-between items-center">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Fecha Finalización (Inclusive)</label>
-                     <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-lg">Total: {calculatedDays} días</span>
+                     <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-lg">Total Planificado: {calculatedDays} días</span>
                   </div>
                   <input type="date" min={formData.date} value={formData.endDate} onChange={(e) => setFormData({...formData, endDate: e.target.value})} className="w-full bg-white dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none" />
                 </div>

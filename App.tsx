@@ -28,6 +28,10 @@ const INITIAL_DOCTORS: Doctor[] = [
     img: 'https://img.freepik.com/foto-gratis/mujer-doctora-vistiendo-bata-laboratorio-estetoscopio-aislado_1303-29791.jpg',
     branch: 'Centro', phone: '600 111 222', corporateEmail: 'ana.torres@mediclinic.com', docs: [],
     vacationDaysTotal: 30, vacationDaysTaken: 5,
+    vacationHistory: [
+      { id: 'hist_1', start: '2023-08-01', end: '2023-08-05', daysUsed: 5, status: 'Aprobada', type: 'Vacaciones' }
+    ],
+    attendanceHistory: [],
     schedule: {
       'Lunes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
       'Miércoles': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
@@ -38,19 +42,29 @@ const INITIAL_DOCTORS: Doctor[] = [
     id: 'D2', name: 'Dr. Carlos Ruiz', role: 'Doctor', specialty: 'Implantología', status: 'Active',
     img: 'https://img.freepik.com/foto-gratis/doctor-sonriente-con-estetoscopio_1154-255.jpg',
     branch: 'Norte', phone: '600 333 444', corporateEmail: 'carlos.ruiz@mediclinic.com', docs: [],
-    vacationDaysTotal: 30, vacationDaysTaken: 12
+    vacationDaysTotal: 30, vacationDaysTaken: 12,
+    vacationHistory: [
+      { id: 'hist_2', start: '2023-07-10', end: '2023-07-21', daysUsed: 12, status: 'Aprobada', type: 'Vacaciones' }
+    ],
+    attendanceHistory: []
   },
   {
     id: 'D3', name: 'Dra. Sofia Mendez', role: 'Doctor', specialty: 'Odontopediatría', status: 'Vacation',
     img: 'https://img.freepik.com/foto-gratis/enfermera-joven-hispana-uniforme-medico-estetoscopio-sobre-fondo-amarillo-mirando-hacia-lado-sonrisa-natural-cara-risa-segura_141793-128229.jpg',
     branch: 'Sur', phone: '600 555 666', corporateEmail: 'sofia.mendez@mediclinic.com', docs: [],
-    vacationDaysTotal: 22, vacationDaysTaken: 22
+    vacationDaysTotal: 22, vacationDaysTaken: 22,
+    vacationHistory: [
+      { id: 'hist_3', start: '2023-09-01', end: '2023-09-22', daysUsed: 22, status: 'Aprobada', type: 'Vacaciones' }
+    ],
+    attendanceHistory: []
   },
   {
     id: 'D4', name: 'Dr. Javier Costa', role: 'Doctor', specialty: 'Cirugía Maxilofacial', status: 'Active',
     img: 'https://img.freepik.com/foto-gratis/retrato-hombre-sonriente-trabajador-hospital_23-2148858880.jpg',
     branch: 'Centro', phone: '600 777 888', corporateEmail: 'javier.costa@mediclinic.com', docs: [],
-    vacationDaysTotal: 30, vacationDaysTaken: 0
+    vacationDaysTotal: 30, vacationDaysTaken: 0,
+    vacationHistory: [],
+    attendanceHistory: []
   }
 ];
 
@@ -183,7 +197,13 @@ const App: React.FC = () => {
 
   return (
     <HashRouter>
-      <Layout darkMode={darkMode} onToggleTheme={() => setDarkMode(!darkMode)} currentUser={currentUser} settings={settings}>
+      <Layout 
+        darkMode={darkMode} 
+        onToggleTheme={() => setDarkMode(!darkMode)} 
+        currentUser={currentUser} 
+        settings={settings}
+        onOpenVoiceAssistant={() => setIsVoiceOpen(true)}
+      >
         <Routes>
           <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} />} />
           <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} />} />
@@ -194,10 +214,6 @@ const App: React.FC = () => {
           <Route path="/settings" element={<Settings settings={settings} setSettings={setSettings} onToggleTheme={() => setDarkMode(!darkMode)} darkMode={darkMode} systemUsers={[currentUser]} setSystemUsers={() => {}} doctors={doctors} setDoctors={setDoctors} />} />
         </Routes>
       </Layout>
-
-      <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-50">
-        <button onClick={() => setIsVoiceOpen(true)} className="size-14 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform shadow-primary/40"><span className="material-symbols-outlined text-3xl">audio_spark</span></button>
-      </div>
 
       {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} />}
     </HashRouter>

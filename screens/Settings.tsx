@@ -64,6 +64,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
   // State for Labor Management (Operational - Assigning incidents/vacations)
   const [manageType, setManageType] = useState<'incident' | 'vacation'>('incident');
   const [selectedEmpId, setSelectedEmpId] = useState<string>('');
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null); // New state for editing
   const [eventData, setEventData] = useState({
     typeId: '',
     date: new Date().toISOString().split('T')[0],
@@ -75,12 +76,25 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
 
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Global History Calculation
+  // Global History Calculation with doctorId and endDate for editing
   const globalHistory = useMemo(() => {
     if (!doctors) return [];
-    const incidents = doctors.flatMap(d => (d.attendanceHistory || []).map(a => ({...a, empName: d.name, category: 'Incidencia'})));
+    const incidents = doctors.flatMap(d => (d.attendanceHistory || []).map(a => ({
+        ...a, 
+        empName: d.name, 
+        doctorId: d.id, 
+        category: 'Incidencia'
+    })));
     const vacations = doctors.flatMap(d => (d.vacationHistory || []).map(v => ({
-      id: v.id, date: v.start, type: v.type, status: v.status, notes: `${v.daysUsed} días (${v.start} a ${v.end})`, empName: d.name, category: 'Vacaciones'
+      id: v.id, 
+      date: v.start, 
+      endDate: v.end, 
+      type: v.type, 
+      status: v.status, 
+      notes: `${v.daysUsed} días (${v.start} a ${v.end})`, 
+      empName: d.name, 
+      doctorId: d.id, 
+      category: 'Vacaciones'
     })));
     return [...incidents, ...vacations].sort((a, b) => b.date.localeCompare(a.date));
   }, [doctors]);
@@ -219,16 +233,24 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
       if (manageType === 'incident') {
         const typeName = settings.laborSettings.incidentTypes.find(t => t.id === eventData.typeId)?.name || 'Incidencia';
         const newRecord: AttendanceRecord = {
-          id: 'REC-' + Date.now(),
+          id: editingRecordId || 'REC-' + Date.now(),
           date: eventData.date,
           type: typeName,
           duration: eventData.duration,
           status: eventData.status as any,
           notes: eventData.notes
         };
+        
+        let newHistory = [...(doc.attendanceHistory || [])];
+        if (editingRecordId) {
+            newHistory = newHistory.map(rec => rec.id === editingRecordId ? newRecord : rec);
+        } else {
+            newHistory = [newRecord, ...newHistory];
+        }
+
         return {
           ...doc,
-          attendanceHistory: [newRecord, ...(doc.attendanceHistory || [])]
+          attendanceHistory: newHistory
         };
       } else {
         // Vacation Logic
@@ -237,7 +259,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1;
         
         const newVacation: VacationRequest = {
-          id: 'VAC-' + Date.now(),
+          id: editingRecordId || 'VAC-' + Date.now(),
           start: eventData.date,
           end: eventData.endDate,
           daysUsed: days > 0 ? days : 1,
@@ -245,21 +267,92 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
           type: 'Vacaciones'
         };
 
-        const updatedHistory = [newVacation, ...(doc.vacationHistory || [])];
-        const totalTaken = updatedHistory.filter(v => v.status !== 'Rechazada').reduce((acc, c) => acc + c.daysUsed, 0);
+        let newHistory = [...(doc.vacationHistory || [])];
+        if (editingRecordId) {
+            newHistory = newHistory.map(rec => rec.id === editingRecordId ? newVacation : rec);
+        } else {
+            newHistory = [newVacation, ...newHistory];
+        }
+
+        const totalTaken = newHistory.filter(v => v.status !== 'Rechazada').reduce((acc, c) => acc + c.daysUsed, 0);
 
         return {
           ...doc,
-          vacationHistory: updatedHistory,
+          vacationHistory: newHistory,
           vacationDaysTaken: totalTaken
         };
       }
     }));
 
-    // Reset Form partial
-    setEventData({ ...eventData, notes: '', duration: '' });
+    // Reset Form
+    setEventData({ ...eventData, notes: '', duration: '', date: new Date().toISOString().split('T')[0], endDate: new Date().toISOString().split('T')[0], typeId: '' });
+    setEditingRecordId(null);
+    setSelectedEmpId('');
     setShowSuccessMsg(true);
     setTimeout(() => setShowSuccessMsg(false), 3000);
+  };
+
+  const handleEditRecord = (item: any) => {
+      setSelectedEmpId(item.doctorId);
+      setEditingRecordId(item.id);
+      
+      if (item.category === 'Vacaciones') {
+          setManageType('vacation');
+          setEventData({
+              ...eventData,
+              date: item.date,
+              endDate: item.endDate || item.date,
+              notes: '',
+              typeId: '', 
+              status: item.status
+          });
+      } else {
+          setManageType('incident');
+          // Find type ID by name
+          const typeObj = settings.laborSettings.incidentTypes.find(t => t.name === item.type);
+          setEventData({
+              ...eventData,
+              date: item.date,
+              duration: item.duration || '',
+              notes: item.notes || '',
+              typeId: typeObj ? typeObj.id : '',
+              status: item.status
+          });
+      }
+  };
+
+  const handleDeleteRecord = (doctorId: string, recordId: string, category: string) => {
+      if(!window.confirm("¿Seguro que deseas eliminar este registro?")) return;
+      if (!setDoctors) return;
+
+      setDoctors(prev => prev.map(doc => {
+          if (doc.id !== doctorId) return doc;
+          
+          if (category === 'Vacaciones') {
+              return {
+                  ...doc,
+                  vacationHistory: doc.vacationHistory?.filter(v => v.id !== recordId)
+              };
+          } else {
+              return {
+                  ...doc,
+                  attendanceHistory: doc.attendanceHistory?.filter(a => a.id !== recordId)
+              };
+          }
+      }));
+  };
+
+  const handleCancelEdit = () => {
+      setEditingRecordId(null);
+      setSelectedEmpId('');
+      setEventData({
+        typeId: '',
+        date: new Date().toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0],
+        duration: '',
+        notes: '',
+        status: 'Justificado'
+      });
   };
 
   return (
@@ -269,11 +362,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4">
            <div className="bg-success text-white px-8 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-black uppercase tracking-widest text-[10px]">
               <span className="material-symbols-outlined">check_circle</span>
-              Registro guardado y sincronizado
+              {editingRecordId ? 'Registro actualizado' : 'Registro guardado y sincronizado'}
            </div>
         </div>
       )}
 
+      {/* ... (HEADER y TABS IGUAL) ... */}
       <header className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <h1 className="text-5xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">
@@ -285,118 +379,49 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         </div>
 
         <div className="flex bg-slate-100 dark:bg-bg-dark p-2 rounded-[2.5rem] w-fit border border-slate-200 dark:border-slate-800 shadow-inner overflow-x-auto max-w-full">
-           <button 
-             onClick={() => setActiveTab('company')}
-             className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'company' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}
-           >
-              <span className="material-symbols-outlined text-lg">business</span> Empresa
-           </button>
-           <button 
-             onClick={() => setActiveTab('labor')}
-             className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'labor' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}
-           >
-              <span className="material-symbols-outlined text-lg">badge</span> Laboral
-           </button>
-           <button 
-             onClick={() => setActiveTab('visual')}
-             className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'visual' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}
-           >
-              <span className="material-symbols-outlined text-lg">palette</span> Visual
-           </button>
-           <button 
-             onClick={() => setActiveTab('assistant')}
-             className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'assistant' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}
-           >
-              <span className="material-symbols-outlined text-lg">psychology</span> Asistente IA
-           </button>
+           <button onClick={() => setActiveTab('company')} className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'company' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">business</span> Empresa</button>
+           <button onClick={() => setActiveTab('labor')} className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'labor' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">badge</span> Laboral</button>
+           <button onClick={() => setActiveTab('visual')} className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'visual' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">palette</span> Visual</button>
+           <button onClick={() => setActiveTab('assistant')} className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'assistant' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">psychology</span> Asistente IA</button>
         </div>
       </header>
 
+      {/* ... (TABS COMPANY, VISUAL, ASSISTANT IGUALES) ... */}
       {activeTab === 'company' && (
         <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-left-4 duration-500">
-          
           <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
-              <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center">
-                <span className="material-symbols-outlined">info</span>
-              </div>
+              <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">info</span></div>
               <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Datos de Marca e Identidad</h3>
             </div>
             <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
-               <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial</label>
-                 <input type="text" value={settings.name} onChange={e => setSettings({...settings, name: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" />
-               </div>
-               <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Divisa</label>
-                 <select value={settings.currency} onChange={e => setSettings({...settings, currency: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold">
-                    <option value="€">Euro (€)</option>
-                    <option value="$">Dólar ($)</option>
-                 </select>
-               </div>
-               <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Idioma Web</label>
-                 <select value={settings.language} onChange={e => setSettings({...settings, language: e.target.value as any})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold">
-                    <option value="es-ES">Español (España)</option>
-                    <option value="es-LATAM">Español (Latinoamérica)</option>
-                    <option value="en-US">English (US)</option>
-                 </select>
-               </div>
+               <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial</label><input type="text" value={settings.name} onChange={e => setSettings({...settings, name: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" /></div>
+               <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Divisa</label><select value={settings.currency} onChange={e => setSettings({...settings, currency: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"><option value="€">Euro (€)</option><option value="$">Dólar ($)</option></select></div>
+               <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Idioma Web</label><select value={settings.language} onChange={e => setSettings({...settings, language: e.target.value as any})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"><option value="es-ES">Español (España)</option><option value="es-LATAM">Español (Latinoamérica)</option><option value="en-US">English (US)</option></select></div>
                <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-bg-dark rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 group relative overflow-hidden">
                   {settings.logo ? <img src={settings.logo} className="h-12 w-auto object-contain mb-2" /> : <span className="material-symbols-outlined text-4xl text-slate-300">image</span>}
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Logo Institucional</p>
                   <button onClick={() => logoInputRef.current?.click()} className="absolute inset-0 bg-primary/80 text-white opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center font-bold text-xs">Cambiar Logo</button>
-                  <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={e => {
-                    const f = e.target.files?.[0];
-                    if(f) {
-                      const r = new FileReader();
-                      r.onload = (re) => setSettings({...settings, logo: re.target?.result as string});
-                      r.readAsDataURL(f);
-                    }
-                  }} />
+                  <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={e => {const f = e.target.files?.[0]; if(f) {const r = new FileReader(); r.onload = (re) => setSettings({...settings, logo: re.target?.result as string}); r.readAsDataURL(f);}}} />
                </div>
             </div>
           </section>
-
           <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
-              <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center">
-                <span className="material-symbols-outlined">medical_services</span>
-              </div>
-              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Catálogo de Servicios y Tiempos</h3>
+              <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">medical_services</span></div>
+              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Catálogo de Servicios</h3>
             </div>
             <div className="p-10 space-y-8">
                <div className="flex gap-4 flex-wrap">
-                  <input 
-                    type="text" placeholder="Nombre del servicio" 
-                    value={newServiceName} onChange={e => setNewServiceName(e.target.value)}
-                    className="flex-1 min-w-[200px] bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
-                  />
-                  <div className="relative">
-                    <input 
-                      type="number" placeholder="Precio" 
-                      value={newServicePrice} onChange={e => setNewServicePrice(e.target.value)}
-                      className="w-32 bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold pr-12"
-                    />
-                    <span className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-slate-400">{settings.currency}</span>
-                  </div>
-                  <div className="relative">
-                    <input 
-                      type="number" placeholder="Minutos" 
-                      value={newServiceDuration} onChange={e => setNewServiceDuration(e.target.value)}
-                      className="w-32 bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold pr-12"
-                    />
-                    <span className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-slate-400 text-[10px]">MIN</span>
-                  </div>
+                  <input type="text" placeholder="Nombre del servicio" value={newServiceName} onChange={e => setNewServiceName(e.target.value)} className="flex-1 min-w-[200px] bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" />
+                  <div className="relative"><input type="number" placeholder="Precio" value={newServicePrice} onChange={e => setNewServicePrice(e.target.value)} className="w-32 bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold pr-12" /><span className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-slate-400">{settings.currency}</span></div>
+                  <div className="relative"><input type="number" placeholder="Minutos" value={newServiceDuration} onChange={e => setNewServiceDuration(e.target.value)} className="w-32 bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold pr-12" /><span className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-slate-400 text-[10px]">MIN</span></div>
                   <button onClick={addService} className="px-10 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all">Añadir</button>
                </div>
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {settings.services.map(s => (
                     <div key={s.id} className="flex items-center justify-between p-6 bg-slate-50 dark:bg-bg-dark rounded-3xl border border-slate-200 dark:border-slate-800 group hover:border-primary transition-all">
-                       <div className="min-w-0">
-                          <p className="font-black text-sm truncate uppercase tracking-tight text-slate-800 dark:text-white">{s.name}</p>
-                          <p className="text-[10px] font-black text-primary mt-1">{s.price}{settings.currency} • {s.duration} min</p>
-                       </div>
+                       <div className="min-w-0"><p className="font-black text-sm truncate uppercase tracking-tight text-slate-800 dark:text-white">{s.name}</p><p className="text-[10px] font-black text-primary mt-1">{s.price}{settings.currency} • {s.duration} min</p></div>
                        <button onClick={() => removeService(s.id)} className="text-danger hover:scale-125 transition-transform"><span className="material-symbols-outlined">delete</span></button>
                     </div>
                   ))}
@@ -421,38 +446,19 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                   <div className="space-y-3">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Días Anuales por Contrato</label>
-                     <input 
-                       type="number" 
-                       value={settings.laborSettings?.vacationDaysPerYear || 30} 
-                       onChange={e => setSettings({...settings, laborSettings: {...settings.laborSettings, vacationDaysPerYear: parseInt(e.target.value)}})}
-                       className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
-                     />
+                     <input type="number" value={settings.laborSettings?.vacationDaysPerYear || 30} onChange={e => setSettings({...settings, laborSettings: {...settings.laborSettings, vacationDaysPerYear: parseInt(e.target.value)}})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" />
                   </div>
                   <div className="space-y-3">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Cómputo</label>
                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, businessDaysOnly: false}})}
-                          className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase transition-all ${!settings.laborSettings?.businessDaysOnly ? 'bg-primary text-white shadow-lg' : 'bg-slate-100 dark:bg-bg-dark text-slate-400'}`}
-                        >
-                          Naturales
-                        </button>
-                        <button 
-                          onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, businessDaysOnly: true}})}
-                          className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase transition-all ${settings.laborSettings?.businessDaysOnly ? 'bg-primary text-white shadow-lg' : 'bg-slate-100 dark:bg-bg-dark text-slate-400'}`}
-                        >
-                          Hábiles
-                        </button>
+                        <button onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, businessDaysOnly: false}})} className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase transition-all ${!settings.laborSettings?.businessDaysOnly ? 'bg-primary text-white shadow-lg' : 'bg-slate-100 dark:bg-bg-dark text-slate-400'}`}>Naturales</button>
+                        <button onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, businessDaysOnly: true}})} className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase transition-all ${settings.laborSettings?.businessDaysOnly ? 'bg-primary text-white shadow-lg' : 'bg-slate-100 dark:bg-bg-dark text-slate-400'}`}>Hábiles</button>
                      </div>
                   </div>
                   <div className="space-y-3 flex flex-col">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acumulación</label>
-                     <button 
-                        onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, allowCarryOver: !settings.laborSettings?.allowCarryOver}})}
-                        className={`flex-1 flex items-center justify-between px-6 rounded-2xl transition-all border-2 ${settings.laborSettings?.allowCarryOver ? 'border-success bg-success/10 text-success' : 'border-slate-200 bg-slate-50 dark:bg-bg-dark text-slate-400'}`}
-                     >
-                        <span className="text-xs font-black uppercase">Permitir acumular</span>
-                        <span className="material-symbols-outlined">{settings.laborSettings?.allowCarryOver ? 'toggle_on' : 'toggle_off'}</span>
+                     <button onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, allowCarryOver: !settings.laborSettings?.allowCarryOver}})} className={`flex-1 flex items-center justify-between px-6 rounded-2xl transition-all border-2 ${settings.laborSettings?.allowCarryOver ? 'border-success bg-success/10 text-success' : 'border-slate-200 bg-slate-50 dark:bg-bg-dark text-slate-400'}`}>
+                        <span className="text-xs font-black uppercase">Permitir acumular</span><span className="material-symbols-outlined">{settings.laborSettings?.allowCarryOver ? 'toggle_on' : 'toggle_off'}</span>
                      </button>
                   </div>
                </div>
@@ -474,80 +480,35 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                   <div className="flex flex-col lg:flex-row gap-6 items-end">
                      <div className="flex-1 w-full">
                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Nombre</label>
-                        <input 
-                          type="text" placeholder="Ej: Baja Enfermedad Común" 
-                          value={newIncident.name} onChange={e => setNewIncident({...newIncident, name: e.target.value})}
-                          className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-6 py-4 text-sm font-bold shadow-sm"
-                        />
+                        <input type="text" placeholder="Ej: Baja Enfermedad Común" value={newIncident.name} onChange={e => setNewIncident({...newIncident, name: e.target.value})} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-6 py-4 text-sm font-bold shadow-sm" />
                      </div>
                      <div className="flex gap-4 w-full lg:w-auto">
                         <div className="flex-1 lg:flex-initial">
                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Etiqueta Color</label>
-                           <select 
-                             value={newIncident.color} onChange={e => setNewIncident({...newIncident, color: e.target.value})}
-                             className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-4 py-4 text-sm font-bold shadow-sm cursor-pointer"
-                           >
-                              <option value="bg-slate-500">Gris</option>
-                              <option value="bg-primary">Azul</option>
-                              <option value="bg-success">Verde</option>
-                              <option value="bg-warning">Amarillo</option>
-                              <option value="bg-danger">Rojo</option>
-                              <option value="bg-purple-500">Morado</option>
+                           <select value={newIncident.color} onChange={e => setNewIncident({...newIncident, color: e.target.value})} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-4 py-4 text-sm font-bold shadow-sm cursor-pointer">
+                              <option value="bg-slate-500">Gris</option><option value="bg-primary">Azul</option><option value="bg-success">Verde</option><option value="bg-warning">Amarillo</option><option value="bg-danger">Rojo</option><option value="bg-purple-500">Morado</option>
                            </select>
                         </div>
                         <div className="flex items-end pb-1 gap-2">
-                           <button 
-                             onClick={() => setNewIncident({...newIncident, requiresJustification: !newIncident.requiresJustification})}
-                             className={`size-12 rounded-2xl flex items-center justify-center transition-all ${newIncident.requiresJustification ? 'bg-primary text-white shadow-lg' : 'bg-white dark:bg-surface-dark text-slate-300'}`}
-                             title="Requiere Justificación"
-                           >
-                              <span className="material-symbols-outlined">description</span>
-                           </button>
-                           <button 
-                             onClick={() => setNewIncident({...newIncident, isPaid: !newIncident.isPaid})}
-                             className={`size-12 rounded-2xl flex items-center justify-center transition-all ${newIncident.isPaid ? 'bg-success text-white shadow-lg' : 'bg-white dark:bg-surface-dark text-slate-300'}`}
-                             title="Es Retribuido"
-                           >
-                              <span className="material-symbols-outlined">attach_money</span>
-                           </button>
+                           <button onClick={() => setNewIncident({...newIncident, requiresJustification: !newIncident.requiresJustification})} className={`size-12 rounded-2xl flex items-center justify-center transition-all ${newIncident.requiresJustification ? 'bg-primary text-white shadow-lg' : 'bg-white dark:bg-surface-dark text-slate-300'}`} title="Requiere Justificación"><span className="material-symbols-outlined">description</span></button>
+                           <button onClick={() => setNewIncident({...newIncident, isPaid: !newIncident.isPaid})} className={`size-12 rounded-2xl flex items-center justify-center transition-all ${newIncident.isPaid ? 'bg-success text-white shadow-lg' : 'bg-white dark:bg-surface-dark text-slate-300'}`} title="Es Retribuido"><span className="material-symbols-outlined">attach_money</span></button>
                         </div>
                      </div>
-                     <button onClick={addIncidentType} className="h-14 px-8 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">
-                        Añadir
-                     </button>
+                     <button onClick={addIncidentType} className="h-14 px-8 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">Añadir</button>
                   </div>
                </div>
 
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {settings.laborSettings?.incidentTypes.map((inc) => (
                     <div key={inc.id} className="group p-6 bg-white dark:bg-surface-dark rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all relative overflow-hidden">
-                       <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity`}>
-                          <div className={`size-16 rounded-full ${inc.color}`}></div>
-                       </div>
+                       <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity`}><div className={`size-16 rounded-full ${inc.color}`}></div></div>
                        <div className="relative z-10">
-                          <div className="flex items-center gap-3 mb-4">
-                             <div className={`size-3 rounded-full ${inc.color}`}></div>
-                             <h4 className="font-black text-sm text-slate-900 dark:text-white uppercase tracking-tight leading-none">{inc.name}</h4>
-                          </div>
+                          <div className="flex items-center gap-3 mb-4"><div className={`size-3 rounded-full ${inc.color}`}></div><h4 className="font-black text-sm text-slate-900 dark:text-white uppercase tracking-tight leading-none">{inc.name}</h4></div>
                           <div className="flex gap-2">
-                             {inc.requiresJustification && (
-                               <span className="px-2 py-1 bg-slate-100 dark:bg-bg-dark rounded-lg text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                                 <span className="material-symbols-outlined text-[10px]">description</span> Justif.
-                               </span>
-                             )}
-                             {inc.isPaid ? (
-                               <span className="px-2 py-1 bg-success/10 rounded-lg text-[9px] font-bold text-success uppercase flex items-center gap-1">
-                                 <span className="material-symbols-outlined text-[10px]">attach_money</span> Pagado
-                               </span>
-                             ) : (
-                               <span className="px-2 py-1 bg-slate-100 dark:bg-bg-dark rounded-lg text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                                 <span className="material-symbols-outlined text-[10px]">money_off</span> No Pagado
-                               </span>
-                             )}
+                             {inc.requiresJustification && <span className="px-2 py-1 bg-slate-100 dark:bg-bg-dark rounded-lg text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[10px]">description</span> Justif.</span>}
+                             {inc.isPaid ? <span className="px-2 py-1 bg-success/10 rounded-lg text-[9px] font-bold text-success uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[10px]">attach_money</span> Pagado</span> : <span className="px-2 py-1 bg-slate-100 dark:bg-bg-dark rounded-lg text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[10px]">money_off</span> No Pagado</span>}
                           </div>
-                          <button onClick={() => removeIncidentType(inc.id)} className="absolute bottom-6 right-6 text-slate-300 hover:text-danger transition-colors">
-                             <span className="material-symbols-outlined">delete</span>
-                          </button>
+                          <button onClick={() => removeIncidentType(inc.id)} className="absolute bottom-6 right-6 text-slate-300 hover:text-danger transition-colors"><span className="material-symbols-outlined">delete</span></button>
                        </div>
                     </div>
                   ))}
@@ -575,7 +536,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                   <div className="space-y-6">
                      <div className="space-y-2">
                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Empleado</label>
-                        <select value={selectedEmpId} onChange={(e) => setSelectedEmpId(e.target.value)} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-5 py-4 text-sm font-bold shadow-sm">
+                        <select 
+                          value={selectedEmpId} 
+                          disabled={!!editingRecordId}
+                          onChange={(e) => setSelectedEmpId(e.target.value)} 
+                          className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-5 py-4 text-sm font-bold shadow-sm disabled:opacity-50"
+                        >
                            <option value="">Seleccionar empleado...</option>
                            {doctors?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                         </select>
@@ -615,8 +581,13 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                      </div>
 
                      <button onClick={handleRegisterEvent} className="w-full py-4 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all">
-                        Registrar Evento
+                        {editingRecordId ? 'Actualizar Evento' : 'Registrar Evento'}
                      </button>
+                     {editingRecordId && (
+                        <button onClick={handleCancelEdit} className="w-full py-3 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-300 dark:hover:bg-slate-600 transition-all">
+                           Cancelar Edición
+                        </button>
+                     )}
                   </div>
                </div>
 
@@ -631,12 +602,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                                  <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
                                  <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Empleado</th>
                                  <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Tipo</th>
-                                 <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Detalle</th>
+                                 <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                               {globalHistory.length > 0 ? globalHistory.map((item: any, idx) => (
-                                 <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                 <tr key={idx} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${editingRecordId === item.id ? 'bg-primary/5 border-l-4 border-primary' : ''}`}>
                                     <td className="px-6 py-4 text-xs font-bold text-slate-500">{item.date}</td>
                                     <td className="px-6 py-4 text-xs font-black text-slate-800 dark:text-white uppercase">{item.empName}</td>
                                     <td className="px-6 py-4">
@@ -644,8 +615,23 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                                           {item.type || item.category}
                                        </span>
                                     </td>
-                                    <td className="px-6 py-4 text-right text-[10px] font-medium text-slate-400 italic">
-                                       {item.notes || item.duration || '-'}
+                                    <td className="px-6 py-4 text-right">
+                                       <div className="flex justify-end gap-2">
+                                          <button 
+                                            onClick={() => handleEditRecord(item)}
+                                            className="size-8 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all flex items-center justify-center"
+                                            title="Editar"
+                                          >
+                                             <span className="material-symbols-outlined text-sm">edit</span>
+                                          </button>
+                                          <button 
+                                            onClick={() => handleDeleteRecord(item.doctorId, item.id, item.category)}
+                                            className="size-8 rounded-xl bg-danger/10 text-danger hover:bg-danger hover:text-white transition-all flex items-center justify-center"
+                                            title="Eliminar"
+                                          >
+                                             <span className="material-symbols-outlined text-sm">delete</span>
+                                          </button>
+                                       </div>
                                     </td>
                                  </tr>
                               )) : (
@@ -661,88 +647,51 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         </div>
       )}
 
+      {/* ... (VISUAL TAB IGUAL) ... */}
       {activeTab === 'visual' && (
         <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-right-4 duration-500">
-           
-           {/* TEMAS Y COLORES */}
+           {/* ... Contenido Visual existente ... */}
            <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
               <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
                 <div className="flex items-center gap-5">
-                  <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center">
-                    <span className="material-symbols-outlined">palette</span>
-                  </div>
+                  <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">palette</span></div>
                   <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Temas y Paleta de Colores</h3>
                 </div>
-                <button 
-                  onClick={onToggleTheme}
-                  className="px-6 py-2.5 bg-slate-100 dark:bg-bg-dark rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-primary hover:text-white transition-all shadow-sm"
-                >
-                  <span className="material-symbols-outlined text-lg">{darkMode ? 'light_mode' : 'dark_mode'}</span>
-                  Pasar a modo {darkMode ? 'Claro' : 'Oscuro'}
+                <button onClick={onToggleTheme} className="px-6 py-2.5 bg-slate-100 dark:bg-bg-dark rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-primary hover:text-white transition-all shadow-sm">
+                  <span className="material-symbols-outlined text-lg">{darkMode ? 'light_mode' : 'dark_mode'}</span> Pasar a modo {darkMode ? 'Claro' : 'Oscuro'}
                 </button>
               </div>
               <div className="p-10 space-y-10">
                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
                     {COLOR_TEMPLATES.map(t => (
-                      <button 
-                        key={t.id} 
-                        onClick={() => setSettings({...settings, colorTemplate: t.id})}
-                        className={`p-6 rounded-[2.5rem] border-4 transition-all flex flex-col items-center gap-4 group ${settings.colorTemplate === t.id ? 'border-primary bg-primary/5 shadow-xl scale-105' : 'border-transparent bg-slate-50 dark:bg-bg-dark hover:border-slate-200'}`}
-                      >
+                      <button key={t.id} onClick={() => setSettings({...settings, colorTemplate: t.id})} className={`p-6 rounded-[2.5rem] border-4 transition-all flex flex-col items-center gap-4 group ${settings.colorTemplate === t.id ? 'border-primary bg-primary/5 shadow-xl scale-105' : 'border-transparent bg-slate-50 dark:bg-bg-dark hover:border-slate-200'}`}>
                          <div className="size-12 rounded-full shadow-lg transition-transform group-hover:scale-110" style={{backgroundColor: t.primary}}></div>
                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">{t.name}</span>
                       </button>
                     ))}
                  </div>
-                 
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-12 pt-8 border-t border-slate-100 dark:border-slate-800">
                     <div className="space-y-6">
-                       <div className="flex justify-between items-center">
-                          <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Tamaño Fuente Títulos</label>
-                          <span className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-black">{settings.visuals.titleFontSize}px</span>
-                       </div>
-                       <input 
-                         type="range" min="20" max="64" 
-                         value={settings.visuals.titleFontSize} 
-                         onChange={e => setSettings({...settings, visuals: {...settings.visuals, titleFontSize: parseInt(e.target.value)}})}
-                         className="w-full h-2 bg-slate-200 dark:bg-bg-dark rounded-lg appearance-none cursor-pointer accent-primary" 
-                       />
+                       <div className="flex justify-between items-center"><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Tamaño Fuente Títulos</label><span className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-black">{settings.visuals.titleFontSize}px</span></div>
+                       <input type="range" min="20" max="64" value={settings.visuals.titleFontSize} onChange={e => setSettings({...settings, visuals: {...settings.visuals, titleFontSize: parseInt(e.target.value)}})} className="w-full h-2 bg-slate-200 dark:bg-bg-dark rounded-lg appearance-none cursor-pointer accent-primary" />
                     </div>
                     <div className="space-y-6">
-                       <div className="flex justify-between items-center">
-                          <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Tamaño Fuente Cuerpo</label>
-                          <span className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-black">{settings.visuals.bodyFontSize}px</span>
-                       </div>
-                       <input 
-                         type="range" min="12" max="24" 
-                         value={settings.visuals.bodyFontSize} 
-                         onChange={e => setSettings({...settings, visuals: {...settings.visuals, bodyFontSize: parseInt(e.target.value)}})}
-                         className="w-full h-2 bg-slate-200 dark:bg-bg-dark rounded-lg appearance-none cursor-pointer accent-primary" 
-                       />
+                       <div className="flex justify-between items-center"><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Tamaño Fuente Cuerpo</label><span className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-black">{settings.visuals.bodyFontSize}px</span></div>
+                       <input type="range" min="12" max="24" value={settings.visuals.bodyFontSize} onChange={e => setSettings({...settings, visuals: {...settings.visuals, bodyFontSize: parseInt(e.target.value)}})} className="w-full h-2 bg-slate-200 dark:bg-bg-dark rounded-lg appearance-none cursor-pointer accent-primary" />
                     </div>
                  </div>
               </div>
            </section>
-
-           {/* PERSONALIZACIÓN DE TEXTOS (WHITE LABEL) */}
            <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
               <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
-                <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center">
-                  <span className="material-symbols-outlined">edit_note</span>
-                </div>
+                <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">edit_note</span></div>
                 <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Etiquetas y Textos de la Web (White Label)</h3>
               </div>
               <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
                  {Object.entries(settings.labels).map(([key, value]) => (
                    <div key={key} className="space-y-2">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                      </label>
-                      <input 
-                        type="text" value={value} 
-                        onChange={e => updateLabel(key, e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-2xl px-6 py-4 text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none transition-all"
-                      />
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</label>
+                      <input type="text" value={value} onChange={e => updateLabel(key, e.target.value)} className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-2xl px-6 py-4 text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none transition-all" />
                    </div>
                  ))}
               </div>
@@ -750,15 +699,13 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         </div>
       )}
 
+      {/* ... (ASSISTANT TAB IGUAL) ... */}
       {activeTab === 'assistant' && (
         <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-right-4 duration-500">
-           
-           {/* SELECCIÓN DE VOZ E IDIOMA */}
+           {/* ... Contenido Asistente existente ... */}
            <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
               <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
-                <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center">
-                  <span className="material-symbols-outlined">volume_up</span>
-                </div>
+                <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">volume_up</span></div>
                 <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Selección de Voz e Idioma</h3>
               </div>
               <div className="p-10 space-y-10">
@@ -767,13 +714,8 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acento y Región</label>
                        <div className="grid grid-cols-1 gap-3">
                           {ACCENT_OPTIONS.map(opt => (
-                            <button 
-                              key={opt.id}
-                              onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, accent: opt.id}})}
-                              className={`flex items-center justify-between px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.accent === opt.id ? 'bg-primary/10 border-primary text-primary' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}
-                            >
-                               <span className="text-sm font-bold">{opt.name}</span>
-                               {settings.aiPhoneSettings.accent === opt.id && <span className="material-symbols-outlined text-sm">check_circle</span>}
+                            <button key={opt.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, accent: opt.id}})} className={`flex items-center justify-between px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.accent === opt.id ? 'bg-primary/10 border-primary text-primary' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
+                               <span className="text-sm font-bold">{opt.name}</span>{settings.aiPhoneSettings.accent === opt.id && <span className="material-symbols-outlined text-sm">check_circle</span>}
                             </button>
                           ))}
                        </div>
@@ -782,119 +724,63 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Voz del Asistente</label>
                        <div className="grid grid-cols-1 gap-3">
                           {VOICE_OPTIONS.map(voice => (
-                            <button 
-                              key={voice.id}
-                              onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, voiceName: voice.id}})}
-                              className={`flex items-center gap-4 px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary/10 border-primary text-primary' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}
-                            >
-                               <div className={`size-10 rounded-xl flex items-center justify-center ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary text-white' : 'bg-slate-200 text-slate-400'}`}>
-                                  <span className="material-symbols-outlined">{voice.gender === 'Femenino' ? 'female' : 'male'}</span>
-                               </div>
-                               <div className="text-left flex-1">
-                                  <p className="text-sm font-bold">{voice.name} <span className="text-[9px] opacity-60 uppercase">({voice.gender})</span></p>
-                                  <p className="text-[10px] italic opacity-60">{voice.desc}</p>
-                               </div>
+                            <button key={voice.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, voiceName: voice.id}})} className={`flex items-center gap-4 px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary/10 border-primary text-primary' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
+                               <div className={`size-10 rounded-xl flex items-center justify-center ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary text-white' : 'bg-slate-200 text-slate-400'}`}><span className="material-symbols-outlined">{voice.gender === 'Femenino' ? 'female' : 'male'}</span></div>
+                               <div className="text-left flex-1"><p className="text-sm font-bold">{voice.name} <span className="text-[9px] opacity-60 uppercase">({voice.gender})</span></p><p className="text-[10px] italic opacity-60">{voice.desc}</p></div>
                                {settings.aiPhoneSettings.voiceName === voice.id && <span className="material-symbols-outlined text-sm">check_circle</span>}
                             </button>
                           ))}
                        </div>
                     </div>
                  </div>
-                 
                  <div className="p-8 bg-primary/5 rounded-[2.5rem] border border-primary/20 space-y-6">
                     <div className="flex items-center justify-between">
                        <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em]">Laboratorio de Pruebas</h4>
-                       <button 
-                         onClick={handleTestVoice} 
-                         disabled={isTestingVoice}
-                         className="px-6 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
-                       >
-                          {isTestingVoice ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">play_circle</span>}
-                          Escuchar Prueba
+                       <button onClick={handleTestVoice} disabled={isTestingVoice} className="px-6 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                          {isTestingVoice ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">play_circle</span>} Escuchar Prueba
                        </button>
                     </div>
-                    <textarea 
-                      value={settings.aiPhoneSettings.testSpeechText}
-                      onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, testSpeechText: e.target.value}})}
-                      className="w-full bg-white dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-medium h-24 shadow-inner resize-none"
-                      placeholder="Escribe lo que quieres que el asistente diga para probar su voz..."
-                    />
+                    <textarea value={settings.aiPhoneSettings.testSpeechText} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, testSpeechText: e.target.value}})} className="w-full bg-white dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-medium h-24 shadow-inner resize-none" placeholder="Escribe lo que quieres que el asistente diga para probar su voz..." />
                  </div>
               </div>
            </section>
-
-           {/* PERSONALIDAD CON PÍLDORAS */}
            <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
               <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
                 <div className="flex items-center gap-5">
-                  <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center shadow-lg">
-                    <span className="material-symbols-outlined">auto_awesome</span>
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Cerebro y Personalidad</h3>
-                    <p className="text-[9px] font-black text-primary uppercase tracking-widest">Genera instrucciones avanzadas con IA</p>
-                  </div>
+                  <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center shadow-lg"><span className="material-symbols-outlined">auto_awesome</span></div>
+                  <div><h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Cerebro y Personalidad</h3><p className="text-[9px] font-black text-primary uppercase tracking-widest">Genera instrucciones avanzadas con IA</p></div>
                 </div>
-                <button 
-                  onClick={handleGeneratePersonality}
-                  disabled={isGeneratingPersonality}
-                  className="px-10 py-4 bg-primary text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl hover:scale-105 transition-all flex items-center gap-3"
-                >
-                  {isGeneratingPersonality ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">magic_button</span>}
-                  Generar con Píldoras
+                <button onClick={handleGeneratePersonality} disabled={isGeneratingPersonality} className="px-10 py-4 bg-primary text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl hover:scale-105 transition-all flex items-center gap-3">
+                  {isGeneratingPersonality ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">magic_button</span>} Generar con Píldoras
                 </button>
               </div>
               <div className="p-10 space-y-12">
-                 {/* Píldoras de Personalidad */}
                  <div className="space-y-8">
                     {Object.entries(PERSONALITY_TAGS).map(([category, tags]) => (
                       <div key={category} className="space-y-3">
                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{category}</label>
                          <div className="flex flex-wrap gap-2">
                             {tags.map(tag => (
-                              <button 
-                                key={tag}
-                                onClick={() => toggleTag(tag)}
-                                className={`px-5 py-2.5 rounded-full text-[10px] font-black uppercase border-2 transition-all ${selectedTags.includes(tag) ? 'bg-primary border-primary text-white' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-400 hover:border-slate-200'}`}
-                              >
-                                 {tag}
-                              </button>
+                              <button key={tag} onClick={() => toggleTag(tag)} className={`px-5 py-2.5 rounded-full text-[10px] font-black uppercase border-2 transition-all ${selectedTags.includes(tag) ? 'bg-primary border-primary text-white' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-400 hover:border-slate-200'}`}>{tag}</button>
                             ))}
                          </div>
                       </div>
                     ))}
                  </div>
-
-                 {/* System Prompt Result */}
                  <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Instrucciones Maestras (System Prompt)</label>
-                    <textarea 
-                       value={settings.aiPhoneSettings.systemPrompt}
-                       onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, systemPrompt: e.target.value}})}
-                       className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-[2rem] px-8 py-8 text-sm font-medium h-64 shadow-inner leading-relaxed focus:ring-4 focus:ring-primary/10 transition-all outline-none"
-                    />
+                    <textarea value={settings.aiPhoneSettings.systemPrompt} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, systemPrompt: e.target.value}})} className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-[2rem] px-8 py-8 text-sm font-medium h-64 shadow-inner leading-relaxed focus:ring-4 focus:ring-primary/10 transition-all outline-none" />
                  </div>
-
-                 {/* Saludo Inicial */}
                  <div className="space-y-6 pt-10 border-t">
                     <div className="flex items-center justify-between">
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Saludo Inicial</label>
                        <div className="flex gap-2">
                           {GREETING_PILLS.map((pill, i) => (
-                            <button 
-                              key={i} onClick={() => useGreetingPill(pill)}
-                              className="px-3 py-1.5 bg-slate-100 dark:bg-bg-dark text-[9px] font-black uppercase rounded-lg border border-transparent hover:border-primary transition-all text-slate-500"
-                            >
-                              Plantilla {i+1}
-                            </button>
+                            <button key={i} onClick={() => useGreetingPill(pill)} className="px-3 py-1.5 bg-slate-100 dark:bg-bg-dark text-[9px] font-black uppercase rounded-lg border border-transparent hover:border-primary transition-all text-slate-500">Plantilla {i+1}</button>
                           ))}
                        </div>
                     </div>
-                    <textarea 
-                       value={settings.aiPhoneSettings.initialGreeting}
-                       onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, initialGreeting: e.target.value}})}
-                       className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold h-24 shadow-inner resize-none"
-                    />
+                    <textarea value={settings.aiPhoneSettings.initialGreeting} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, initialGreeting: e.target.value}})} className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold h-24 shadow-inner resize-none" />
                  </div>
               </div>
            </section>
