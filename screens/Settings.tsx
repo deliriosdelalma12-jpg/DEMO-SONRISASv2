@@ -23,6 +23,20 @@ const PERSONALITY_TAGS = {
   relacion: ['Formal (Usted)', 'Cercana (Tú)', 'Protectora', 'Vendedora']
 };
 
+const CLINIC_SECTORS = [
+  'Odontología / Dental',
+  'Medicina General',
+  'Estética y Dermatología',
+  'Fisioterapia y Rehabilitación',
+  'Psicología y Salud Mental',
+  'Veterinaria',
+  'Oftalmología',
+  'Ginecología y Obstetricia',
+  'Pediatría',
+  'Laboratorio Clínico',
+  'Otro'
+];
+
 const VOICE_OPTIONS = [
   { id: 'Zephyr', name: 'Zephyr', gender: 'Femenino', desc: 'Clara y profesional' },
   { id: 'Kore', name: 'Kore', gender: 'Femenino', desc: 'Dulce y cercana' },
@@ -628,12 +642,48 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
               <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">info</span></div>
               <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Datos de Marca e Identidad</h3>
             </div>
-            <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
-               <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial</label><input type="text" value={settings.name} onChange={e => setSettings({...settings, name: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" /></div>
-               <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Divisa</label><select value={settings.currency} onChange={e => setSettings({...settings, currency: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"><option value="€">Euro (€)</option><option value="$">Dólar ($)</option></select></div>
-               <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Idioma Web</label><select value={settings.language} onChange={e => setSettings({...settings, language: e.target.value as any})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"><option value="es-ES">Español (España)</option><option value="es-LATAM">Español (Latinoamérica)</option><option value="en-US">English (US)</option></select></div>
-               <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-bg-dark rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 group relative overflow-hidden">
-                  {settings.logo ? <img src={settings.logo} className="h-12 w-auto object-contain mb-2" /> : <span className="material-symbols-outlined text-4xl text-slate-300">image</span>}
+            <div className="p-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial</label>
+                  <input type="text" value={settings.name} onChange={e => setSettings({...settings, name: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" />
+               </div>
+               
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Sector Empresarial</label>
+                  <div className="relative">
+                    <select 
+                      value={settings.sector} 
+                      onChange={e => setSettings({...settings, sector: e.target.value})} 
+                      className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold appearance-none cursor-pointer"
+                    >
+                      {CLINIC_SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <span className="absolute right-6 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 pointer-events-none">expand_more</span>
+                  </div>
+               </div>
+
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Identificación Fiscal (CIF/NIF)</label>
+                  <input type="text" value={settings.taxId} onChange={e => setSettings({...settings, taxId: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" placeholder="Ej: B12345678" />
+               </div>
+
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Sitio Web</label>
+                  <input type="text" value={settings.website} onChange={e => setSettings({...settings, website: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" placeholder="www.tuclinica.com" />
+               </div>
+
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Divisa</label>
+                  <select value={settings.currency} onChange={e => setSettings({...settings, currency: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"><option value="€">Euro (€)</option><option value="$">Dólar ($)</option></select>
+               </div>
+               
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Idioma Web</label>
+                  <select value={settings.language} onChange={e => setSettings({...settings, language: e.target.value as any})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"><option value="es-ES">Español (España)</option><option value="es-LATAM">Español (Latinoamérica)</option><option value="en-US">English (US)</option></select>
+               </div>
+               
+               <div className="col-span-1 md:col-span-2 lg:col-span-3 flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-bg-dark rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 group relative overflow-hidden mt-4">
+                  {settings.logo ? <img src={settings.logo} className="h-16 w-auto object-contain mb-2" /> : <span className="material-symbols-outlined text-4xl text-slate-300">image</span>}
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Logo Institucional</p>
                   <button onClick={() => logoInputRef.current?.click()} className="absolute inset-0 bg-primary/80 text-white opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center font-bold text-xs">Cambiar Logo</button>
                   <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={e => {const f = e.target.files?.[0]; if(f) {const r = new FileReader(); r.onload = (re) => setSettings({...settings, logo: re.target?.result as string}); r.readAsDataURL(f);}}} />

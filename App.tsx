@@ -252,6 +252,9 @@ const App: React.FC = () => {
 
   const [settings, setSettings] = useState<ClinicSettings>({
     name: "MediClinic Premium",
+    sector: "Odontología / Dental",
+    taxId: "",
+    website: "",
     logo: "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/hospital.svg",
     phone: "+34 910 000 001",
     email: "central@mediclinic-premium.com",
