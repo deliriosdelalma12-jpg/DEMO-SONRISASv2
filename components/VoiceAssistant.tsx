@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
 import React, { useEffect, useRef, useState } from 'react';
-import { ClinicSettings, Appointment, Doctor, Branch } from '../types';
+import { ClinicSettings, Appointment, Doctor, Branch, AppointmentStatus, Patient } from '../types';
 
 interface VoiceAssistantProps {
   onClose: () => void;
@@ -10,12 +10,27 @@ interface VoiceAssistantProps {
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>;
   doctors: Doctor[];
   branches?: Branch[];
+  patients?: Patient[]; // NEW PROP
 }
 
 // --- HERRAMIENTAS (TOOLS) PARA EL MODELO ---
+
+// 1. BUSCAR CITA Y PACIENTE (ENRICHED)
+const declarationFindAppointment: FunctionDeclaration = {
+  name: "findAppointment",
+  description: "Busca citas y ficha de paciente por nombre. Úsala SIEMPRE cuando el usuario diga su nombre para personalizar la conversación.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      patientName: { type: Type.STRING, description: "Nombre completo del paciente (Nombre y Apellidos)" }
+    },
+    required: ["patientName"]
+  }
+};
+
 const declarationCheckAvailability: FunctionDeclaration = {
   name: "checkAvailability",
-  description: "Verifica si una fecha y hora específica está libre para citas.",
+  description: "Verifica si una fecha y hora específica está libre para citas, respetando el horario de apertura.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -28,11 +43,11 @@ const declarationCheckAvailability: FunctionDeclaration = {
 
 const declarationCreateAppointment: FunctionDeclaration = {
   name: "createAppointment",
-  description: "Agenda una nueva cita médica en el sistema.",
+  description: "Agenda una nueva cita. REQUIERE NOMBRE COMPLETO (Nombre + Apellidos).",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      patientName: { type: Type.STRING, description: "Nombre del paciente" },
+      patientName: { type: Type.STRING, description: "Nombre COMPLETO del paciente (Nombre y Apellidos)" },
       date: { type: Type.STRING, description: "Fecha en formato YYYY-MM-DD" },
       time: { type: Type.STRING, description: "Hora en formato HH:MM" },
       treatment: { type: Type.STRING, description: "Nombre del tratamiento o servicio" },
@@ -44,29 +59,27 @@ const declarationCreateAppointment: FunctionDeclaration = {
 
 const declarationRescheduleAppointment: FunctionDeclaration = {
   name: "rescheduleAppointment",
-  description: "Cambia la fecha u hora de una cita existente.",
+  description: "Cambia la fecha u hora de una cita existente. Debes haber localizado la cita primero con findAppointment.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      patientName: { type: Type.STRING, description: "Nombre del paciente para buscar la cita" },
-      oldDate: { type: Type.STRING, description: "Fecha actual de la cita (YYYY-MM-DD)" },
+      appointmentId: { type: Type.STRING, description: "ID de la cita encontrada previamente" },
       newDate: { type: Type.STRING, description: "Nueva fecha deseada (YYYY-MM-DD)" },
       newTime: { type: Type.STRING, description: "Nueva hora deseada (HH:MM)" }
     },
-    required: ["patientName", "newDate", "newTime"]
+    required: ["appointmentId", "newDate", "newTime"]
   }
 };
 
 const declarationCancelAppointment: FunctionDeclaration = {
   name: "cancelAppointment",
-  description: "Cancela una cita existente.",
+  description: "Cancela una cita existente. Debes haber localizado la cita primero con findAppointment.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      patientName: { type: Type.STRING, description: "Nombre del paciente" },
-      date: { type: Type.STRING, description: "Fecha de la cita a cancelar (YYYY-MM-DD)" }
+      appointmentId: { type: Type.STRING, description: "ID de la cita encontrada previamente" }
     },
-    required: ["patientName", "date"]
+    required: ["appointmentId"]
   }
 };
 
@@ -82,7 +95,7 @@ const declarationGetServiceDetails: FunctionDeclaration = {
   }
 };
 
-const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appointments, setAppointments, doctors, branches = [] }) => {
+const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appointments, setAppointments, doctors, branches = [], patients = [] }) => {
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [transcription, setTranscription] = useState<string>('');
@@ -96,13 +109,19 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
 
   // Refs for state access inside callbacks
   const appointmentsRef = useRef(appointments);
+  const patientsRef = useRef(patients);
   const doctorsRef = useRef(doctors);
   const servicesRef = useRef(settings.services);
+  const scheduleRef = useRef(settings.globalSchedule);
+  const policyRef = useRef(settings.appointmentPolicy);
 
   // Sync refs with props
   useEffect(() => { appointmentsRef.current = appointments; }, [appointments]);
+  useEffect(() => { patientsRef.current = patients; }, [patients]);
   useEffect(() => { doctorsRef.current = doctors; }, [doctors]);
   useEffect(() => { servicesRef.current = settings.services; }, [settings.services]);
+  useEffect(() => { scheduleRef.current = settings.globalSchedule; }, [settings.globalSchedule]);
+  useEffect(() => { policyRef.current = settings.appointmentPolicy; }, [settings.appointmentPolicy]);
 
   const decode = (base64: string) => {
     const binaryString = atob(base64);
@@ -129,6 +148,29 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
     return buffer;
   };
 
+  // Helper Logic to validate opening hours
+  const isClinicOpen = (dateStr: string, timeStr: string): boolean => {
+    const globalSchedule = scheduleRef.current;
+    if (!globalSchedule) return true; 
+    
+    const date = new Date(dateStr);
+    const dayIndex = date.getDay(); 
+    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const dayName = dayNames[dayIndex];
+    const schedule = globalSchedule[dayName];
+
+    if (!schedule) return false; 
+
+    if (schedule.morning.active) {
+        if (timeStr >= schedule.morning.start && timeStr < schedule.morning.end) return true;
+    }
+    if (schedule.afternoon.active) {
+        if (timeStr >= schedule.afternoon.start && timeStr < schedule.afternoon.end) return true;
+    }
+
+    return false;
+  };
+
   const startSession = async () => {
     setIsConnecting(true);
     try {
@@ -139,37 +181,63 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // Construct dynamic prompt
-      const activeBranches = branches.filter(b => b.status === 'Active');
-      const branchContext = activeBranches.length > 0 
-        ? `\n# SUCURSALES ACTIVAS:\n${activeBranches.map(b => `- ${b.name}: ${b.address}, ${b.city}. Horario: ${b.openingHours}`).join('\n')}`
-        : '\n# SUCURSAL: Única sede central.';
+      // Generate Schedule Text
+      const weekDays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+      const scheduleDesc = weekDays.map(d => {
+          const s = settings.globalSchedule?.[d];
+          if (!s) return `${d}: CERRADO`;
+          let desc = `${d}: `;
+          const morning = s.morning.active ? `${s.morning.start}-${s.morning.end}` : '';
+          const afternoon = s.afternoon.active ? `${s.afternoon.start}-${s.afternoon.end}` : '';
+          if (!morning && !afternoon) return `${d}: CERRADO`;
+          if (morning && afternoon) return `${d}: ${morning} y ${afternoon}`;
+          return `${d}: ${morning}${afternoon}`;
+      }).join('\n');
 
-      const serviceList = settings.services.map(s => `- ${s.name}: ${s.price}${settings.currency} (${s.duration} min)`).join('\n');
+      // INJECT CURRENT DATE FOR RELATIVE CALCULATIONS
+      const now = new Date();
+      const currentDateString = now.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const currentTimeString = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+      // Build KB Context
+      const kbContext = (settings.aiPhoneSettings.knowledgeFiles || []).map(f => `- ${f.name} (Disponible)`).join('\n');
 
       const fullPrompt = `
         ${settings.aiPhoneSettings.systemPrompt}
         
-        # TU ROL: SECRETARIA PROFESIONAL
-        1. Eres la secretaria de ${settings.name}. Tu trabajo es gestionar la agenda y orientar al paciente.
-        2. NO ERES MÉDICO. Si el paciente pregunta por síntomas graves o pide diagnóstico, responde: "Como asistente administrativa no puedo dar diagnósticos médicos, pero puedo agendarle una consulta con el especialista para que lo evalúe".
-        3. Eres extremadamente eficiente. Usa las herramientas (tools) para verificar disponibilidad y agendar en tiempo real.
-        4. Tienes acceso total a la "Base de Datos" de la empresa (lista de servicios y precios). Úsala para responder dudas sobre en qué consiste un examen o cuánto cuesta.
+        # CONTEXTO TEMPORAL ACTUAL:
+        Fecha de hoy: ${currentDateString}
+        Hora actual: ${currentTimeString}
 
-        # TUS FUNCIONES PRINCIPALES (USA TOOLS):
-        1. AGENDAR: Usa 'createAppointment'. Pide nombre, fecha y hora. Verifica disponibilidad primero.
-        2. REPROGRAMAR: Usa 'rescheduleAppointment'.
-        3. CANCELAR: Usa 'cancelAppointment'.
-        4. CONSULTAR/ORIENTAR: Usa 'getServiceDetails' si te preguntan detalles específicos de un servicio. Usa tu conocimiento del contexto para responder sobre ubicaciones.
+        # DATOS DE EMPRESA:
+        Nombre: ${settings.name}
+        Sector: ${settings.sector}
+        
+        # BASE DE CONOCIMIENTOS:
+        Tienes acceso a documentos internos. Úsalos para responder dudas técnicas.
+        ${kbContext}
 
-        # DATOS DE LA EMPRESA (BASE DE DATOS EN MEMORIA):
-        Servicios:
-        ${serviceList}
-        
-        Sucursales:
-        ${branchContext}
-        
-        # SALUDO INICIAL:
+        # HORARIO DE APERTURA:
+        ${scheduleDesc}
+        NO AGENDAR/REPROGRAMAR fuera de este horario.
+
+        # REGLA DE ORO DE PERSONALIZACIÓN:
+        1. **TU SALUDAS PRIMERO**: Di tu saludo configurado apenas conecte.
+        2. **IDENTIFICACIÓN**: Si el usuario dice su nombre, usa 'findAppointment' INMEDIATAMENTE.
+        3. **USO DE DATOS**: La herramienta 'findAppointment' te devolverá citas Y DATOS DEL PACIENTE (historial, alergias, edad). ÚSALOS.
+           - Ejemplo: "Hola Laura, veo que hace 6 meses no vienes a revisión..."
+           - Ejemplo: "Teniendo en cuenta tu alergia a la penicilina..."
+        4. **NOMBRE COMPLETO**: Pide siempre Nombre y Apellidos para evitar errores.
+
+        # TUS HERRAMIENTAS:
+        - findAppointment: Úsala para recuperar FICHA DEL PACIENTE y citas.
+        - createAppointment: Para nuevas citas.
+        - rescheduleAppointment: Requiere ID.
+        - cancelAppointment: Requiere ID.
+        - checkAvailability: Úsala para verificar huecos.
+        - getServiceDetails: Precios e info.
+
+        # SALUDO CONFIGURADO:
         "${settings.aiPhoneSettings.initialGreeting}"
         
         Habla natural, con acento ${settings.aiPhoneSettings.accent}.
@@ -181,6 +249,8 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
           onopen: () => {
             setIsActive(true);
             setIsConnecting(false);
+            
+            // 1. Setup Audio Input
             const source = audioContextRef.current!.createMediaStreamSource(stream);
             const scriptProcessor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
             scriptProcessor.onaudioprocess = (e) => {
@@ -193,6 +263,11 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
             };
             source.connect(scriptProcessor);
             scriptProcessor.connect(audioContextRef.current!.destination);
+
+            // 2. FORCE INITIAL GREETING
+            sessionPromise.then(s => s.sendRealtimeInput([{ 
+                text: `La llamada acaba de conectar. El usuario está al teléfono. DI TU SALUDO INICIAL EXACTAMENTE COMO ESTÁ CONFIGURADO: "${settings.aiPhoneSettings.initialGreeting}"` 
+            }]));
           },
           onmessage: async (m: LiveServerMessage) => {
             // 1. Handle Audio
@@ -216,7 +291,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                setTranscription(t => t + ' ' + m.serverContent?.inputTranscription?.text);
             }
 
-            // 3. Handle Tool Calls (The Core Logic)
+            // 3. Handle Tool Calls
             if (m.toolCall) {
                 console.log("Tool call received:", m.toolCall);
                 const functionResponses = m.toolCall.functionCalls.map(fc => {
@@ -224,51 +299,116 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                     const args = fc.args as any;
 
                     try {
-                        if (fc.name === "checkAvailability") {
-                            // Logic: Check if any ACTIVE appointment exists at that time
-                            const busy = appointmentsRef.current.find(a => 
-                                a.date === args.date && 
-                                a.time.startsWith(args.time.substring(0,2)) && 
-                                a.status !== 'Cancelled' && a.status !== 'Completed'
+                        // NEW TOOL: FIND APPOINTMENT + PATIENT PROFILE
+                        if (fc.name === "findAppointment") {
+                            const nameQuery = args.patientName.toLowerCase();
+                            // 1. Find appointments
+                            const matches = appointmentsRef.current.filter(a => 
+                                a.patientName.toLowerCase().includes(nameQuery) &&
+                                (a.status === 'Confirmed' || a.status === 'Pending' || a.status === 'Rescheduled')
                             );
-                            result = { available: !busy, message: busy ? "Horario ocupado" : "Horario disponible" };
+                            
+                            // 2. Find Patient Profile (Deep Context)
+                            const patientProfile = patientsRef.current.find(p => p.name.toLowerCase().includes(nameQuery));
+
+                            if (matches.length === 0 && !patientProfile) {
+                                result = { found: false, message: "No encontré paciente ni citas con ese nombre. Pide el nombre completo de nuevo." };
+                            } else {
+                                result = { 
+                                    found: true, 
+                                    patientContext: patientProfile ? {
+                                        name: patientProfile.name,
+                                        age: 30, // Mock age calc
+                                        allergies: patientProfile.allergies,
+                                        medicalHistory: patientProfile.medicalHistory,
+                                        lastVisit: "Hace 6 meses (Simulado)" 
+                                    } : "Perfil no encontrado, solo citas.",
+                                    matches: matches.map(a => ({
+                                        id: a.id,
+                                        date: a.date,
+                                        time: a.time,
+                                        treatment: a.treatment,
+                                        doctor: a.doctorName
+                                    })),
+                                    message: `Encontré datos. Usa el 'patientContext' para personalizar la respuesta.`
+                                };
+                            }
+                        }
+                        else if (fc.name === "checkAvailability") {
+                            if (!isClinicOpen(args.date, args.time)) {
+                                result = { available: false, message: "La clínica está cerrada en ese horario." };
+                            } else {
+                                const busy = appointmentsRef.current.find(a => 
+                                    a.date === args.date && 
+                                    a.time.startsWith(args.time.substring(0,2)) && 
+                                    ['Confirmed', 'Pending', 'Rescheduled'].includes(a.status)
+                                );
+                                result = { available: !busy, message: busy ? "Horario ocupado por otra cita" : "Horario disponible" };
+                            }
                         } 
                         else if (fc.name === "createAppointment") {
-                            const newApt: Appointment = {
-                                id: Math.random().toString(36).substr(2, 9),
-                                patientId: 'P-GUEST', // Guest ID for phone booking
-                                patientName: args.patientName,
-                                date: args.date,
-                                time: args.time,
-                                treatment: args.treatment,
-                                doctorName: args.doctorName || doctorsRef.current[0]?.name || "Dr. Asignado",
-                                doctorId: doctorsRef.current[0]?.id || "D1",
-                                status: 'Confirmed'
-                            };
-                            setAppointments(prev => [...prev, newApt]);
-                            result = { success: true, id: newApt.id, message: "Cita creada exitosamente" };
+                            if (!isClinicOpen(args.date, args.time)) {
+                                result = { success: false, message: "No se pudo agendar: La clínica está cerrada en ese horario." };
+                            } else {
+                                // Calculate Status based on Policy
+                                const today = new Date(); today.setHours(0,0,0,0);
+                                const apptDate = new Date(args.date);
+                                const diffTime = apptDate.getTime() - today.getTime();
+                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                
+                                let initialStatus: AppointmentStatus = 'Confirmed';
+                                if (policyRef.current) {
+                                    if (diffDays >= policyRef.current.leadTimeThreshold) {
+                                        initialStatus = 'Pending';
+                                    } else if (policyRef.current.autoConfirmShortNotice) {
+                                        initialStatus = 'Confirmed';
+                                    }
+                                }
+
+                                const newApt: Appointment = {
+                                    id: Math.random().toString(36).substr(2, 9),
+                                    patientId: 'P-VOICE-' + Date.now(),
+                                    patientName: args.patientName,
+                                    date: args.date,
+                                    time: args.time,
+                                    treatment: args.treatment,
+                                    doctorName: args.doctorName || doctorsRef.current[0]?.name || "Dr. Asignado",
+                                    doctorId: doctorsRef.current[0]?.id || "D1",
+                                    status: initialStatus
+                                };
+                                setAppointments(prev => [...prev, newApt]);
+                                
+                                const statusMsg = initialStatus === 'Pending' 
+                                    ? `Cita creada como PENDIENTE. Recuérdale al usuario que debe confirmar ${policyRef.current?.confirmationWindow}h antes.` 
+                                    : "Cita creada y CONFIRMADA exitosamente.";
+                                
+                                result = { success: true, id: newApt.id, message: statusMsg, status: initialStatus };
+                            }
                         }
                         else if (fc.name === "rescheduleAppointment") {
-                            const target = appointmentsRef.current.find(a => 
-                                a.patientName.toLowerCase().includes(args.patientName.toLowerCase()) || 
-                                a.date === args.oldDate
-                            );
-                            if (target) {
-                                setAppointments(prev => prev.map(a => a.id === target.id ? { ...a, date: args.newDate, time: args.newTime, status: 'Rescheduled' } : a));
-                                result = { success: true, message: `Cita reprogramada al ${args.newDate} a las ${args.newTime}` };
+                            if (!isClinicOpen(args.newDate, args.newTime)) {
+                                result = { success: false, message: "No se pudo reprogramar: La clínica está cerrada en el nuevo horario." };
                             } else {
-                                result = { success: false, message: "No encontré la cita original" };
+                                const targetId = args.appointmentId;
+                                const exists = appointmentsRef.current.find(a => a.id === targetId);
+                                
+                                if (exists) {
+                                    setAppointments(prev => prev.map(a => a.id === targetId ? { ...a, date: args.newDate, time: args.newTime, status: 'Rescheduled' } : a));
+                                    result = { success: true, message: `Cita reprogramada al ${args.newDate} a las ${args.newTime}` };
+                                } else {
+                                    result = { success: false, message: "Error interno: ID de cita no encontrado para reprogramar." };
+                                }
                             }
                         }
                         else if (fc.name === "cancelAppointment") {
-                            const target = appointmentsRef.current.find(a => 
-                                a.patientName.toLowerCase().includes(args.patientName.toLowerCase())
-                            );
-                            if (target) {
-                                setAppointments(prev => prev.map(a => a.id === target.id ? { ...a, status: 'Cancelled' } : a));
+                            const targetId = args.appointmentId;
+                            const exists = appointmentsRef.current.find(a => a.id === targetId);
+
+                            if (exists) {
+                                setAppointments(prev => prev.map(a => a.id === targetId ? { ...a, status: 'Cancelled' } : a));
                                 result = { success: true, message: "Cita cancelada correctamente" };
                             } else {
-                                result = { success: false, message: "No encontré la cita para cancelar" };
+                                result = { success: false, message: "Error interno: ID de cita no encontrado para cancelar." };
                             }
                         }
                         else if (fc.name === "getServiceDetails") {
@@ -317,6 +457,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
           },
           tools: [{ 
               functionDeclarations: [
+                  declarationFindAppointment, // ENRICHED
                   declarationCheckAvailability, 
                   declarationCreateAppointment, 
                   declarationRescheduleAppointment,

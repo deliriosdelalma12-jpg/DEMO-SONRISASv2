@@ -190,8 +190,16 @@ export interface LaborSettings {
   incidentTypes: LaborIncidentType[];
 }
 
+// --- NEW TYPE FOR APPOINTMENT RULES ---
+export interface AppointmentPolicy {
+  confirmationWindow: 24 | 48; // Hours before appt to require confirmation
+  leadTimeThreshold: number; // Days. If booked > X days in advance, status is Pending.
+  autoConfirmShortNotice: boolean; // If true, appointments booked < threshold are auto-confirmed.
+}
+
 export interface ClinicSettings {
   name: string;
+  sector: string; // NEW: Clinic Sector
   logo: string;
   phone: string;
   email: string;
@@ -205,7 +213,9 @@ export interface ClinicSettings {
   labels: AppLabels;
   visuals: VisualSettings;
   laborSettings: LaborSettings;
-  roles: RoleDefinition[]; // New Field for RBAC
+  appointmentPolicy: AppointmentPolicy; // NEW: Appointment Rules
+  roles: RoleDefinition[];
+  globalSchedule: Record<string, DaySchedule>; // NEW: Global opening hours
 }
 
 export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
@@ -213,10 +223,12 @@ export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
 export interface Task {
   id: string;
   title: string;
-  description?: string;
+  description?: string; // Short description for list view
+  content?: string; // Long description for modal view
   completed: boolean;
   priority: 'High' | 'Medium' | 'Low';
   sub?: string;
+  assignedToId?: string; // ID of the doctor/user assigned to this task
 }
 
 export interface Appointment {

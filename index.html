@@ -39,7 +39,24 @@
                         "display": ["Outfit", "sans-serif"],
                         "body": ["Inter", "sans-serif"],
                     },
-                    borderRadius: {"DEFAULT": "0.75rem", "lg": "1rem", "xl": "1.25rem", "2xl": "1.5rem"},
+                    // GLOBAL REDESIGN: Tighter border radius for a professional/flat look
+                    borderRadius: {
+                        "DEFAULT": "0.25rem", // 4px
+                        "md": "0.375rem",     // 6px
+                        "lg": "0.5rem",       // 8px
+                        "xl": "0.75rem",      // 12px
+                        "2xl": "0.75rem",     // Override 2xl to be smaller (was 1.5rem)
+                        "3xl": "1rem",        // Override 3xl to be smaller
+                        "full": "9999px"      // Keep full for avatars
+                    },
+                    boxShadow: {
+                        "DEFAULT": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+                        "sm": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+                        "md": "none", // Remove medium shadows
+                        "lg": "none", // Remove large shadows
+                        "xl": "none", // Remove xl shadows
+                        "2xl": "none" // Remove 2xl shadows
+                    }
                 },
             },
         }

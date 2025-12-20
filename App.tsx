@@ -13,7 +13,7 @@ import Layout from './components/Layout';
 import VoiceAssistant from './components/VoiceAssistant';
 import DoctorDetailModal from './components/DoctorDetailModal';
 import PatientDetailModal from './components/PatientDetailModal';
-import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate, Task, RoleDefinition, AppointmentStatus, Branch } from './types';
+import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate, Task, RoleDefinition, AppointmentStatus, Branch, DaySchedule } from './types';
 
 export const COLOR_TEMPLATES: ColorTemplate[] = [
   { id: 'ocean', name: 'Océano', primary: '#3b82f6', dark: '#1d4ed8', light: '#dbeafe' },
@@ -50,31 +50,46 @@ const INITIAL_BRANCHES: Branch[] = [
     id: 'B1', name: 'Centro', address: 'Av. de la Constitución 120', city: 'Madrid', zip: '28001',
     phone: '910 000 001', email: 'centro@mediclinic.com', status: 'Active',
     coordinates: { lat: '40.416775', lng: '-3.703790' },
-    img: 'https://img.freepik.com/foto-gratis/pasillo-hospital-borroso_1101-37.jpg',
+    img: 'https://images.unsplash.com/photo-1538108149393-fbbd8189718c?q=80&w=800&auto=format&fit=crop',
     openingHours: '08:00 - 21:00', manager: 'Carlos D.'
   },
   {
     id: 'B2', name: 'Norte', address: 'Paseo de la Castellana 250', city: 'Madrid', zip: '28046',
     phone: '910 000 002', email: 'norte@mediclinic.com', status: 'Active',
     coordinates: { lat: '40.478905', lng: '-3.688172' },
-    img: 'https://img.freepik.com/foto-gratis/sala-espera-lujo_1098-16147.jpg',
+    img: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?q=80&w=800&auto=format&fit=crop',
     openingHours: '09:00 - 20:00', manager: 'Laura M.'
   },
   {
     id: 'B3', name: 'Sur', address: 'Av. de Andalucía 85', city: 'Getafe', zip: '28903',
     phone: '910 000 003', email: 'sur@mediclinic.com', status: 'Maintenance',
     coordinates: { lat: '40.308256', lng: '-3.732669' },
-    img: 'https://img.freepik.com/foto-gratis/edificio-hospital-moderno_1127-3135.jpg',
+    img: 'https://images.unsplash.com/photo-1516549655169-df83a0774514?q=80&w=800&auto=format&fit=crop',
     openingHours: '08:00 - 15:00', manager: 'Sergio R.'
   }
 ];
+
+const WEEK_DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+// Helper to create default M-F schedule
+const createDefaultGlobalSchedule = (): Record<string, DaySchedule> => {
+  const schedule: Record<string, DaySchedule> = {};
+  WEEK_DAYS.forEach(day => {
+    const isWeekend = day === 'Sábado' || day === 'Domingo';
+    schedule[day] = {
+      morning: { start: '09:00', end: '14:00', active: !isWeekend },
+      afternoon: { start: '16:00', end: '20:00', active: !isWeekend } // L-V turno partido por defecto
+    };
+  });
+  return schedule;
+};
 
 // --- DATOS MOCK INICIALES (Doctors, Patients, etc...) ---
 // (Keeping original mock data for brevity, assuming it exists in same structure)
 const INITIAL_DOCTORS: Doctor[] = [
   {
     id: 'D1', name: 'Dra. Ana Torres', role: 'doctor_role', specialty: 'Ortodoncia', status: 'Active',
-    img: 'https://img.freepik.com/foto-gratis/mujer-doctora-vistiendo-bata-laboratorio-estetoscopio-aislado_1303-29791.jpg',
+    img: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400&auto=format&fit=crop',
     branch: 'Centro', phone: '600 111 222', corporateEmail: 'ana.torres@mediclinic.com', docs: [],
     vacationDaysTotal: 30, vacationDaysTaken: 5,
     vacationHistory: [
@@ -89,7 +104,7 @@ const INITIAL_DOCTORS: Doctor[] = [
   },
   {
     id: 'D2', name: 'Dr. Carlos Ruiz', role: 'doctor_role', specialty: 'Implantología', status: 'Active',
-    img: 'https://img.freepik.com/foto-gratis/doctor-sonriente-con-estetoscopio_1154-255.jpg',
+    img: 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?q=80&w=400&auto=format&fit=crop',
     branch: 'Norte', phone: '600 333 444', corporateEmail: 'carlos.ruiz@mediclinic.com', docs: [],
     vacationDaysTotal: 30, vacationDaysTaken: 12,
     vacationHistory: [
@@ -99,7 +114,7 @@ const INITIAL_DOCTORS: Doctor[] = [
   },
   {
     id: 'D3', name: 'Dra. Sofia Mendez', role: 'doctor_role', specialty: 'Odontopediatría', status: 'Vacation',
-    img: 'https://img.freepik.com/foto-gratis/enfermera-joven-hispana-uniforme-medico-estetoscopio-sobre-fondo-amarillo-mirando-hacia-lado-sonrisa-natural-cara-risa-segura_141793-128229.jpg',
+    img: 'https://images.unsplash.com/photo-1594824476967-48c8b964273f?q=80&w=400&auto=format&fit=crop',
     branch: 'Sur', phone: '600 555 666', corporateEmail: 'sofia.mendez@mediclinic.com', docs: [],
     vacationDaysTotal: 22, vacationDaysTaken: 22,
     vacationHistory: [
@@ -109,7 +124,7 @@ const INITIAL_DOCTORS: Doctor[] = [
   },
   {
     id: 'D4', name: 'Dr. Javier Costa', role: 'doctor_role', specialty: 'Cirugía Maxilofacial', status: 'Active',
-    img: 'https://img.freepik.com/foto-gratis/retrato-hombre-sonriente-trabajador-hospital_23-2148858880.jpg',
+    img: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?q=80&w=400&auto=format&fit=crop',
     branch: 'Centro', phone: '600 777 888', corporateEmail: 'javier.costa@mediclinic.com', docs: [],
     vacationDaysTotal: 30, vacationDaysTaken: 0,
     vacationHistory: [],
@@ -181,31 +196,52 @@ const generateDemoAppointments = (): Appointment[] => {
 
   const demoAppointments: Appointment[] = [];
 
-  for (let i = 0; i < 30; i++) {
-    // Selección aleatoria de recursos existentes
+  // 1. GENERATE SPECIFIC APPOINTMENTS FOR TODAY AND TOMORROW (Visual Assurance)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrowObj = new Date();
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+
+  const createForDay = (dateStr: string, count: number) => {
+      for (let i = 0; i < count; i++) {
+        const doctor = INITIAL_DOCTORS[i % INITIAL_DOCTORS.length];
+        const patient = INITIAL_PATIENTS[i % INITIAL_PATIENTS.length];
+        demoAppointments.push({
+            id: `FIXED_${dateStr}_${i}`,
+            patientId: patient.id,
+            patientName: patient.name,
+            doctorId: doctor.id,
+            doctorName: doctor.name,
+            date: dateStr,
+            time: times[i % times.length], // Distribute times
+            treatment: treatments[i % treatments.length],
+            status: 'Confirmed'
+        });
+      }
+  };
+
+  createForDay(todayStr, 4); // 4 Appointments today
+  createForDay(tomorrowStr, 3); // 3 Appointments tomorrow
+
+  // 2. GENERATE RANDOM APPOINTMENTS FOR THE REST OF THE MONTH
+  for (let i = 0; i < 25; i++) {
     const doctor = INITIAL_DOCTORS[Math.floor(Math.random() * INITIAL_DOCTORS.length)];
     const patient = INITIAL_PATIENTS[Math.floor(Math.random() * INITIAL_PATIENTS.length)];
     const treatment = treatments[Math.floor(Math.random() * treatments.length)];
     const status = statuses[Math.floor(Math.random() * statuses.length)];
     
-    // Generar día aleatorio dentro del mes actual
     const day = Math.floor(Math.random() * daysInMonth) + 1;
     const time = times[Math.floor(Math.random() * times.length)];
-    
-    // Formatear fecha YYYY-MM-DD
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-    // Lógica para estados pasados/futuros
     let finalStatus = status;
     const aptDateObj = new Date(year, month, day);
     const todayObj = new Date();
-    todayObj.setHours(0,0,0,0); // Comparar solo fecha
+    todayObj.setHours(0,0,0,0);
 
-    // Si la fecha generada es futura, no puede estar 'Completed' (a menos que sea demo logic flexible, pero mejor 'Confirmed')
     if (aptDateObj > todayObj && status === 'Completed') {
         finalStatus = 'Confirmed';
     }
-    // Si la fecha es pasada y es 'Confirmed', idealmente pasaría a 'Pending' o 'Completed', pero lo dejamos aleatorio para que el usuario pueda 'Completarla'
 
     demoAppointments.push({
       id: `DEMO_APT_${i}`,
@@ -220,17 +256,52 @@ const generateDemoAppointments = (): Appointment[] => {
     });
   }
 
-  // Ordenar por fecha
   return demoAppointments.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
 };
 
-// Generamos la data UNA VEZ al cargar el módulo
 const INITIAL_DEMO_APPOINTMENTS = generateDemoAppointments();
 
 const INITIAL_TASKS: Task[] = [
-  { id: 'T1', title: 'Confirmar citas de mañana', description: 'Llamar a pacientes de primera hora para confirmar asistencia.', completed: false, priority: 'High', sub: 'Recepción' },
-  { id: 'T2', title: 'Pedir material de implantes', description: 'Faltan tornillos de titanio 3mm.', completed: true, priority: 'Medium', sub: 'Almacén' },
-  { id: 'T3', title: 'Revisar informe de Laura M.', description: 'Evaluar evolución tras ajuste de brackets.', completed: false, priority: 'Low', sub: 'Dra. Torres' }
+  { 
+    id: 'T1', 
+    title: 'Confirmar citas de mañana', 
+    description: 'Llamar a pacientes de primera hora.', 
+    content: 'Revisar la lista de pacientes agendados para mañana entre las 09:00 y las 11:00. Verificar que todos hayan recibido el SMS de recordatorio. En caso contrario, realizar llamada manual para confirmar asistencia y evitar huecos en la agenda.',
+    completed: false, 
+    priority: 'High', 
+    sub: 'Recepción',
+    assignedToId: 'U1' // Admin/Reception
+  },
+  { 
+    id: 'T2', 
+    title: 'Pedir material de implantes', 
+    description: 'Faltan tornillos de titanio 3mm.', 
+    content: 'Realizar inventario del cajón B2. Se ha detectado escasez de tornillos de titanio de 3mm y 5mm. Contactar con el proveedor "DentalTech" y realizar pedido urgente para recibir antes del viernes.',
+    completed: true, 
+    priority: 'Medium', 
+    sub: 'Almacén',
+    assignedToId: 'U1'
+  },
+  { 
+    id: 'T3', 
+    title: 'Revisar informe de Laura M.', 
+    description: 'Evaluar evolución brackets.', 
+    content: 'La paciente Laura Martínez (ID: P1001) reportó molestias en la zona molar derecha tras el último ajuste. Revisar radiografías recientes y planificar ajuste de tensión en la próxima visita.',
+    completed: false, 
+    priority: 'Low', 
+    sub: 'Dra. Torres',
+    assignedToId: 'D1' // Linked to Dra. Ana Torres
+  },
+  { 
+    id: 'T4', 
+    title: 'Firmar alta de Roberto F.', 
+    description: 'Tratamiento completado.', 
+    content: 'El paciente ha finalizado su ciclo de ortodoncia. Preparar certificado de garantía de retención y firmar el alta clínica en el sistema.',
+    completed: false, 
+    priority: 'Medium', 
+    sub: 'Dr. Ruiz',
+    assignedToId: 'D2' // Linked to Dr. Carlos Ruiz
+  }
 ];
 
 const App: React.FC = () => {
@@ -252,6 +323,7 @@ const App: React.FC = () => {
 
   const [settings, setSettings] = useState<ClinicSettings>({
     name: "MediClinic Premium",
+    sector: "Clínica Dental",
     logo: "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/hospital.svg",
     phone: "+34 910 000 001",
     email: "central@mediclinic-premium.com",
@@ -282,6 +354,11 @@ const App: React.FC = () => {
     defaultTheme: 'light',
     colorTemplate: 'ocean',
     visuals: { titleFontSize: 32, bodyFontSize: 16 },
+    appointmentPolicy: {
+      confirmationWindow: 24, // 24 hours before
+      leadTimeThreshold: 3,   // 3 days
+      autoConfirmShortNotice: true
+    },
     labels: {
       dashboardTitle: "Panel Operativo",
       dashboardSubtitle: "Resumen de actividad diaria",
@@ -301,13 +378,14 @@ const App: React.FC = () => {
         { id: 'inc_3', name: 'Ausencia Personal', requiresJustification: true, isPaid: false, color: 'bg-purple-500' },
         { id: 'inc_4', name: 'Accidente Laboral', requiresJustification: true, isPaid: true, color: 'bg-danger' }
       ]
-    }
+    },
+    globalSchedule: createDefaultGlobalSchedule()
   });
 
   const [darkMode, setDarkMode] = useState(settings.defaultTheme === 'dark');
 
   // --- SYSTEM USERS STATE ---
-  const adminUser: User = { id: 'U1', username: 'admin', name: 'Dr. Administrador', role: 'admin_role', img: 'https://i.pravatar.cc/150?u=admin' };
+  const adminUser: User = { id: 'U1', username: 'admin', name: 'Dr. Administrador', role: 'admin_role', img: 'https://images.unsplash.com/photo-1622902046580-2b47f47f5471?q=80&w=200&auto=format&fit=crop' };
   
   const [systemUsers, setSystemUsers] = useState<User[]>([
     adminUser,
@@ -397,10 +475,10 @@ const App: React.FC = () => {
       >
         <Routes>
           <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={currentUser} />} />
-          <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} />} />
+          <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} globalSchedule={settings.globalSchedule} settings={settings} />} />
           <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={currentUser} team={doctors} />} />
           <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} branches={branches} />} />
-          <Route path="/branches" element={<Branches branches={branches} setBranches={setBranches} doctors={doctors} setDoctors={setDoctors} />} />
+          <Route path="/branches" element={<Branches branches={branches} setBranches={setBranches} doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
           <Route path="/hr" element={<HRManagement doctors={doctors} setDoctors={setDoctors} />} />
           <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} settings={settings} branches={branches} />} />
           <Route 
@@ -443,7 +521,7 @@ const App: React.FC = () => {
         />
       )}
 
-      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} />}
+      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} patients={patients} />}
     </HashRouter>
   );
 };

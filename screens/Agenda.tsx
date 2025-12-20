@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Appointment, AppointmentStatus, Patient, Doctor } from '../types';
+import { Appointment, AppointmentStatus, Patient, Doctor, DaySchedule, ClinicSettings } from '../types';
 import AppointmentDetailModal from '../components/AppointmentDetailModal';
 
 interface AgendaProps {
@@ -8,9 +8,11 @@ interface AgendaProps {
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>;
   patients: Patient[];
   doctors: Doctor[];
+  globalSchedule: Record<string, DaySchedule>;
+  settings: ClinicSettings; // To access appointment policy
 }
 
-const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients, doctors }) => {
+const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients, doctors, globalSchedule, settings }) => {
   const [view, setView] = useState<'day' | 'week' | 'month'>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
@@ -42,6 +44,30 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
     }
   };
 
+  // Helper to check if clinic is open at a specific time
+  const isClinicOpen = (dateStr: string, timeStr: string): boolean => {
+    if (!globalSchedule) return true; // Fallback if no schedule
+    const date = new Date(dateStr);
+    const dayIndex = date.getDay(); // 0 is Sunday, 1 is Monday
+    // Map JS getDay to our schedule keys
+    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const dayName = dayNames[dayIndex];
+    const schedule = globalSchedule[dayName];
+
+    if (!schedule) return false; // Closed if no schedule for day
+
+    // Check Morning
+    if (schedule.morning.active) {
+        if (timeStr >= schedule.morning.start && timeStr < schedule.morning.end) return true;
+    }
+    // Check Afternoon
+    if (schedule.afternoon.active) {
+        if (timeStr >= schedule.afternoon.start && timeStr < schedule.afternoon.end) return true;
+    }
+
+    return false;
+  };
+
   const navigateDate = (direction: number) => {
     const next = new Date(currentDate);
     if (view === 'month') next.setMonth(currentDate.getMonth() + direction);
@@ -71,6 +97,31 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
       return;
     }
 
+    // CHECK SCHEDULE
+    if (!isClinicOpen(newAptData.date, newAptData.time)) {
+        alert("⛔ LA CLÍNICA ESTÁ CERRADA en ese horario según la configuración operativa.");
+        return;
+    }
+
+    // CALCULATE INITIAL STATUS BASED ON POLICY
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const appointmentDate = new Date(newAptData.date);
+    const diffTime = appointmentDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    // Policy Rule: If booked > threshold days in advance -> Pending. Else -> Confirmed (if auto-confirm enabled).
+    // Default fallback: Confirmed.
+    let initialStatus: AppointmentStatus = 'Confirmed';
+    
+    if (settings.appointmentPolicy) {
+        if (diffDays >= settings.appointmentPolicy.leadTimeThreshold) {
+            initialStatus = 'Pending';
+        } else if (settings.appointmentPolicy.autoConfirmShortNotice) {
+            initialStatus = 'Confirmed';
+        }
+    }
+
     const newApt: Appointment = {
       id: Math.random().toString(36).substr(2, 9),
       patientId: 'P' + Math.floor(Math.random() * 1000),
@@ -80,10 +131,17 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
       treatment: newAptData.treatment,
       date: newAptData.date,
       time: newAptData.time,
-      status: 'Confirmed'
+      status: initialStatus
     };
+    
     setAppointments(prev => [...prev, newApt]);
     setIsCreating(false);
+    
+    // Alert user if status is pending
+    if (initialStatus === 'Pending') {
+        alert(`ℹ️ Cita agendada como PENDIENTE.\n\nSe requiere confirmación del paciente ${settings.appointmentPolicy.confirmationWindow}h antes.`);
+    }
+
     setNewAptData({ 
       ...newAptData, 
       patientName: '', 
@@ -95,6 +153,12 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
   };
 
   const handleUpdateStatus = (id: string, status: AppointmentStatus, newDate?: string, newTime?: string, doctorId?: string, doctorName?: string) => {
+    // If updating time, check schedule
+    if (newDate && newTime && !isClinicOpen(newDate, newTime)) {
+        alert("⛔ No se puede reprogramar: La clínica está cerrada en ese horario.");
+        return;
+    }
+
     setAppointments(prev => prev.map(apt => apt.id === id ? { 
       ...apt, 
       status, 
@@ -132,7 +196,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         date: original.date,
         time: original.time,
         treatment: 'Consulta General',
-        status: 'Confirmed'
+        status: 'Confirmed' // Replacement assumes immediate confirmation
       };
       setAppointments(prev => [...prev, newApt]);
     }
@@ -153,6 +217,13 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
       alert("No se pueden mover citas a fechas pasadas.");
       setDraggedAptId(null);
       return;
+    }
+
+    // CHECK SCHEDULE
+    if (!isClinicOpen(dateStr, timeStr)) {
+        alert("⛔ ACCIÓN DENEGADA: La clínica está cerrada en ese horario.");
+        setDraggedAptId(null);
+        return;
     }
     
     handleUpdateStatus(draggedAptId, 'Rescheduled', dateStr, timeStr);
@@ -191,7 +262,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
             <div key={d} className="py-5 text-center text-xs font-black uppercase tracking-widest text-slate-400">{d}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7 flex-1 divide-x divide-y divide-border-light dark:divide-border-dark">
+        <div className="grid grid-cols-7 flex-1 divide-x divide-y divide-border-light dark:border-border-dark">
           {calendarDays.map((date, i) => {
             const dateStr = date.toISOString().split('T')[0];
             const dayAppointments = appointments.filter(a => a.date === dateStr);
@@ -285,14 +356,30 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                 const dateStr = d.toISOString().split('T')[0];
                 const apt = getSlotAppointment(dateStr, h);
                 const isPast = isPastDate(dateStr);
+                const open = isClinicOpen(dateStr, h);
+
                 return (
                   <div 
                     key={i} 
                     onDragOver={(e) => !isPast && e.preventDefault()}
                     onDrop={() => !isPast && onDrop(dateStr, h)}
-                    onClick={() => { if (!isPast) { setNewAptData({...newAptData, date: dateStr, time: h}); setIsCreating(true); } }}
-                    className={`border-l border-border-light dark:border-border-dark p-2 relative min-h-[80px] ${isPast ? 'bg-slate-100/30 dark:bg-slate-900/10 cursor-not-allowed' : 'hover:bg-primary/[0.02] cursor-pointer group'}`}
+                    onClick={() => { 
+                        if (!isPast) { 
+                            if (open) {
+                                setNewAptData({...newAptData, date: dateStr, time: h}); 
+                                setIsCreating(true); 
+                            } else {
+                                alert("Clínica Cerrada");
+                            }
+                        } 
+                    }}
+                    className={`border-l border-border-light dark:border-border-dark p-2 relative min-h-[80px] ${!open ? 'bg-slate-100 dark:bg-slate-800/30 opacity-60 bg-stripes' : (isPast ? 'bg-slate-100/30 dark:bg-slate-900/10 cursor-not-allowed' : 'hover:bg-primary/[0.02] cursor-pointer group')}`}
                   >
+                    {!open && !apt && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-[8px] font-black text-slate-300 uppercase -rotate-45">Cerrado</span>
+                        </div>
+                    )}
                     {apt ? (
                       <div 
                         draggable={apt.status !== 'Cancelled' && apt.status !== 'Completed'}
@@ -308,7 +395,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                         <div className="opacity-80 uppercase tracking-tighter text-[8px]">{apt.treatment}</div>
                       </div>
                     ) : (
-                      !isPast && (
+                      !isPast && open && (
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                           <span className="material-symbols-outlined text-primary text-xl">add_circle</span>
                         </div>
@@ -343,18 +430,34 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         <div className="flex-1 overflow-y-auto">
           {hours.map(h => {
             const apt = getSlotAppointment(dateStr, h);
+            const open = isClinicOpen(dateStr, h);
+
             return (
               <div 
                 key={h} 
                 onDragOver={(e) => !isPast && e.preventDefault()}
                 onDrop={() => !isPast && onDrop(dateStr, h)}
-                onClick={() => { if(!isPast) { setNewAptData({...newAptData, time: h, date: dateStr}); setIsCreating(true); } }}
-                className={`flex border-b border-border-light dark:border-border-dark transition-all min-h-[120px] ${isPast ? 'bg-slate-100/30 dark:bg-slate-900/10 cursor-not-allowed' : 'group cursor-pointer hover:bg-primary/[0.02]'}`}
+                onClick={() => { 
+                    if(!isPast) { 
+                        if(open) {
+                            setNewAptData({...newAptData, time: h, date: dateStr}); 
+                            setIsCreating(true); 
+                        } else {
+                            alert("Clínica Cerrada en este horario");
+                        }
+                    } 
+                }}
+                className={`flex border-b border-border-light dark:border-border-dark transition-all min-h-[120px] ${!open ? 'bg-slate-100 dark:bg-slate-900/50 opacity-70' : (isPast ? 'bg-slate-100/30 dark:bg-slate-900/10 cursor-not-allowed' : 'group cursor-pointer hover:bg-primary/[0.02]')}`}
               >
                 <div className="w-28 p-8 text-sm font-black text-slate-400 border-r border-border-light dark:border-border-dark bg-slate-50/50 dark:bg-slate-900/10 text-center flex items-center justify-center">
                   {h}
                 </div>
-                <div className="flex-1 p-6">
+                <div className="flex-1 p-6 relative">
+                  {!open && !apt && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-4xl font-black text-slate-200 dark:text-slate-800 uppercase tracking-[1em] -rotate-6">Cerrado</span>
+                      </div>
+                  )}
                   {apt ? (
                     <div 
                       draggable={apt.status !== 'Cancelled' && apt.status !== 'Completed'}
@@ -364,7 +467,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                         setDraggedAptId(apt.id); 
                       }}
                       onClick={(e) => { e.stopPropagation(); setSelectedApt(apt); }}
-                      className={`p-6 rounded-[2rem] flex items-center justify-between ${getStatusColor(apt.status)} shadow-xl hover:scale-[1.01] transition-all border border-white/10 h-full`}
+                      className={`p-6 rounded-[2rem] flex items-center justify-between ${getStatusColor(apt.status)} shadow-xl hover:scale-[1.01] transition-all border border-white/10 h-full relative z-10`}
                     >
                       <div className="flex items-center gap-6">
                         <div className="size-14 rounded-2xl bg-white/20 flex items-center justify-center font-bold text-xl">{apt.patientName[0]}</div>
@@ -378,7 +481,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                       </div>
                     </div>
                   ) : (
-                    !isPast && (
+                    !isPast && open && (
                       <div className="h-full flex items-center justify-start px-6 opacity-0 group-hover:opacity-100 transition-all">
                         <div className="flex items-center gap-3 text-primary font-bold">
                           <div className="size-10 rounded-full border-2 border-primary flex items-center justify-center">

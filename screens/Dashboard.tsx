@@ -13,7 +13,7 @@ interface DashboardProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   patients: Patient[];
   doctors: Doctor[];
-  currentUser?: User; // Pass current user for permission checks
+  currentUser?: User; 
 }
 
 const treatmentPrices: Record<string, number> = {
@@ -31,63 +31,77 @@ const treatmentPrices: Record<string, number> = {
 
 const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppointments, tasks, setTasks, patients, doctors, currentUser }) => {
   const navigate = useNavigate();
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskDesc, setNewTaskDesc] = useState('');
-  const [newTaskPriority, setNewTaskPriority] = useState<'High'|'Medium'|'Low'>('Medium');
-  const [isAddingTask, setIsAddingTask] = useState(false);
+  
+  // Task Editing State
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  
+  // Selected Appointment State
   const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
   
-  // PERMISSIONS CHECK
+  // Permissions & Filtering
   const userRole = settings.roles.find(r => r.id === currentUser?.role);
   const canViewAllData = userRole?.permissions.includes('view_all_data');
-  
-  // If user cannot view all data, force selection to themselves (if they are a doctor)
   const isDoctor = doctors.find(d => d.id === currentUser?.id);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('ALL');
 
   useEffect(() => {
     if (!canViewAllData && isDoctor) {
       setSelectedDoctorId(isDoctor.id);
-    } else if (!canViewAllData && !isDoctor) {
-        // If not a doctor and can't view all data, theoretically shouldn't happen or see empty
-        // keeping ALL for now but list will be filtered potentially if we wanted strict ownership
     }
   }, [canViewAllData, isDoctor]);
 
-  // Drag and Drop refs
-  const dragItem = useRef<number | null>(null);
-  const dragOverItem = useRef<number | null>(null);
-
-  // --- DATA FILTERING ---
+  // --- FILTRADO GLOBAL (Appointments & Stats) ---
   const filteredAppointments = useMemo(() => {
     return selectedDoctorId === 'ALL' 
       ? appointments 
       : appointments.filter(a => a.doctorId === selectedDoctorId);
   }, [appointments, selectedDoctorId]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const tomorrowDate = new Date();
-  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+  // --- FILTRADO DE TAREAS ---
+  const filteredTasks = useMemo(() => {
+    if (selectedDoctorId === 'ALL') {
+        // Si es Admin y ve todo, ve todas las tareas
+        return tasks;
+    } else {
+        // Filtra tareas asignadas al usuario/doctor seleccionado
+        // También busca por coincidencia difusa en 'sub' (legacy support)
+        const docName = doctors.find(d => d.id === selectedDoctorId)?.name || '';
+        return tasks.filter(t => 
+            t.assignedToId === selectedDoctorId || 
+            (t.sub && docName && t.sub.toLowerCase().includes(docName.split(' ')[1]?.toLowerCase() || 'xyz'))
+        );
+    }
+  }, [tasks, selectedDoctorId, doctors]);
 
-  const todayApts = filteredAppointments.filter(a => a.date === todayStr);
-  const tomorrowApts = filteredAppointments.filter(a => a.date === tomorrowStr);
-  
+  // --- APPOINTMENT LOGIC (TODAY & TOMORROW SEPARATED) ---
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrowObj = new Date();
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+
+  const todayApts = filteredAppointments.filter(a => 
+    a.date === todayStr &&
+    ['Confirmed', 'Rescheduled', 'Pending'].includes(a.status)
+  ).sort((a, b) => a.time.localeCompare(b.time));
+
+  const tomorrowApts = filteredAppointments.filter(a => 
+    a.date === tomorrowStr &&
+    ['Confirmed', 'Rescheduled', 'Pending'].includes(a.status)
+  ).sort((a, b) => a.time.localeCompare(b.time));
+
+  // --- STATS LOGIC ---
   const monthApts = filteredAppointments.filter(a => a.date.startsWith(todayStr.substring(0, 7)));
-  
   const monthRevenue = monthApts
     .filter(a => a.status === 'Completed')
     .reduce((acc, curr) => acc + (treatmentPrices[curr.treatment] || 50), 0);
 
-  // Stats calculation
   const stats = [
-    { icon: 'event_available', label: 'Citas Hoy', value: todayApts.length.toString(), change: 'Activas', color: 'text-success' },
-    { icon: 'event_upcoming', label: 'Citas Mañana', value: tomorrowApts.length.toString(), change: 'Previsto', color: 'text-primary' },
-    { icon: 'payments', label: 'Ingresos Mes', value: `${settings.currency}${(monthRevenue / 1000).toFixed(1)}k`, change: 'Estimado', color: 'text-success' },
-    { icon: 'groups', label: 'Pacientes', value: selectedDoctorId === 'ALL' ? patients.length.toString() : new Set(filteredAppointments.map(a => a.patientId)).size.toString(), change: 'Cartera', color: 'text-blue-400' },
+    { icon: 'event_available', label: 'Citas Hoy/Mañana', value: (todayApts.length + tomorrowApts.length).toString(), change: 'Activas', color: 'text-success' },
+    { icon: 'payments', label: 'Ingresos Mes', value: `${settings.currency}${(monthRevenue / 1000).toFixed(1)}k`, change: 'Estimado', color: 'text-primary' },
+    { icon: 'groups', label: 'Pacientes', value: selectedDoctorId === 'ALL' ? patients.length.toString() : new Set(filteredAppointments.map(a => a.patientId)).size.toString(), change: 'Total', color: 'text-blue-400' },
   ];
 
-  // Chart Data: Last 7 days activity for selected doctor(s)
   const chartData = useMemo(() => {
     const data = [];
     for (let i = 6; i >= 0; i--) {
@@ -95,280 +109,336 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
       d.setDate(d.getDate() - i);
       const dStr = d.toISOString().split('T')[0];
       const count = filteredAppointments.filter(a => a.date === dStr).length;
-      data.push({
-        name: d.toLocaleDateString('es-ES', { weekday: 'short' }),
-        citas: count
-      });
+      data.push({ name: d.toLocaleDateString('es-ES', { weekday: 'short' }), citas: count });
     }
     return data;
   }, [filteredAppointments]);
 
-  // --- TASK LOGIC ---
-  const handleSortTasks = () => {
-    const priorityMap = { 'High': 3, 'Medium': 2, 'Low': 1 };
-    const sorted = [...tasks].sort((a, b) => priorityMap[b.priority] - priorityMap[a.priority]);
-    setTasks(sorted);
-  };
-
-  const handleDragStart = (e: React.DragEvent, position: number) => {
-    dragItem.current = position;
-  };
-
-  const handleDragEnter = (e: React.DragEvent, position: number) => {
-    dragOverItem.current = position;
-  };
-
-  const handleDragEnd = () => {
-    const copyListItems = [...tasks];
-    if (dragItem.current !== null && dragOverItem.current !== null) {
-      const dragItemContent = copyListItems[dragItem.current];
-      copyListItems.splice(dragItem.current, 1);
-      copyListItems.splice(dragOverItem.current, 0, dragItemContent);
-      dragItem.current = null;
-      dragOverItem.current = null;
-      setTasks(copyListItems);
-    }
-  };
-
+  // --- TASK ACTIONS ---
   const toggleTask = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
   };
 
-  const addTask = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskTitle.trim()) return;
-    setTasks([{ 
-      id: Math.random().toString(), 
-      title: newTaskTitle, 
-      description: newTaskDesc,
-      sub: 'Ahora', 
-      completed: false, 
-      priority: newTaskPriority 
-    }, ...tasks]);
-    setNewTaskTitle('');
-    setNewTaskDesc('');
-    setIsAddingTask(false);
+  const handleSaveTask = (task: Task) => {
+    if (!task.title.trim()) return;
+    
+    // Auto-assign task to currently selected doctor filter if creating new, 
+    // otherwise defaults to current user or unassigned.
+    const assignId = isCreatingTask ? (selectedDoctorId === 'ALL' ? currentUser?.id : selectedDoctorId) : task.assignedToId;
+
+    const taskToSave = { ...task, assignedToId: assignId };
+
+    if (isCreatingTask) {
+        setTasks([taskToSave, ...tasks]);
+        setIsCreatingTask(false);
+    } else {
+        setTasks(prev => prev.map(t => t.id === task.id ? taskToSave : t));
+        setEditingTask(null);
+    }
   };
 
+  const handleDeleteTask = (id: string) => {
+      setTasks(prev => prev.filter(t => t.id !== id));
+      setEditingTask(null);
+  };
+
+  // Drag and Drop Logic
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.setData('taskIndex', index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); 
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    const sourceIndex = parseInt(e.dataTransfer.getData('taskIndex'));
+    if (isNaN(sourceIndex) || sourceIndex === targetIndex) return;
+
+    const newTasks = [...tasks];
+    const [movedTask] = newTasks.splice(sourceIndex, 1);
+    newTasks.splice(targetIndex, 0, movedTask);
+    setTasks(newTasks);
+  };
+
+  // Format nice dates
+  const formatDateNice = (d: Date) => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+
   return (
-    <div className="p-10 max-w-[1600px] mx-auto w-full space-y-10 animate-in fade-in duration-500">
+    <div className="w-full flex flex-col p-6 gap-6 animate-in fade-in duration-500">
       
-      {/* HEADER & FILTER */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+      {/* HEADER SECTION */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">{settings.labels.dashboardTitle}</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2 text-lg font-medium italic">
-            {selectedDoctorId === 'ALL' ? 'Vista General de la Clínica' : `Panel de Control: ${doctors.find(d => d.id === selectedDoctorId)?.name}`}
+          <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">{settings.labels.dashboardTitle}</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium italic">
+            {selectedDoctorId === 'ALL' ? 'Vista General de la Clínica' : `Panel Personal: ${doctors.find(d => d.id === selectedDoctorId)?.name}`}
           </p>
         </div>
         
-        {/* Only show filter if can view all data, otherwise show locked indicator */}
-        <div className="flex items-center gap-4 bg-white dark:bg-surface-dark p-2 rounded-2xl shadow-sm border border-border-light dark:border-border-dark">
-          <div className="px-4 py-2 bg-slate-100 dark:bg-bg-dark rounded-xl">
-            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">
-              {canViewAllData ? 'Filtrar por Médico' : 'Vista Restringida'}
-            </p>
+        <div className="flex items-center gap-4 bg-white dark:bg-surface-dark p-1.5 rounded-lg border border-border-light dark:border-border-dark">
+          <div className="px-3 py-1 bg-slate-50 dark:bg-bg-dark rounded-md">
+            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest mb-0.5">Filtro Global</p>
             <select 
               value={selectedDoctorId}
               disabled={!canViewAllData}
               onChange={(e) => setSelectedDoctorId(e.target.value)}
-              className={`bg-transparent border-none p-0 text-sm font-bold focus:ring-0 w-48 ${!canViewAllData ? 'text-slate-400 cursor-not-allowed' : 'text-slate-800 dark:text-white cursor-pointer'}`}
+              className={`bg-transparent border-none p-0 text-xs font-bold focus:ring-0 w-40 ${!canViewAllData ? 'text-slate-400 cursor-not-allowed' : 'text-slate-800 dark:text-white cursor-pointer'}`}
             >
               <option value="ALL">Todos los Médicos</option>
               {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
-          <div className={`size-10 rounded-xl flex items-center justify-center ${canViewAllData ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-slate-400'}`}>
-            <span className="material-symbols-outlined">{canViewAllData ? 'filter_list' : 'lock'}</span>
-          </div>
         </div>
       </div>
 
-      {/* KPI CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
+      {/* KPI GRID */}
+      <div className="grid grid-cols-3 gap-6">
         {stats.map((stat, i) => (
-          <div key={i} className="bg-white dark:bg-surface-dark p-8 rounded-[2.5rem] border-2 border-border-light dark:border-border-dark shadow-sm hover:shadow-xl transition-all group overflow-hidden relative">
-            <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform">
-              <span className="material-symbols-outlined text-8xl">{stat.icon}</span>
+          <div key={i} className="bg-white dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark flex flex-col justify-between group relative overflow-hidden h-32">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><span className="material-symbols-outlined text-6xl">{stat.icon}</span></div>
+            <div className="flex justify-between items-start relative z-10">
+               <span className={`p-2 rounded-lg bg-slate-50 dark:bg-bg-dark ${stat.color}`}><span className="material-symbols-outlined text-xl">{stat.icon}</span></span>
+               <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-slate-500 uppercase">{stat.change}</span>
             </div>
-            <p className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest">{stat.label}</p>
-            <div className="flex items-baseline gap-3 mt-3">
-              <h3 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">{stat.value}</h3>
-              <span className={`text-xs font-black ${stat.color} bg-slate-50 dark:bg-bg-dark px-3 py-1 rounded-full border border-current/20`}>{stat.change}</span>
+            <div className="relative z-10">
+               <h3 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter leading-none">{stat.value}</h3>
+               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">{stat.label}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+      {/* MAIN CONTENT GRID (NATURAL HEIGHT) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* LEFT COLUMN: Charts & Appointment Split */}
-        <div className="xl:col-span-2 space-y-10">
-          
-          {/* Chart Section */}
-          <div className="bg-white dark:bg-surface-dark p-8 rounded-[3rem] border border-border-light dark:border-border-dark shadow-lg">
-             <div className="flex items-center justify-between mb-6 px-4">
-                <h3 className="text-xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Rendimiento Semanal</h3>
-                <div className="flex gap-2">
-                   <span className="px-3 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-black uppercase">Citas Atendidas</span>
+        {/* COL 1: CHART & APPOINTMENTS (2/3 width) */}
+        <div className="lg:col-span-2 flex flex-col gap-6">
+            {/* Chart Area */}
+            <div className="bg-white dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark flex flex-col h-[280px]">
+                <div className="flex justify-between items-center mb-2 shrink-0">
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Actividad Semanal</h3>
                 </div>
-             </div>
-             <div className="h-[250px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="colorCitas" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} dy={10} />
-                    <Tooltip 
-                      contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} 
-                      itemStyle={{fontWeight: 'bold', color: '#3b82f6'}}
-                    />
-                    <Area type="monotone" dataKey="citas" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorCitas)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-             </div>
-          </div>
-
-          {/* SPLIT APPOINTMENTS: Today & Tomorrow */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Today */}
-            <div className="space-y-4">
-               <div className="flex items-center justify-between px-2">
-                  <h3 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-success animate-pulse"></span> Hoy
-                  </h3>
-                  <span className="text-[10px] font-bold text-slate-400">{todayStr}</span>
-               </div>
-               <div className="bg-white dark:bg-surface-dark rounded-[2.5rem] border border-border-light dark:border-border-dark p-2 shadow-lg min-h-[300px]">
-                  {todayApts.length > 0 ? todayApts.map(apt => (
-                    <div key={apt.id} onClick={() => setSelectedApt(apt)} className="group flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-bg-dark rounded-[2rem] cursor-pointer transition-all border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0">
-                       <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black text-sm shrink-0 shadow-sm">{apt.time}</div>
-                       <div className="min-w-0 flex-1">
-                          <p className="font-bold text-slate-900 dark:text-white truncate">{apt.patientName}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{apt.treatment}</p>
-                       </div>
-                       <div className={`size-3 rounded-full ${apt.status === 'Completed' ? 'bg-success' : apt.status === 'Confirmed' ? 'bg-primary' : 'bg-slate-300'}`}></div>
-                    </div>
-                  )) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2">
-                       <span className="material-symbols-outlined text-4xl">event_available</span>
-                       <p className="text-xs font-bold uppercase">Sin citas hoy</p>
-                    </div>
-                  )}
-               </div>
+                <div className="flex-1 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData}>
+                        <defs>
+                            <linearGradient id="colorCitas" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} dy={5} />
+                        <Tooltip contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} itemStyle={{fontWeight: 'bold', color: '#3b82f6'}} />
+                        <Area type="monotone" dataKey="citas" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorCitas)" />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
             </div>
 
-            {/* Tomorrow */}
-            <div className="space-y-4">
-               <div className="flex items-center justify-between px-2">
-                  <h3 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-blue-400"></span> Mañana
-                  </h3>
-                  <span className="text-[10px] font-bold text-slate-400">{tomorrowStr}</span>
-               </div>
-               <div className="bg-white dark:bg-surface-dark rounded-[2.5rem] border border-border-light dark:border-border-dark p-2 shadow-lg min-h-[300px]">
-                  {tomorrowApts.length > 0 ? tomorrowApts.map(apt => (
-                    <div key={apt.id} onClick={() => setSelectedApt(apt)} className="group flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-bg-dark rounded-[2rem] cursor-pointer transition-all border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0">
-                       <div className="size-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center font-black text-sm shrink-0 shadow-sm">{apt.time}</div>
-                       <div className="min-w-0 flex-1">
-                          <p className="font-bold text-slate-900 dark:text-white truncate">{apt.patientName}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{apt.treatment}</p>
-                       </div>
+            {/* Upcoming Appointments List (Today + Tomorrow Split) */}
+            <div className="bg-white dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark flex flex-col min-h-[350px]">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                        <span className="size-2 bg-success rounded-full animate-pulse"></span> Próximas 48 Horas
+                    </h3>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 flex-1 h-0">
+                    {/* COLUMN 1: TODAY */}
+                    <div className="flex flex-col h-full bg-slate-50/50 dark:bg-bg-dark/50 rounded-xl p-3 border border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center justify-between mb-3 px-1">
+                            <span className="text-[10px] font-black text-primary uppercase tracking-widest">HOY</span>
+                            <span className="text-[10px] font-bold text-slate-400">{formatDateNice(new Date())}</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1">
+                            {todayApts.length > 0 ? todayApts.map(apt => (
+                                <div key={apt.id} onClick={() => setSelectedApt(apt)} className="bg-white dark:bg-surface-dark p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm hover:border-primary transition-all cursor-pointer group">
+                                    <div className="flex justify-between items-start">
+                                        <span className="text-xs font-black text-slate-800 dark:text-white group-hover:text-primary transition-colors">{apt.time}</span>
+                                        <span className={`size-2 rounded-full ${apt.status === 'Confirmed' ? 'bg-success' : 'bg-warning'}`}></span>
+                                    </div>
+                                    <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-1 truncate">{apt.patientName}</p>
+                                    <p className="text-[9px] text-slate-400 truncate">{apt.treatment}</p>
+                                </div>
+                            )) : (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2 opacity-60">
+                                    <span className="material-symbols-outlined text-2xl">event_available</span>
+                                    <p className="text-[9px] font-bold uppercase">Sin Citas Hoy</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                  )) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2">
-                       <span className="material-symbols-outlined text-4xl">event_upcoming</span>
-                       <p className="text-xs font-bold uppercase">Sin citas mañana</p>
+
+                    {/* COLUMN 2: TOMORROW */}
+                    <div className="flex flex-col h-full bg-slate-50/50 dark:bg-bg-dark/50 rounded-xl p-3 border border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center justify-between mb-3 px-1">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">MAÑANA</span>
+                            <span className="text-[10px] font-bold text-slate-400">{formatDateNice(tomorrowObj)}</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1">
+                            {tomorrowApts.length > 0 ? tomorrowApts.map(apt => (
+                                <div key={apt.id} onClick={() => setSelectedApt(apt)} className="bg-white dark:bg-surface-dark p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm hover:border-primary transition-all cursor-pointer group">
+                                    <div className="flex justify-between items-start">
+                                        <span className="text-xs font-black text-slate-800 dark:text-white group-hover:text-primary transition-colors">{apt.time}</span>
+                                        <span className={`size-2 rounded-full ${apt.status === 'Confirmed' ? 'bg-success' : 'bg-warning'}`}></span>
+                                    </div>
+                                    <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-1 truncate">{apt.patientName}</p>
+                                    <p className="text-[9px] text-slate-400 truncate">{apt.treatment}</p>
+                                </div>
+                            )) : (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2 opacity-60">
+                                    <span className="material-symbols-outlined text-2xl">event_upcoming</span>
+                                    <p className="text-[9px] font-bold uppercase">Sin Citas Mañana</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                  )}
-               </div>
+                </div>
             </div>
-          </div>
         </div>
 
-        {/* RIGHT COLUMN: Advanced Task List */}
-        <div className="bg-white dark:bg-surface-dark p-8 rounded-[3rem] border-2 border-border-light dark:border-border-dark shadow-xl flex flex-col h-full">
-           <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Tareas</h3>
-              <div className="flex gap-2">
-                <button onClick={handleSortTasks} className="size-10 rounded-xl bg-slate-100 dark:bg-bg-dark text-slate-500 hover:text-primary transition-colors flex items-center justify-center" title="Ordenar por Prioridad">
-                   <span className="material-symbols-outlined">sort</span>
-                </button>
-                <button onClick={() => setIsAddingTask(!isAddingTask)} className={`size-10 rounded-xl flex items-center justify-center transition-all shadow-lg ${isAddingTask ? 'bg-danger text-white rotate-45' : 'bg-primary text-white shadow-primary/30'}`}>
-                  <span className="material-symbols-outlined">add</span>
-                </button>
-              </div>
+        {/* COL 2: TASKS (1/3 width) - Drag & Drop Enabled */}
+        <div className="bg-white dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark flex flex-col">
+           <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Tareas Pendientes</h3>
+              <button onClick={() => {
+                  setEditingTask({ id: Math.random().toString(), title: '', description: '', content: '', priority: 'Medium', completed: false });
+                  setIsCreatingTask(true);
+              }} className="size-8 rounded-lg bg-primary text-white flex items-center justify-center hover:scale-105 transition-transform shadow-md">
+                  <span className="material-symbols-outlined text-lg">add</span>
+              </button>
            </div>
 
-           {isAddingTask && (
-             <form onSubmit={addTask} className="mb-6 p-6 bg-slate-50 dark:bg-bg-dark rounded-[2rem] border border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-4 space-y-4 shadow-inner">
-                <div>
-                  <input autoFocus value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="Título de la tarea" className="w-full bg-white dark:bg-surface-dark border-none rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none mb-2" />
-                  <textarea 
-                    value={newTaskDesc} 
-                    onChange={e => setNewTaskDesc(e.target.value.slice(0, 100))} 
-                    placeholder="Descripción breve (max 100 car.)" 
-                    className="w-full bg-white dark:bg-surface-dark border-none rounded-xl px-4 py-3 text-xs font-medium focus:ring-2 focus:ring-primary/20 outline-none h-20 resize-none" 
-                  />
-                  <div className="text-[10px] text-right text-slate-400 mt-1">{newTaskDesc.length}/100</div>
-                </div>
-                <div className="flex justify-between items-center">
-                   <div className="flex gap-2">
-                      {['High', 'Medium', 'Low'].map((p) => (
-                        <button key={p} type="button" onClick={() => setNewTaskPriority(p as any)} className={`size-8 rounded-full text-[10px] font-black uppercase flex items-center justify-center border-2 transition-all ${newTaskPriority === p ? (p === 'High' ? 'border-danger bg-danger text-white' : p === 'Medium' ? 'border-warning bg-warning text-white' : 'border-success bg-success text-white') : 'border-slate-200 text-slate-400'}`}>
-                           {p[0]}
-                        </button>
-                      ))}
-                   </div>
-                   <button type="submit" className="px-6 py-2 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/20">Crear</button>
-                </div>
-             </form>
-           )}
-
-           <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-              {tasks.map((task, index) => (
+           <div className="space-y-2 flex-1 overflow-y-auto custom-scrollbar pr-1">
+              {filteredTasks.length > 0 ? filteredTasks.map((task, index) => (
                 <div 
-                  key={task.id} 
-                  draggable 
-                  onDragStart={(e) => handleDragStart(e, index)}
-                  onDragEnter={(e) => handleDragEnter(e, index)}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={(e) => e.preventDefault()}
-                  className="group flex items-start gap-3 p-5 rounded-[2rem] bg-slate-50 dark:bg-bg-dark border border-transparent hover:border-primary/20 hover:shadow-md transition-all cursor-grab active:cursor-grabbing relative"
+                    key={task.id} 
+                    draggable 
+                    onDragStart={(e) => handleDragStart(e, index)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, index)}
+                    onClick={() => setEditingTask(task)} 
+                    className="group flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-bg-dark border border-transparent hover:border-primary/30 transition-all cursor-pointer active:cursor-grabbing hover:shadow-md relative"
                 >
-                   <div className="mt-1 text-slate-300 group-hover:text-primary cursor-grab">
-                      <span className="material-symbols-outlined text-lg">drag_indicator</span>
-                   </div>
-                   
-                   <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-start">
-                         <p className={`text-sm font-black leading-tight ${task.completed ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-white'}`}>{task.title || task['text']}</p>
-                         <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg ${task.priority === 'High' ? 'bg-danger/10 text-danger' : task.priority === 'Medium' ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'}`}>{task.priority}</span>
-                      </div>
-                      {task.description && (
-                        <p className={`text-xs font-medium mt-1.5 line-clamp-2 ${task.completed ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
-                          {task.description}
-                        </p>
-                      )}
+                   {/* Drag Handle Indicator (Visible on Hover) */}
+                   <div className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-30 cursor-grab">
+                        <span className="material-symbols-outlined text-sm">drag_indicator</span>
                    </div>
 
-                   <button onClick={(e) => toggleTask(task.id, e)} className={`mt-0.5 size-6 rounded-lg border-2 flex items-center justify-center transition-all shrink-0 ${task.completed ? 'bg-success border-success text-white' : 'border-slate-300 hover:border-primary'}`}>
-                      {task.completed && <span className="material-symbols-outlined text-sm font-black">check</span>}
-                   </button>
+                   <div 
+                        onClick={(e) => toggleTask(task.id, e)} 
+                        className={`mt-0.5 size-4 rounded border flex items-center justify-center transition-all shrink-0 ml-3 ${task.completed ? 'bg-success border-success text-white' : 'border-slate-300 hover:border-primary'}`}
+                   >
+                      {task.completed && <span className="material-symbols-outlined text-[10px] font-black">check</span>}
+                   </div>
+                   <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-bold leading-tight truncate ${task.completed ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-white'}`}>{task.title}</p>
+                      <p className="text-[10px] text-slate-500 truncate mt-0.5">{task.description}</p>
+                      <div className="flex justify-between items-center mt-2">
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${task.priority === 'High' ? 'bg-danger/10 text-danger' : task.priority === 'Medium' ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'}`}>{task.priority}</span>
+                        {task.sub && <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">{task.sub}</span>}
+                      </div>
+                   </div>
                 </div>
-              ))}
+              )) : (
+                  <div className="py-10 text-center text-slate-400">
+                      <span className="material-symbols-outlined text-3xl mb-2 opacity-50">task_alt</span>
+                      <p className="text-xs font-bold uppercase">Sin tareas asignadas</p>
+                  </div>
+              )}
            </div>
         </div>
       </div>
 
+      {/* APPOINTMENT MODAL */}
       {selectedApt && (
         <AppointmentDetailModal appointment={selectedApt} onClose={() => setSelectedApt(null)} onUpdateStatus={(id, s) => setAppointments(prev => prev.map(a => a.id === id ? {...a, status: s} : a))} patients={patients} doctors={doctors} />
+      )}
+
+      {/* TASK EDIT/CREATE MODAL */}
+      {(editingTask) && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in zoom-in duration-200">
+            <div className="bg-white dark:bg-surface-dark w-full max-w-lg rounded-[2rem] shadow-2xl border border-border-light dark:border-border-dark overflow-hidden flex flex-col">
+                <header className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-bg-dark flex justify-between items-center">
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                        {isCreatingTask ? 'Nueva Tarea' : 'Detalles de Tarea'}
+                    </h3>
+                    <button onClick={() => { setEditingTask(null); setIsCreatingTask(false); }} className="text-slate-400 hover:text-danger transition-colors">
+                        <span className="material-symbols-outlined text-2xl">close</span>
+                    </button>
+                </header>
+                <div className="p-8 space-y-6">
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Título</label>
+                        <input 
+                            autoFocus={isCreatingTask}
+                            value={editingTask.title} 
+                            onChange={e => setEditingTask({...editingTask, title: e.target.value})} 
+                            className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none" 
+                            placeholder="Título de la tarea"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Resumen (Vista Corta)</label>
+                        <input 
+                            value={editingTask.description || ''} 
+                            onChange={e => setEditingTask({...editingTask, description: e.target.value})} 
+                            className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none" 
+                            placeholder="Breve descripción para la lista"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Detalles Completos</label>
+                        <textarea 
+                            value={editingTask.content || ''} 
+                            onChange={e => setEditingTask({...editingTask, content: e.target.value})} 
+                            className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium h-32 resize-none focus:ring-2 focus:ring-primary/20 outline-none custom-scrollbar" 
+                            placeholder="Descripción detallada, instrucciones, notas..."
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Prioridad</label>
+                            <div className="flex gap-2 mt-1">
+                                {['High', 'Medium', 'Low'].map(p => (
+                                    <button 
+                                        key={p} 
+                                        onClick={() => setEditingTask({...editingTask, priority: p as any})}
+                                        className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase border transition-all ${editingTask.priority === p 
+                                            ? (p === 'High' ? 'bg-danger text-white border-danger' : p === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') 
+                                            : 'bg-white dark:bg-bg-dark border-slate-200 dark:border-slate-700 text-slate-400'}`}
+                                    >
+                                        {p}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Asignado A</label>
+                            <input 
+                                value={editingTask.sub || ''} 
+                                onChange={e => setEditingTask({...editingTask, sub: e.target.value})} 
+                                className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none mt-1" 
+                                placeholder="Departamento o Persona"
+                            />
+                        </div>
+                    </div>
+                </div>
+                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-bg-dark flex gap-3">
+                    {!isCreatingTask && (
+                        <button onClick={() => handleDeleteTask(editingTask.id)} className="px-4 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-danger font-bold hover:bg-danger hover:text-white transition-all">
+                            <span className="material-symbols-outlined text-lg">delete</span>
+                        </button>
+                    )}
+                    <button onClick={() => handleSaveTask(editingTask)} className="flex-1 py-3 bg-primary text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg hover:scale-[1.02] transition-transform">
+                        {isCreatingTask ? 'Crear Tarea' : 'Guardar Cambios'}
+                    </button>
+                </div>
+            </div>
+        </div>
       )}
     </div>
   );

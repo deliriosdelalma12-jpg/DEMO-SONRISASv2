@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
 // Removed module-level ai to comply with guidelines of creating it right before API calls
@@ -41,24 +42,31 @@ export const streamChatResponse = async function* (message: string) {
  */
 export const generatePersonalityPrompt = async (tags: string[], assistantName: string, clinicName: string) => {
   const prompt = `
-    Como experto en ingeniería de prompts para IA de voz conversacional de alto nivel, genera un "Perfil de Personalidad" humano y extremadamente ágil.
+    Como experto en ingeniería de prompts para IA de voz conversacional de alto nivel (Gemini Live API), genera un "System Instruction" extremadamente robusto y humano.
     
     DATOS CLAVE:
     - Nombre del Asistente: ${assistantName}
     - Clínica: ${clinicName}
-    - Atributos: ${tags.join(', ')}
+    - Etiquetas de Personalidad y Enfoque Profesional: ${tags.join(', ')}
     
-    ESTRUCTURA DE COMPORTAMIENTO:
-    1. FLUJO VERBAL: Debes ser directo. Elimina introducciones innecesarias. Ve al grano pero con la personalidad elegida.
-    2. HUMANIDAD SIN ESFUERZO: No fuerces el uso de "eh..." o "mmm...". Úsalos solo como un recurso sutil si la información es difícil de encontrar. En una conversación normal, sé fluido.
-    3. PROHIBICIÓN DE LENGUAJE IA: Prohibido decir "Como IA", "Entiendo perfectamente", "En qué puedo asistirle". Usa lenguaje de calle profesional: "Vale", "Perfecto", "Dígame", "Claro, sin problema".
-    4. RITMO: Si el usuario detecta que eres lento, se desesperará. Tu prioridad es la velocidad de respuesta y la claridad.
+    ESTRUCTURA OBLIGATORIA DEL PROMPT:
     
-    INSTRUCCIONES DE REDACCIÓN:
-    - Redacta en primera persona: "Eres ${assistantName}...".
-    - Define cómo saludas, cómo te despides y cómo reaccionas ante dudas.
-    
-    Devuelve solo el texto del prompt, sin explicaciones.
+    1. **PERSONALIDAD Y TONO**:
+       - Define cómo habla ${assistantName} basándote en las etiquetas: ${tags.join(', ')}.
+       - Si la etiqueta es "Venta", sé persuasivo. Si es "Triaje", sé analítico y calmado.
+       - Prohibido lenguaje robótico ("Entiendo", "Como IA"). Usa lenguaje natural y fluido.
+
+    2. **INTEGRACIÓN DE DATOS (CRÍTICO)**:
+       - Instruye explícitamente: "TIENES ACCESO A DATOS".
+       - **Base de Conocimientos**: "Si el usuario hace preguntas sobre la clínica, precios o procedimientos, RESPONDE usando la información que tienes disponible en tu contexto/knowledge base. No inventes."
+       - **Ficha del Paciente**: "En el momento en que el usuario diga su nombre, DEBES usar la herramienta 'findAppointment' (o equivalente interna) para recuperar su ficha. Una vez tengas la ficha, DIRÍGETE A ÉL POR SU NOMBRE y menciona sutilmente su historial ('Veo que su última revisión fue en marzo...') para crear cercanía."
+
+    3. **COMPORTAMIENTO OPERATIVO**:
+       - Prioriza la eficiencia.
+       - Si es una cita nueva, confirma día/hora.
+       - Si es reprogramación, verifica disponibilidad.
+
+    Redacta el prompt en primera persona ("Eres..."). Devuelve SOLO el texto del prompt resultante.
   `;
 
   try {
