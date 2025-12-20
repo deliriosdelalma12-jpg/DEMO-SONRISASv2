@@ -1,10 +1,11 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Appointment, Task, AppointmentStatus, User, Patient, Doctor } from '../types';
+import { Appointment, Task, User, Patient, Doctor, ClinicSettings } from '../types';
 import AppointmentDetailModal from '../components/AppointmentDetailModal';
 
 interface DashboardProps {
+  settings: ClinicSettings;
   appointments: Appointment[];
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>;
   tasks: Task[];
@@ -26,14 +27,12 @@ const treatmentPrices: Record<string, number> = {
   'Blanqueamiento': 180
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ appointments, setAppointments, tasks, setTasks, patients, doctors }) => {
+const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppointments, tasks, setTasks, patients, doctors }) => {
   const navigate = useNavigate();
   const [newTaskText, setNewTaskText] = useState('');
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-  // Lógica Dinámica de KPIs para hoy
   const todayStr = new Date().toISOString().split('T')[0];
   const todayApts = appointments.filter(a => a.date === todayStr);
   const monthApts = appointments.filter(a => a.date.startsWith(todayStr.substring(0, 7)));
@@ -45,22 +44,13 @@ const Dashboard: React.FC<DashboardProps> = ({ appointments, setAppointments, ta
   const stats = [
     { icon: 'event_available', label: 'Citas de hoy', value: todayApts.length.toString(), change: '+5%', color: 'text-success' },
     { icon: 'person_add', label: 'Pacientes registrados', value: patients.length.toString(), change: 'Total', color: 'text-primary' },
-    { icon: 'payments', label: 'Ingresos del mes', value: `€${(monthRevenue / 1000).toFixed(1)}k`, change: '+12%', color: 'text-success' },
+    { icon: 'payments', label: 'Ingresos del mes', value: `${settings.currency}${(monthRevenue / 1000).toFixed(1)}k`, change: '+12%', color: 'text-success' },
     { icon: 'timer', label: 'Tiempo prom. cita', value: '28m', change: '-4m', color: 'text-blue-400' },
   ];
 
-  // Resto del componente idéntico para mantener funcionalidad de tareas y citas...
-  // (Omitido por brevedad pero asegurando que consuma las props correctamente)
-  
-  // Re-implementación básica de toggle y delete para que funcione
   const toggleTask = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-  };
-
-  const deleteTask = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setTasks(prev => prev.filter(t => t.id !== id));
   };
 
   const addTask = (e: React.FormEvent) => {
@@ -75,8 +65,8 @@ const Dashboard: React.FC<DashboardProps> = ({ appointments, setAppointments, ta
     <div className="p-10 max-w-[1600px] mx-auto w-full space-y-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Panel de Control Operativo</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2 text-lg font-medium italic">Resumen de sincronización clínica para hoy.</p>
+          <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">{settings.labels.dashboardTitle}</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 text-lg font-medium italic">{settings.labels.dashboardSubtitle}</p>
         </div>
         <div className="flex items-center gap-3 bg-white dark:bg-surface-dark rounded-2xl p-4 border border-border-light dark:border-border-dark shadow-sm">
           <div className="size-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">

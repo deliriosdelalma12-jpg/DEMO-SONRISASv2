@@ -1,9 +1,11 @@
+import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Removed module-level ai to comply with guidelines of creating it right before API calls
+// const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateChatResponse = async (message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[] = []) => {
+  // Fix: Create a new GoogleGenAI instance right before making an API call
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const chat = ai.chats.create({
     model: 'gemini-3-pro-preview',
     config: {
@@ -12,10 +14,13 @@ export const generateChatResponse = async (message: string, history: { role: 'us
   });
 
   const response: GenerateContentResponse = await chat.sendMessage({ message });
+  // Fix: Directly use .text property
   return response.text || '';
 };
 
 export const streamChatResponse = async function* (message: string) {
+  // Fix: Create a new GoogleGenAI instance right before making an API call
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const chat = ai.chats.create({
     model: 'gemini-3-pro-preview',
     config: {
@@ -26,6 +31,7 @@ export const streamChatResponse = async function* (message: string) {
   const response = await chat.sendMessageStream({ message });
   for await (const chunk of response) {
     const c = chunk as GenerateContentResponse;
+    // Fix: Directly use .text property
     yield c.text || '';
   }
 };
@@ -56,6 +62,8 @@ export const generatePersonalityPrompt = async (tags: string[], assistantName: s
   `;
 
   try {
+    // Fix: Create a new GoogleGenAI instance right before making an API call
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt
@@ -63,6 +71,35 @@ export const generatePersonalityPrompt = async (tags: string[], assistantName: s
     return response.text || '';
   } catch (error) {
     console.error("Error generating personality:", error);
+    throw error;
+  }
+};
+
+/**
+ * Función para generar habla (TTS) para pruebas de configuración
+ */
+export const speakText = async (text: string, voiceName: string) => {
+  try {
+    // Fix: Create a new GoogleGenAI instance right before making an API call
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: voiceName as any },
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) throw new Error("No audio data received");
+    return base64Audio;
+  } catch (error) {
+    console.error("TTS Error:", error);
     throw error;
   }
 };

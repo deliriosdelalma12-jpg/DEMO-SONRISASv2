@@ -14,9 +14,7 @@ interface VoiceAssistantProps {
 const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appointments, setAppointments, doctors }) => {
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [transcription, setTranscription] = useState<string>('');
-  const [aiTranscription, setAiTranscription] = useState<string>('');
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -50,83 +48,8 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
     return buffer;
   };
 
-  const functions: FunctionDeclaration[] = [
-    {
-      name: 'consultar_disponibilidad',
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          fecha: { type: Type.STRING, description: 'Fecha en formato YYYY-MM-DD' },
-          hora_preferida: { type: Type.STRING, description: 'Hora en formato HH:mm' }
-        },
-        required: ['fecha']
-      }
-    },
-    {
-      name: 'agendar_cita',
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          paciente_nombre: { type: Type.STRING },
-          servicio_nombre: { type: Type.STRING },
-          fecha: { type: Type.STRING },
-          hora: { type: Type.STRING },
-          doctor_id: { type: Type.STRING }
-        },
-        required: ['paciente_nombre', 'servicio_nombre', 'fecha', 'hora']
-      }
-    },
-    {
-      name: 'cancelar_cita',
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          paciente_nombre: { type: Type.STRING },
-          fecha: { type: Type.STRING }
-        },
-        required: ['paciente_nombre', 'fecha']
-      }
-    }
-  ];
-
-  const handleFunctionCall = (fc: any) => {
-    if (fc.name === 'consultar_disponibilidad') {
-      const ocupadas = appointments
-        .filter(a => a.date === fc.args.fecha && a.status !== 'Cancelled')
-        .map(a => a.time);
-      return { ocupadas, disponible: !ocupadas.includes(fc.args.hora_preferida) };
-    }
-
-    if (fc.name === 'agendar_cita') {
-      const newApt: Appointment = {
-        id: Math.random().toString(36).substr(2, 9),
-        patientName: fc.args.paciente_nombre,
-        patientId: 'P-AUTO',
-        treatment: fc.args.servicio_nombre,
-        date: fc.args.fecha,
-        time: fc.args.hora,
-        doctorId: fc.args.doctor_id || doctors[0]?.id,
-        doctorName: doctors.find(d => d.id === fc.args.doctor_id)?.name || doctors[0]?.name,
-        status: 'Confirmed'
-      };
-      setAppointments(prev => [...prev, newApt]);
-      return { success: true, mensaje: "Cita agendada" };
-    }
-
-    if (fc.name === 'cancelar_cita') {
-      setAppointments(prev => prev.map(a => 
-        (a.patientName.toLowerCase().includes(fc.args.paciente_nombre.toLowerCase()) && a.date === fc.args.fecha)
-        ? { ...a, status: 'Cancelled' } : a
-      ));
-      return { success: true, mensaje: "Cita cancelada." };
-    }
-
-    return { error: 'Función no encontrada' };
-  };
-
   const startSession = async () => {
     setIsConnecting(true);
-    setErrorMsg(null);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -135,29 +58,25 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const currentHour = new Date().getHours();
-      const timeGreeting = currentHour < 12 ? "Buenos días" : "Buenas tardes";
-      const initialGreeting = `${timeGreeting}, soy ${settings.aiPhoneSettings.assistantName}, asistente de ${settings.name}, ¿en qué puedo ayudar?`;
-
-      const serviceList = settings.services.map(s => `${s.name} (${s.price}${settings.currency})`).join(", ");
-      const knowledgeFilesInfo = settings.aiPhoneSettings.knowledgeFiles?.map(f => `Archivo: ${f.name}`).join(", ") || "Ninguno.";
-
-      const brainPrompt = `
-        # CEREBRO DE NEGOCIO Y OPERACIONES:
-        - SALUDO INICIAL OBLIGATORIO: Empieza siempre diciendo: "${initialGreeting}".
-        - ACENTO: Debes hablar con acento "${settings.aiPhoneSettings.accent}".
-        - VELOCIDAD: Debes hablar a una velocidad de ${settings.aiPhoneSettings.voiceSpeed}x.
-        - OBJETIVO SUPREMO: Optimizar la agenda de ${settings.name}. Los huecos vacíos son pérdidas de dinero.
-        - SERVICIOS Y PRECIOS: Ofrecemos: [${serviceList}]. Si piden algo distinto, di que no lo hacemos de forma humana.
-        - DISPONIBILIDAD: Consulta siempre antes de confirmar. 
-        - CONOCIMIENTO ADICIONAL: ${knowledgeFilesInfo}.
-        
-        # PERSONALIDAD:
+      const fullPrompt = `
         ${settings.aiPhoneSettings.systemPrompt}
+        
+        # INDICACIONES OPERATIVAS:
+        ${settings.aiPhoneSettings.instructions}
+        
+        # CONTEXTO DE NEGOCIO:
+        Nombre de la clínica: ${settings.name}
+        Servicios disponibles (con duración estimada):
+        ${settings.services.map(s => `- ${s.name}: ${s.price}${settings.currency} (${s.duration} min)`).join('\n')}
+        
+        # SALUDO INICIAL OBLIGATORIO:
+        "${settings.aiPhoneSettings.initialGreeting}"
+        
+        Debes sonar natural, con acento ${settings.aiPhoneSettings.accent} y hablar a una velocidad de ${settings.aiPhoneSettings.voiceSpeed}x.
       `;
 
       const sessionPromise = ai.live.connect({
-        model: settings.aiPhoneSettings.model || 'gemini-2.5-flash-native-audio-preview-09-2025',
+        model: settings.aiPhoneSettings.model,
         callbacks: {
           onopen: () => {
             setIsActive(true);
@@ -176,18 +95,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
             scriptProcessor.connect(audioContextRef.current!.destination);
           },
           onmessage: async (m: LiveServerMessage) => {
-            if (m.toolCall) {
-              for (const fc of m.toolCall.functionCalls) {
-                const result = handleFunctionCall(fc);
-                sessionPromise.then(s => s.sendToolResponse({
-                  functionResponses: { id: fc.id, name: fc.name, response: { result } }
-                }));
-              }
-            }
-
             if (m.serverContent?.inputTranscription) setTranscription(t => t + ' ' + m.serverContent?.inputTranscription?.text);
-            if (m.serverContent?.outputTranscription) setAiTranscription(t => t + ' ' + m.serverContent?.outputTranscription?.text);
-            
             const base64 = m.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
             if (base64 && outputAudioContextRef.current) {
               const ctx = outputAudioContextRef.current;
@@ -200,7 +108,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
               source.addEventListener('ended', () => sourcesRef.current.delete(source));
               source.start(nextStartTimeRef.current);
               nextStartTimeRef.current += buffer.duration;
-              sourcesRef.current.add(source);
+              sourcesRef.add(source);
             }
           },
           onclose: () => { setIsActive(false); setIsConnecting(false); },
@@ -210,13 +118,10 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
           responseModalities: [Modality.AUDIO],
           speechConfig: { 
             voiceConfig: { 
-                prebuiltVoiceConfig: { 
-                    voiceName: settings.aiPhoneSettings.voiceName as any
-                } 
+                prebuiltVoiceConfig: { voiceName: settings.aiPhoneSettings.voiceName as any } 
             } 
           },
-          tools: [{ functionDeclarations: functions }],
-          systemInstruction: brainPrompt,
+          systemInstruction: fullPrompt,
           generationConfig: {
               temperature: settings.aiPhoneSettings.temperature,
           }
@@ -231,7 +136,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
     if (audioContextRef.current) try { audioContextRef.current.close(); } catch(e) {}
     if (outputAudioContextRef.current) try { outputAudioContextRef.current.close(); } catch(e) {}
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
     setIsActive(false);
     setIsConnecting(false);
   };
@@ -258,39 +162,20 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                  <span className="material-symbols-outlined text-7xl text-primary">contact_phone</span>
                )}
             </div>
-            {isActive && <div className="absolute -inset-4 rounded-[4rem] border-8 border-primary/10 animate-ping"></div>}
           </div>
           <div className="space-y-3">
              <h2 className="text-white text-4xl font-display font-black tracking-tight uppercase">
-               {isActive ? 'Atendiendo Llamada...' : isConnecting ? 'Sincronizando...' : `${settings.aiPhoneSettings.assistantName}`}
+               {isActive ? 'Llamada en curso' : isConnecting ? 'Conectando...' : `${settings.aiPhoneSettings.assistantName}`}
              </h2>
              <p className="text-primary font-black uppercase tracking-[0.3em] text-[10px]">{settings.name}</p>
           </div>
         </div>
 
-        <div className="w-full flex flex-col gap-6">
-           <div className="bg-white/5 border border-white/10 p-8 rounded-[2rem] text-left">
-              <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] mb-2">Paciente</p>
-              <p className="text-white text-xl font-medium min-h-[1.5em] leading-relaxed">{transcription || (isActive ? 'Escuchando paciente...' : '---')}</p>
-           </div>
-           <div className="bg-primary/5 border border-primary/20 p-8 rounded-[2rem] text-left">
-              <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] mb-2">{settings.aiPhoneSettings.assistantName}</p>
-              <p className="text-white text-xl font-medium italic min-h-[1.5em] leading-relaxed">{aiTranscription || '---'}</p>
-           </div>
-        </div>
-
-        <div className="flex gap-6 mt-4">
-          {!isActive && !isConnecting && (
-            <button onClick={startSession} className="bg-primary text-white px-12 py-5 rounded-2xl font-black text-xl hover:bg-primary-dark transition-all shadow-2xl shadow-primary/40 hover:scale-105 flex items-center gap-4">
-               <span className="material-symbols-outlined text-2xl">call</span> Iniciar Atención
-            </button>
-          )}
-          {isActive && (
-            <button onClick={() => { stopSession(); onClose(); }} className="bg-danger text-white px-12 py-5 rounded-2xl font-black text-xl hover:brightness-110 shadow-2xl shadow-danger/40 hover:scale-105 flex items-center gap-4">
-               <span className="material-symbols-outlined text-2xl">call_end</span> Cortar Llamada
-            </button>
-          )}
-        </div>
+        {!isActive && !isConnecting && (
+          <button onClick={startSession} className="bg-primary text-white px-16 py-6 rounded-[2.5rem] font-black text-xl hover:bg-primary-dark transition-all shadow-2xl shadow-primary/40 hover:scale-105 flex items-center gap-4 uppercase tracking-tighter">
+             <span className="material-symbols-outlined text-3xl">call</span> Iniciar Atención AI
+          </button>
+        )}
       </div>
     </div>
   );

@@ -29,9 +29,31 @@ export interface ClinicService {
   id: string;
   name: string;
   price: number;
+  duration: number; // Duración en minutos para optimizar agenda
 }
 
-// Added missing interface for attendance tracking
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  img?: string;
+}
+
+// Added Shift interface for granular schedule control
+export interface Shift {
+  start: string;
+  end: string;
+  active: boolean;
+}
+
+// Added DaySchedule interface for doctor availability tracking
+export interface DaySchedule {
+  morning: Shift;
+  afternoon: Shift;
+}
+
+// Added AttendanceRecord for HR and operations management
 export interface AttendanceRecord {
   id: string;
   date: string;
@@ -41,67 +63,13 @@ export interface AttendanceRecord {
   notes?: string;
 }
 
-// Added missing interface for vacation management
+// Added VacationRequest for HR management
 export interface VacationRequest {
   id: string;
   start: string;
   end: string;
-  type: 'Vacaciones' | 'Asuntos Propios' | 'Baja';
   status: 'Pendiente' | 'Aprobada' | 'Rechazada';
-}
-
-// Added missing interface for scheduling shifts
-export interface DaySchedule {
-  morning: { start: string; end: string; active: boolean };
-  afternoon: { start: string; end: string; active: boolean };
-}
-
-export interface Patient {
-  id: string;
-  name: string;
-  birthDate: string; 
-  gender: 'Masculino' | 'Femenino' | 'Otro';
-  identityDocument: string;
-  img: string;
-  phone: string;
-  email: string;
-  address: string;
-  medicalHistory: string;
-  associatedDoctorId?: string;
-  associatedDoctorName?: string;
-  weight?: string;
-  height?: string;
-  bloodType?: string;
-  allergies?: string[];
-  attachments: FileAttachment[];
-  savedReports: MedicalReport[];
-  history: {
-    date: string;
-    action: string;
-    description: string;
-  }[];
-}
-
-export interface Appointment {
-  id: string;
-  patientName: string;
-  patientId: string;
-  doctorName: string;
-  doctorId: string;
-  time: string;
-  date: string; 
-  treatment: string;
-  status: AppointmentStatus;
-}
-
-export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
-
-export interface User {
-  id: string;
-  username: string;
-  name: string;
-  role: UserRole;
-  img?: string;
+  type: 'Vacaciones' | 'Asuntos Propios' | 'Baja';
 }
 
 export interface Doctor {
@@ -115,7 +83,7 @@ export interface Doctor {
   phone: string;
   corporateEmail: string;
   docs: FileAttachment[];
-  // Added missing HR and scheduling properties
+  // Fix: Added missing properties used in Doctors.tsx and HRManagement.tsx
   schedule?: Record<string, DaySchedule>;
   contractType?: string;
   hourlyRate?: number;
@@ -125,19 +93,6 @@ export interface Doctor {
   vacationDaysTaken?: number;
   vacationHistory?: VacationRequest[];
   attendanceHistory?: AttendanceRecord[];
-}
-
-export interface RolePermissions {
-  visualize: boolean;
-  create: boolean;
-  modify: boolean;
-  delete: boolean;
-}
-
-export interface RoleDefinition {
-  id: UserRole;
-  name: string;
-  permissions: RolePermissions;
 }
 
 export interface ColorTemplate {
@@ -153,19 +108,31 @@ export type VoiceAccent = 'es-ES-Madrid' | 'es-ES-Canarias' | 'es-LATAM' | 'en-G
 export interface AiPhoneSettings {
   phoneNumber: string;
   assistantName: string;
+  initialGreeting: string;
   systemPrompt: string;
-  knowledgeBase: string;
-  knowledgeFiles: FileAttachment[];
+  instructions: string; // Instrucciones operativas adicionales
+  testSpeechText: string;
   voiceName: string;
-  voicePitch: number; // Actúa como temperatura emocional
-  voiceSpeed: number; // Velocidad de habla
-  temperature: number; // Temperatura del modelo LLM
+  voicePitch: number;
+  voiceSpeed: number;
+  temperature: number;
   accent: VoiceAccent;
   model: string;
-  hasPaidKey: boolean;
+  // Added fields for AI context injection in Patients.tsx
+  knowledgeBase?: string;
+  knowledgeFiles?: FileAttachment[];
 }
 
 export type AppLanguage = 'es-ES' | 'es-LATAM' | 'en-GB' | 'en-US';
+
+export interface AppLabels {
+  [key: string]: string;
+}
+
+export interface VisualSettings {
+  titleFontSize: number;
+  bodyFontSize: number;
+}
 
 export interface ClinicSettings {
   name: string;
@@ -173,22 +140,62 @@ export interface ClinicSettings {
   phone: string;
   email: string;
   address: string;
-  sector: string;
-  description: string;
-  specialties: string[];
+  currency: string;
+  language: AppLanguage;
   services: ClinicService[];
   aiPhoneSettings: AiPhoneSettings;
   defaultTheme: 'light' | 'dark';
   colorTemplate: string;
-  roles: RoleDefinition[];
-  currency: string;
-  language: AppLanguage;
+  labels: AppLabels;
+  visuals: VisualSettings;
 }
+
+export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
 
 export interface Task {
   id: string;
   text: string;
   completed: boolean;
   priority: 'High' | 'Medium' | 'Low';
-  sub?: string; // Added missing field used in Dashboard
+  sub?: string;
+}
+
+// Added missing Appointment interface
+export interface Appointment {
+  id: string;
+  patientId: string;
+  patientName: string;
+  doctorName: string;
+  doctorId: string;
+  treatment: string;
+  date: string;
+  time: string;
+  status: AppointmentStatus;
+}
+
+// Added missing Patient interface
+export interface Patient {
+  id: string;
+  name: string;
+  birthDate: string;
+  gender: 'Masculino' | 'Femenino' | 'Otro';
+  identityDocument: string;
+  phone: string;
+  email: string;
+  address: string;
+  medicalHistory: string;
+  img: string;
+  associatedDoctorId?: string;
+  associatedDoctorName?: string;
+  weight?: string;
+  height?: string;
+  bloodType?: string;
+  allergies?: string[];
+  attachments?: FileAttachment[];
+  savedReports?: MedicalReport[];
+  pathologies?: string;
+  diseases?: string;
+  surgeries?: string;
+  medications?: string;
+  history?: { date: string; action: string; description: string; }[];
 }
