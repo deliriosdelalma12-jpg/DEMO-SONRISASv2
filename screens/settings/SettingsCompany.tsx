@@ -296,7 +296,7 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
           <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Configuración Operativa y Sector</h3>
         </div>
         <div className="p-10 space-y-10">
-            {/* SECTOR SELECTOR */}
+            {/* SECTOR & BRANCHES SELECTOR */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Sector de Actividad</label>
@@ -307,6 +307,17 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                     >
                         {CLINIC_SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
+                </div>
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Número de Sucursales</label>
+                    <input 
+                        type="number" 
+                        min="1" 
+                        max="50"
+                        value={settings.branchCount || 1} 
+                        onChange={e => setSettings({...settings, branchCount: parseInt(e.target.value)})} 
+                        className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
+                    />
                 </div>
             </div>
 
@@ -367,27 +378,33 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
 
             {/* GLOBAL SCHEDULE BUILDER */}
             <div className="space-y-6">
-                <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight border-b border-slate-100 dark:border-slate-800 pb-2">Horario Global de Apertura</h4>
+                <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Horario Global de Apertura</h4>
+                    <div className="flex bg-slate-100 dark:bg-bg-dark p-1 rounded-xl">
+                        <button onClick={() => setSettings({...settings, scheduleType: 'split'})} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${settings.scheduleType === 'split' ? 'bg-white dark:bg-surface-dark text-primary shadow-sm' : 'text-slate-400'}`}>Partido (Mañana/Tarde)</button>
+                        <button onClick={() => setSettings({...settings, scheduleType: 'continuous'})} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${settings.scheduleType === 'continuous' ? 'bg-white dark:bg-surface-dark text-primary shadow-sm' : 'text-slate-400'}`}>Corrido (Sin Cierre)</button>
+                    </div>
+                </div>
                 <div className="grid grid-cols-1 gap-4">
                     {WEEK_DAYS.map(day => {
                         const sched = settings.globalSchedule?.[day] || { 
                             morning: { start: '09:00', end: '14:00', active: true }, 
                             afternoon: { start: '16:00', end: '20:00', active: true } 
                         };
-                        const isClosed = !sched.morning.active && !sched.afternoon.active;
+                        const isContinuous = settings.scheduleType === 'continuous';
+                        const isClosed = isContinuous ? !sched.morning.active : (!sched.morning.active && !sched.afternoon.active);
 
                         return (
-                            // GRID LAYOUT: [Day Label] [Morning Inputs] [Afternoon Inputs] [Status Label]
-                            // The Status Label column reserves 100px always, preventing layout shift.
-                            <div key={day} className="grid grid-cols-1 xl:grid-cols-[80px_1fr_1fr_100px] items-center gap-4 p-4 bg-slate-50 dark:bg-bg-dark rounded-2xl border border-slate-100 dark:border-slate-800">
+                            // GRID LAYOUT: [Day Label] [Morning Inputs] [Afternoon Inputs (Optional)] [Status Label]
+                            <div key={day} className={`grid grid-cols-1 items-center gap-4 p-4 bg-slate-50 dark:bg-bg-dark rounded-2xl border border-slate-100 dark:border-slate-800 ${isContinuous ? 'xl:grid-cols-[100px_1fr_100px]' : 'xl:grid-cols-[80px_1fr_1fr_100px]'}`}>
                                 <div className="font-bold text-slate-700 dark:text-white truncate">{day}</div>
                                 
-                                {/* Morning Shift */}
+                                {/* Morning / Main Shift */}
                                 <div className={`flex items-center gap-3 transition-opacity ${!sched.morning.active ? 'opacity-40 grayscale' : ''}`}>
                                     <button 
                                         onClick={() => updateGlobalSchedule(day, 'morning', 'active', !sched.morning.active)}
                                         className={`size-8 shrink-0 rounded-lg flex items-center justify-center transition-all ${sched.morning.active ? 'bg-orange-100 text-orange-600' : 'bg-slate-200 text-slate-400'}`}
-                                        title="Activar Turno Mañana"
+                                        title={isContinuous ? "Activar Horario" : "Activar Turno Mañana"}
                                     >
                                         <span className="material-symbols-outlined text-lg">wb_sunny</span>
                                     </button>
@@ -408,42 +425,44 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                                             className="bg-white dark:bg-surface-dark border-none rounded-lg px-2 py-1.5 text-xs font-bold w-20 text-center shadow-sm disabled:cursor-not-allowed"
                                         />
                                     </div>
+                                    {isContinuous && <span className="text-[10px] font-black text-slate-400 uppercase ml-2">Horario Continuo</span>}
                                 </div>
 
-                                {/* Afternoon Shift */}
-                                <div className={`flex items-center gap-3 transition-opacity ${!sched.afternoon.active ? 'opacity-40 grayscale' : ''}`}>
-                                    <button 
-                                        onClick={() => updateGlobalSchedule(day, 'afternoon', 'active', !sched.afternoon.active)}
-                                        className={`size-8 shrink-0 rounded-lg flex items-center justify-center transition-all ${sched.afternoon.active ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-400'}`}
-                                        title="Activar Turno Tarde"
-                                    >
-                                        <span className="material-symbols-outlined text-lg">nights_stay</span>
-                                    </button>
-                                    <div className="flex items-center gap-2">
-                                        <input 
-                                            type="time" 
-                                            value={sched.afternoon.start} 
-                                            onChange={(e) => updateGlobalSchedule(day, 'afternoon', 'start', e.target.value)}
-                                            disabled={!sched.afternoon.active}
-                                            className="bg-white dark:bg-surface-dark border-none rounded-lg px-2 py-1.5 text-xs font-bold w-20 text-center shadow-sm disabled:cursor-not-allowed"
-                                        />
-                                        <span className="text-slate-400 font-bold">-</span>
-                                        <input 
-                                            type="time" 
-                                            value={sched.afternoon.end} 
-                                            onChange={(e) => updateGlobalSchedule(day, 'afternoon', 'end', e.target.value)}
-                                            disabled={!sched.afternoon.active}
-                                            className="bg-white dark:bg-surface-dark border-none rounded-lg px-2 py-1.5 text-xs font-bold w-20 text-center shadow-sm disabled:cursor-not-allowed"
-                                        />
+                                {/* Afternoon Shift (Hidden if Continuous) */}
+                                {!isContinuous && (
+                                    <div className={`flex items-center gap-3 transition-opacity ${!sched.afternoon.active ? 'opacity-40 grayscale' : ''}`}>
+                                        <button 
+                                            onClick={() => updateGlobalSchedule(day, 'afternoon', 'active', !sched.afternoon.active)}
+                                            className={`size-8 shrink-0 rounded-lg flex items-center justify-center transition-all ${sched.afternoon.active ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-400'}`}
+                                            title="Activar Turno Tarde"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">nights_stay</span>
+                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="time" 
+                                                value={sched.afternoon.start} 
+                                                onChange={(e) => updateGlobalSchedule(day, 'afternoon', 'start', e.target.value)}
+                                                disabled={!sched.afternoon.active}
+                                                className="bg-white dark:bg-surface-dark border-none rounded-lg px-2 py-1.5 text-xs font-bold w-20 text-center shadow-sm disabled:cursor-not-allowed"
+                                            />
+                                            <span className="text-slate-400 font-bold">-</span>
+                                            <input 
+                                                type="time" 
+                                                value={sched.afternoon.end} 
+                                                onChange={(e) => updateGlobalSchedule(day, 'afternoon', 'end', e.target.value)}
+                                                disabled={!sched.afternoon.active}
+                                                className="bg-white dark:bg-surface-dark border-none rounded-lg px-2 py-1.5 text-xs font-bold w-20 text-center shadow-sm disabled:cursor-not-allowed"
+                                            />
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                                 
-                                {/* Status Column (Fixed 100px) */}
+                                {/* Status Column */}
                                 <div className="flex justify-end">
                                     {isClosed ? (
                                         <span className="text-[10px] font-black text-danger uppercase tracking-widest px-3 py-1 bg-danger/10 rounded-lg border border-danger/20">Cerrado</span>
                                     ) : (
-                                        // Invisible text to maintain grid height/alignment if needed, or just reserve space.
                                         <span className="text-[10px] font-black text-success uppercase tracking-widest px-3 py-1 bg-success/10 rounded-lg border border-success/20 opacity-0 xl:opacity-100 transition-opacity">Abierto</span>
                                     )}
                                 </div>

@@ -212,6 +212,7 @@ const generateDemoAppointments = (): Appointment[] => {
             patientName: patient.name,
             doctorId: doctor.id,
             doctorName: doctor.name,
+            branch: doctor.branch,
             date: dateStr,
             time: times[i % times.length], // Distribute times
             treatment: treatments[i % treatments.length],
@@ -249,6 +250,7 @@ const generateDemoAppointments = (): Appointment[] => {
       patientName: patient.name,
       doctorId: doctor.id,
       doctorName: doctor.name,
+      branch: doctor.branch,
       date: dateStr,
       time: time,
       treatment: treatment,
@@ -324,6 +326,8 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<ClinicSettings>({
     name: "MediClinic Premium",
     sector: "Clínica Dental",
+    branchCount: 3, // NEW DEFAULT
+    scheduleType: 'split', // NEW DEFAULT (Partido)
     logo: "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/hospital.svg",
     phone: "+34 910 000 001",
     email: "central@mediclinic-premium.com",
@@ -521,7 +525,7 @@ const App: React.FC = () => {
         />
       )}
 
-      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} patients={patients} />}
+      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} patients={patients} setPatients={setPatients} />}
     </HashRouter>
   );
 };

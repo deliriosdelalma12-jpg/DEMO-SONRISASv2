@@ -200,6 +200,8 @@ export interface AppointmentPolicy {
 export interface ClinicSettings {
   name: string;
   sector: string; // NEW: Clinic Sector
+  branchCount: number; // NEW: Total branches
+  scheduleType: 'continuous' | 'split'; // NEW: Horario Corrido vs Partido
   logo: string;
   phone: string;
   email: string;
@@ -237,6 +239,7 @@ export interface Appointment {
   patientName: string;
   doctorName: string;
   doctorId: string;
+  branch?: string; // NEW: Branch where appointment is held
   treatment: string;
   date: string;
   time: string;

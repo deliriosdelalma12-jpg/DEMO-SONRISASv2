@@ -10,7 +10,8 @@ interface VoiceAssistantProps {
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>;
   doctors: Doctor[];
   branches?: Branch[];
-  patients?: Patient[]; // NEW PROP
+  patients?: Patient[]; 
+  setPatients?: React.Dispatch<React.SetStateAction<Patient[]>>; // Needed for creating patients
 }
 
 // --- HERRAMIENTAS (TOOLS) PARA EL MODELO ---
@@ -18,7 +19,7 @@ interface VoiceAssistantProps {
 // 1. BUSCAR CITA Y PACIENTE (ENRICHED)
 const declarationFindAppointment: FunctionDeclaration = {
   name: "findAppointment",
-  description: "Busca citas y ficha de paciente por nombre. Úsala para REPROGRAMAR, CANCELAR o reconocer a un paciente recurrente.",
+  description: "Busca citas y ficha de paciente por nombre. Úsala SIEMPRE que el usuario diga su nombre. Devuelve si el paciente existe y qué datos faltan.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -43,7 +44,7 @@ const declarationCheckAvailability: FunctionDeclaration = {
 
 const declarationCreateAppointment: FunctionDeclaration = {
   name: "createAppointment",
-  description: "Agenda una nueva cita. Funciona para pacientes nuevos o existentes.",
+  description: "Agenda una nueva cita. Si el paciente NO existe, CREA UNA FICHA NUEVA (requiere DNI y Teléfono). Si existe pero le faltan datos, los actualiza.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -51,7 +52,10 @@ const declarationCreateAppointment: FunctionDeclaration = {
       date: { type: Type.STRING, description: "Fecha en formato YYYY-MM-DD" },
       time: { type: Type.STRING, description: "Hora en formato HH:MM" },
       treatment: { type: Type.STRING, description: "Nombre del tratamiento o servicio" },
-      doctorName: { type: Type.STRING, description: "Nombre del doctor preferido (opcional)" }
+      doctorName: { type: Type.STRING, description: "Nombre del doctor preferido (opcional)" },
+      branchName: { type: Type.STRING, description: "Nombre de la sucursal o sede donde se agenda la cita (OBLIGATORIO si hay más de 1 sucursal)" },
+      dni: { type: Type.STRING, description: "DNI o Documento de Identidad (OBLIGATORIO si es paciente nuevo)" },
+      phone: { type: Type.STRING, description: "Teléfono de contacto (OBLIGATORIO si es paciente nuevo o no lo tiene)" }
     },
     required: ["patientName", "date", "time", "treatment"]
   }
@@ -95,7 +99,7 @@ const declarationGetServiceDetails: FunctionDeclaration = {
   }
 };
 
-const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appointments, setAppointments, doctors, branches = [], patients = [] }) => {
+const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appointments, setAppointments, doctors, branches = [], patients = [], setPatients }) => {
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [transcription, setTranscription] = useState<string>('');
@@ -111,6 +115,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
   const appointmentsRef = useRef(appointments);
   const patientsRef = useRef(patients);
   const doctorsRef = useRef(doctors);
+  const branchesRef = useRef(branches);
   const servicesRef = useRef(settings.services);
   const scheduleRef = useRef(settings.globalSchedule);
   const policyRef = useRef(settings.appointmentPolicy);
@@ -119,6 +124,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
   useEffect(() => { appointmentsRef.current = appointments; }, [appointments]);
   useEffect(() => { patientsRef.current = patients; }, [patients]);
   useEffect(() => { doctorsRef.current = doctors; }, [doctors]);
+  useEffect(() => { branchesRef.current = branches; }, [branches]);
   useEffect(() => { servicesRef.current = settings.services; }, [settings.services]);
   useEffect(() => { scheduleRef.current = settings.globalSchedule; }, [settings.globalSchedule]);
   useEffect(() => { policyRef.current = settings.appointmentPolicy; }, [settings.appointmentPolicy]);
@@ -194,6 +200,15 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
           return `${d}: ${morning}${afternoon}`;
       }).join('\n');
 
+      // Generate Branch Info
+      const branchInfo = branches.length > 0 
+        ? branches.map(b => `${b.name} (${b.city})`).join(', ')
+        : "Sede Central (Única)";
+
+      const branchPromptLogic = settings.branchCount > 1
+        ? `TIENES ${settings.branchCount} SUCURSALES: ${branchInfo}. CUANDO EL USUARIO QUIERA AGENDAR, PREGUNTA SIEMPRE A QUÉ SUCURSAL QUIERE IR.`
+        : `SOLO HAY UNA SUCURSAL: ${branchInfo}. NO HACE FALTA PREGUNTAR LUGAR.`;
+
       // INJECT CURRENT DATE FOR RELATIVE CALCULATIONS
       const now = new Date();
       const currentDateString = now.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -213,6 +228,9 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
         Nombre: ${settings.name}
         Sector: ${settings.sector}
         
+        # SUCURSALES Y UBICACIÓN:
+        ${branchPromptLogic}
+
         # BASE DE CONOCIMIENTOS:
         ${kbContext}
 
@@ -226,22 +244,26 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
            - En cuanto conecte la llamada, di tu saludo configurado. NO ESPERES A QUE EL USUARIO DIGA "HOLA".
            - NO PUEDE HABER SILENCIOS INICIALES.
 
-        2. **AGENDAMIENTO (NUEVOS VS RECURRENTES)**:
-           - Si el usuario quiere **AGENDAR**: Pide el nombre. No importa si no existe en la base de datos (paciente nuevo). AGENDA LA CITA.
-           - Si el usuario quiere **REPROGRAMAR o CANCELAR**: AQUÍ SÍ es obligatorio usar 'findAppointment' para encontrar la cita original. Si no la encuentras, dilo.
+        2. **GESTIÓN DE PACIENTES (CRÍTICO - LEE ATENTAMENTE)**:
+           - **Identificación**: Cuando el usuario diga su nombre, usa 'findAppointment'.
+           - **Paciente NUEVO**: Si 'findAppointment' dice que NO existe:
+             - DEBES pedir **Nombre Completo, DNI y Teléfono** antes de confirmar la cita.
+             - Una vez tengas los datos, usa 'createAppointment' pasando el DNI y el Teléfono.
+           - **Paciente EXISTENTE**:
+             - Si 'findAppointment' dice que falta el Teléfono en su ficha, PÍDESELO.
+             - Si tiene todo (Nombre, DNI, Teléfono), NO pidas nada, solo agenda.
 
         3. **TRATAMIENTO DEL NOMBRE (NATURALIDAD)**:
            - Una vez el usuario te diga su nombre, ÚSALO.
-           - **REGLA DE ORO**: No repitas el nombre completo todo el tiempo (ej: NO digas "Claro Adexe Díaz, dime Adexe Díaz").
-           - Usa solo el nombre de pila (ej: "Claro Adexe") O usa "Señor/Señora Apellido" si quieres ser formal.
-           - Infiere el género por el nombre (Adexe -> Masculino -> Señor / María -> Femenino -> Señora).
+           - **REGLA DE ORO**: No repitas el nombre completo todo el tiempo.
+           - Usa solo el nombre de pila (ej: "Claro Adexe") O usa "Señor/Señora Apellido".
 
         4. **NOMBRE COMPLETO**:
-           - Para buscar en la base de datos o crear ficha, pide SIEMPRE "Nombre y Apellidos".
+           - Para crear ficha nueva, pide SIEMPRE "Nombre y Apellidos".
 
         # TUS HERRAMIENTAS:
-        - findAppointment: Úsala para Reprogramar, Cancelar o buscar historial.
-        - createAppointment: Para AGENDAR (sea nuevo o viejo).
+        - findAppointment: Úsala para ver si existe y QUÉ DATOS TIENE/FALTAN.
+        - createAppointment: CREA FICHA (si es nuevo) y AGENDA. IMPORTANTE: Si hay varias sucursales, pasa el 'branchName'.
         - rescheduleAppointment: Requiere ID.
         - cancelAppointment: Requiere ID.
         - checkAvailability: Consultar huecos.
@@ -320,25 +342,28 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                             const patientProfile = patientsRef.current.find(p => p.name.toLowerCase().includes(nameQuery));
 
                             if (matches.length === 0 && !patientProfile) {
-                                // IMPORTANT: If not found, tell the model it's okay to proceed if booking new.
+                                // IMPORTANT: If not found, tell the model it is a NEW PATIENT
                                 result = { 
                                     found: false, 
-                                    message: "No encontré registro previo. Si el usuario quiere AGENDAR, procede a crear una cita nueva pidiendo los datos. Si quiere CANCELAR/REPROGRAMAR, confirma el nombre." 
+                                    message: "No encontré paciente con ese nombre. Es un PACIENTE NUEVO. Pídele DNI y Teléfono para crearle la ficha al agendar." 
                                 };
                             } else {
                                 result = { 
                                     found: true, 
                                     patientContext: patientProfile ? {
                                         name: patientProfile.name,
-                                        isVIP: false
+                                        hasPhone: !!patientProfile.phone,
+                                        hasDNI: !!patientProfile.identityDocument,
+                                        message: !patientProfile.phone ? "IMPORTANTE: El paciente existe pero NO tiene teléfono registrado. Pídeselo." : "Datos completos."
                                     } : "Perfil no encontrado, solo citas.",
                                     matches: matches.map(a => ({
                                         id: a.id,
                                         date: a.date,
                                         time: a.time,
-                                        treatment: a.treatment
+                                        treatment: a.treatment,
+                                        branch: a.branch
                                     })),
-                                    message: `Encontré datos. Usa el nombre de pila o 'Señor/Señora' + Apellido para dirigirte al usuario.`
+                                    message: `Paciente encontrado. ${!patientProfile?.phone ? "FALTA TELÉFONO." : ""}`
                                 };
                             }
                         }
@@ -358,6 +383,61 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                             if (!isClinicOpen(args.date, args.time)) {
                                 result = { success: false, message: "No se pudo agendar: La clínica está cerrada en ese horario." };
                             } else {
+                                // LOGIC FOR PATIENT CREATION / UPDATE
+                                let patientId = '';
+                                const nameQuery = args.patientName.toLowerCase();
+                                const existingPatient = patientsRef.current.find(p => p.name.toLowerCase().includes(nameQuery));
+
+                                if (existingPatient) {
+                                    // Patient exists
+                                    patientId = existingPatient.id;
+                                    // Update phone if missing and provided
+                                    if (!existingPatient.phone && args.phone && setPatients) {
+                                        setPatients(prev => prev.map(p => p.id === existingPatient.id ? { ...p, phone: args.phone } : p));
+                                    }
+                                } else {
+                                    // NEW PATIENT: Create Record
+                                    if (setPatients) {
+                                        const newId = 'P-' + Math.floor(Math.random() * 100000);
+                                        const newPatient: Patient = {
+                                            id: newId,
+                                            name: args.patientName,
+                                            birthDate: new Date().toISOString().split('T')[0], // Default
+                                            gender: 'Otro', // Default
+                                            identityDocument: args.dni || 'Sin DNI',
+                                            phone: args.phone || '',
+                                            email: '',
+                                            address: '',
+                                            medicalHistory: 'Alta automática por Asistente de Voz',
+                                            img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=NewUser&backgroundColor=e2e8f0',
+                                            history: [{ date: new Date().toISOString().split('T')[0], action: 'Alta Voz', description: 'Creado por Asistente IA' }]
+                                        };
+                                        setPatients(prev => [...prev, newPatient]);
+                                        patientId = newId;
+                                    } else {
+                                        // Fallback if no setPatients (should not happen based on props)
+                                        patientId = 'P-VOICE-' + Date.now();
+                                    }
+                                }
+
+                                // FIND DOCTOR BY BRANCH (IF SPECIFIED)
+                                let assignedDoctorId = doctorsRef.current[0]?.id || "D1";
+                                let assignedDoctorName = doctorsRef.current[0]?.name || "Dr. Asignado";
+                                
+                                if (args.branchName) {
+                                    const branchDoc = doctorsRef.current.find(d => d.branch.toLowerCase().includes(args.branchName.toLowerCase()));
+                                    if (branchDoc) {
+                                        assignedDoctorId = branchDoc.id;
+                                        assignedDoctorName = branchDoc.name;
+                                    }
+                                } else if (args.doctorName) {
+                                    const nameDoc = doctorsRef.current.find(d => d.name.toLowerCase().includes(args.doctorName.toLowerCase()));
+                                    if (nameDoc) {
+                                        assignedDoctorId = nameDoc.id;
+                                        assignedDoctorName = nameDoc.name;
+                                    }
+                                }
+
                                 // Calculate Status based on Policy
                                 const today = new Date(); today.setHours(0,0,0,0);
                                 const apptDate = new Date(args.date);
@@ -375,18 +455,25 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
 
                                 const newApt: Appointment = {
                                     id: Math.random().toString(36).substr(2, 9),
-                                    patientId: 'P-VOICE-' + Date.now(),
+                                    patientId: patientId,
                                     patientName: args.patientName,
                                     date: args.date,
                                     time: args.time,
                                     treatment: args.treatment,
-                                    doctorName: args.doctorName || doctorsRef.current[0]?.name || "Dr. Asignado",
-                                    doctorId: doctorsRef.current[0]?.id || "D1",
+                                    doctorName: assignedDoctorName,
+                                    doctorId: assignedDoctorId,
+                                    branch: args.branchName || "Sede Central",
                                     status: initialStatus
                                 };
                                 setAppointments(prev => [...prev, newApt]);
                                 
-                                result = { success: true, id: newApt.id, message: "Cita creada. Llama al paciente por su nombre de pila o apellido para confirmar." };
+                                result = { 
+                                    success: true, 
+                                    id: newApt.id, 
+                                    message: existingPatient 
+                                        ? `Cita agendada correctamente en ${newApt.branch}.` 
+                                        : `Ficha creada y cita agendada en ${newApt.branch}.` 
+                                };
                             }
                         }
                         else if (fc.name === "rescheduleAppointment") {
