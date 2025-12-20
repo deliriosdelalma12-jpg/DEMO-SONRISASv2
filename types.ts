@@ -57,7 +57,7 @@ export interface DaySchedule {
 export interface AttendanceRecord {
   id: string;
   date: string;
-  type: 'Retraso' | 'Ausencia' | 'Baja Médica' | 'Permiso';
+  type: 'Retraso' | 'Ausencia' | 'Baja Médica' | 'Permiso' | string; // Allow dynamic types
   duration?: string;
   status: 'Pendiente' | 'Justificado' | 'No Justificado';
   notes?: string;
@@ -68,6 +68,7 @@ export interface VacationRequest {
   id: string;
   start: string;
   end: string;
+  daysUsed: number;
   status: 'Pendiente' | 'Aprobada' | 'Rechazada';
   type: 'Vacaciones' | 'Asuntos Propios' | 'Baja';
 }
@@ -77,13 +78,12 @@ export interface Doctor {
   name: string;
   role: UserRole;
   specialty: string;
-  status: 'Active' | 'Inactive' | 'Vacation';
+  status: 'Active' | 'Inactive' | 'Vacation' | 'Medical Leave';
   img: string;
   branch: string;
   phone: string;
   corporateEmail: string;
   docs: FileAttachment[];
-  // Fix: Added missing properties used in Doctors.tsx and HRManagement.tsx
   schedule?: Record<string, DaySchedule>;
   contractType?: string;
   hourlyRate?: number;
@@ -118,7 +118,6 @@ export interface AiPhoneSettings {
   temperature: number;
   accent: VoiceAccent;
   model: string;
-  // Added fields for AI context injection in Patients.tsx
   knowledgeBase?: string;
   knowledgeFiles?: FileAttachment[];
 }
@@ -132,6 +131,23 @@ export interface AppLabels {
 export interface VisualSettings {
   titleFontSize: number;
   bodyFontSize: number;
+}
+
+// --- NEW TYPES FOR LABOR CONFIGURATION ---
+export interface LaborIncidentType {
+  id: string;
+  name: string;
+  requiresJustification: boolean;
+  isPaid: boolean;
+  color: string; // Hex code or Tailwind class
+}
+
+export interface LaborSettings {
+  vacationDaysPerYear: number;
+  allowCarryOver: boolean; // Permitir acumular días al año siguiente
+  businessDaysOnly: boolean; // Contar solo días hábiles
+  defaultContractType: string;
+  incidentTypes: LaborIncidentType[];
 }
 
 export interface ClinicSettings {
@@ -148,19 +164,20 @@ export interface ClinicSettings {
   colorTemplate: string;
   labels: AppLabels;
   visuals: VisualSettings;
+  laborSettings: LaborSettings; // New field
 }
 
 export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
 
 export interface Task {
   id: string;
-  text: string;
+  title: string;
+  description?: string;
   completed: boolean;
   priority: 'High' | 'Medium' | 'Low';
   sub?: string;
 }
 
-// Added missing Appointment interface
 export interface Appointment {
   id: string;
   patientId: string;
@@ -173,7 +190,6 @@ export interface Appointment {
   status: AppointmentStatus;
 }
 
-// Added missing Patient interface
 export interface Patient {
   id: string;
   name: string;

@@ -1,6 +1,6 @@
 
-import React, { useState, useRef } from 'react';
-import { ClinicSettings, User, ClinicService, FileAttachment, VoiceAccent, AppLanguage, AppLabels } from '../types';
+import React, { useState, useRef, useMemo } from 'react';
+import { ClinicSettings, User, ClinicService, FileAttachment, VoiceAccent, AppLanguage, AppLabels, LaborIncidentType, Doctor, AttendanceRecord, VacationRequest } from '../types';
 import { COLOR_TEMPLATES } from '../App';
 import { generatePersonalityPrompt, speakText } from '../services/gemini';
 
@@ -11,6 +11,8 @@ interface SettingsProps {
   darkMode: boolean;
   systemUsers: User[];
   setSystemUsers: React.Dispatch<React.SetStateAction<User[]>>;
+  doctors?: Doctor[];
+  setDoctors?: React.Dispatch<React.SetStateAction<Doctor[]>>;
 }
 
 const PERSONALITY_TAGS = {
@@ -42,18 +44,46 @@ const GREETING_PILLS = [
   "Central de {clinic}, habla {name}. Dígame."
 ];
 
-const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleTheme, darkMode }) => {
-  const [activeTab, setActiveTab] = useState<'company' | 'visual' | 'assistant'>('company');
+const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleTheme, darkMode, doctors, setDoctors }) => {
+  const [activeTab, setActiveTab] = useState<'company' | 'labor' | 'visual' | 'assistant'>('company');
   const [showSuccessMsg, setShowSuccessMsg] = useState(false);
   const [isGeneratingPersonality, setIsGeneratingPersonality] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
   
+  // State for Service Management
   const [newServiceName, setNewServiceName] = useState('');
   const [newServicePrice, setNewServicePrice] = useState<string>('');
   const [newServiceDuration, setNewServiceDuration] = useState<string>('30');
 
+  // State for Labor Management (Definitions)
+  const [newIncident, setNewIncident] = useState<Partial<LaborIncidentType>>({
+    name: '', requiresJustification: true, isPaid: false, color: 'bg-slate-500'
+  });
+
+  // State for Labor Management (Operational - Assigning incidents/vacations)
+  const [manageType, setManageType] = useState<'incident' | 'vacation'>('incident');
+  const [selectedEmpId, setSelectedEmpId] = useState<string>('');
+  const [eventData, setEventData] = useState({
+    typeId: '',
+    date: new Date().toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
+    duration: '',
+    notes: '',
+    status: 'Justificado' // Default for Admin
+  });
+
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Global History Calculation
+  const globalHistory = useMemo(() => {
+    if (!doctors) return [];
+    const incidents = doctors.flatMap(d => (d.attendanceHistory || []).map(a => ({...a, empName: d.name, category: 'Incidencia'})));
+    const vacations = doctors.flatMap(d => (d.vacationHistory || []).map(v => ({
+      id: v.id, date: v.start, type: v.type, status: v.status, notes: `${v.daysUsed} días (${v.start} a ${v.end})`, empName: d.name, category: 'Vacaciones'
+    })));
+    return [...incidents, ...vacations].sort((a, b) => b.date.localeCompare(a.date));
+  }, [doctors]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
@@ -149,6 +179,89 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
     }));
   };
 
+  // --- Labor Settings Handlers ---
+  const addIncidentType = () => {
+    if (!newIncident.name) return;
+    const type: LaborIncidentType = {
+      id: 'inc_' + Math.floor(Math.random() * 10000),
+      name: newIncident.name,
+      requiresJustification: newIncident.requiresJustification || false,
+      isPaid: newIncident.isPaid || false,
+      color: newIncident.color || 'bg-slate-500'
+    };
+    setSettings(prev => ({
+      ...prev,
+      laborSettings: {
+        ...prev.laborSettings,
+        incidentTypes: [...(prev.laborSettings.incidentTypes || []), type]
+      }
+    }));
+    setNewIncident({ name: '', requiresJustification: true, isPaid: false, color: 'bg-slate-500' });
+  };
+
+  const removeIncidentType = (id: string) => {
+    setSettings(prev => ({
+      ...prev,
+      laborSettings: {
+        ...prev.laborSettings,
+        incidentTypes: prev.laborSettings.incidentTypes.filter(t => t.id !== id)
+      }
+    }));
+  };
+
+  const handleRegisterEvent = () => {
+    if (!doctors || !setDoctors || !selectedEmpId) return;
+    if (manageType === 'incident' && !eventData.typeId) { alert('Selecciona un tipo de incidencia'); return; }
+
+    setDoctors(prev => prev.map(doc => {
+      if (doc.id !== selectedEmpId) return doc;
+
+      if (manageType === 'incident') {
+        const typeName = settings.laborSettings.incidentTypes.find(t => t.id === eventData.typeId)?.name || 'Incidencia';
+        const newRecord: AttendanceRecord = {
+          id: 'REC-' + Date.now(),
+          date: eventData.date,
+          type: typeName,
+          duration: eventData.duration,
+          status: eventData.status as any,
+          notes: eventData.notes
+        };
+        return {
+          ...doc,
+          attendanceHistory: [newRecord, ...(doc.attendanceHistory || [])]
+        };
+      } else {
+        // Vacation Logic
+        const start = new Date(eventData.date);
+        const end = new Date(eventData.endDate);
+        const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1;
+        
+        const newVacation: VacationRequest = {
+          id: 'VAC-' + Date.now(),
+          start: eventData.date,
+          end: eventData.endDate,
+          daysUsed: days > 0 ? days : 1,
+          status: 'Aprobada',
+          type: 'Vacaciones'
+        };
+
+        const updatedHistory = [newVacation, ...(doc.vacationHistory || [])];
+        const totalTaken = updatedHistory.filter(v => v.status !== 'Rechazada').reduce((acc, c) => acc + c.daysUsed, 0);
+
+        return {
+          ...doc,
+          vacationHistory: updatedHistory,
+          vacationDaysTaken: totalTaken
+        };
+      }
+    }));
+
+    // Reset Form partial
+    setEventData({ ...eventData, notes: '', duration: '' });
+    setShowSuccessMsg(true);
+    setTimeout(() => setShowSuccessMsg(false), 3000);
+  };
+
   return (
     <div className="p-10 max-w-[1400px] mx-auto space-y-12 animate-in fade-in duration-500 pb-32">
       
@@ -156,7 +269,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4">
            <div className="bg-success text-white px-8 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-black uppercase tracking-widest text-[10px]">
               <span className="material-symbols-outlined">check_circle</span>
-              Configuración sincronizada correctamente
+              Registro guardado y sincronizado
            </div>
         </div>
       )}
@@ -167,7 +280,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
             Configuración del Sistema
           </h1>
           <p className="text-slate-500 dark:text-slate-400 font-medium italic text-lg">
-            Personaliza la identidad de tu marca y la inteligencia de tu asistente.
+            Personaliza la identidad de tu marca, políticas laborales y la inteligencia de tu asistente.
           </p>
         </div>
 
@@ -179,10 +292,16 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
               <span className="material-symbols-outlined text-lg">business</span> Empresa
            </button>
            <button 
+             onClick={() => setActiveTab('labor')}
+             className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'labor' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}
+           >
+              <span className="material-symbols-outlined text-lg">badge</span> Laboral
+           </button>
+           <button 
              onClick={() => setActiveTab('visual')}
              className={`px-10 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shrink-0 ${activeTab === 'visual' ? 'bg-white dark:bg-surface-dark text-primary shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}
            >
-              <span className="material-symbols-outlined text-lg">palette</span> Config. Visual
+              <span className="material-symbols-outlined text-lg">palette</span> Visual
            </button>
            <button 
              onClick={() => setActiveTab('assistant')}
@@ -281,6 +400,261 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                        <button onClick={() => removeService(s.id)} className="text-danger hover:scale-125 transition-transform"><span className="material-symbols-outlined">delete</span></button>
                     </div>
                   ))}
+               </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === 'labor' && (
+        <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-right-4 duration-500">
+          
+          {/* POLÍTICA DE VACACIONES */}
+          <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
+            <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
+              <div className="size-12 rounded-xl bg-orange-400 text-white flex items-center justify-center">
+                <span className="material-symbols-outlined">beach_access</span>
+              </div>
+              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Política de Vacaciones</h3>
+            </div>
+            <div className="p-10 space-y-10">
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                  <div className="space-y-3">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Días Anuales por Contrato</label>
+                     <input 
+                       type="number" 
+                       value={settings.laborSettings?.vacationDaysPerYear || 30} 
+                       onChange={e => setSettings({...settings, laborSettings: {...settings.laborSettings, vacationDaysPerYear: parseInt(e.target.value)}})}
+                       className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
+                     />
+                  </div>
+                  <div className="space-y-3">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Cómputo</label>
+                     <div className="flex gap-2">
+                        <button 
+                          onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, businessDaysOnly: false}})}
+                          className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase transition-all ${!settings.laborSettings?.businessDaysOnly ? 'bg-primary text-white shadow-lg' : 'bg-slate-100 dark:bg-bg-dark text-slate-400'}`}
+                        >
+                          Naturales
+                        </button>
+                        <button 
+                          onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, businessDaysOnly: true}})}
+                          className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase transition-all ${settings.laborSettings?.businessDaysOnly ? 'bg-primary text-white shadow-lg' : 'bg-slate-100 dark:bg-bg-dark text-slate-400'}`}
+                        >
+                          Hábiles
+                        </button>
+                     </div>
+                  </div>
+                  <div className="space-y-3 flex flex-col">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acumulación</label>
+                     <button 
+                        onClick={() => setSettings({...settings, laborSettings: {...settings.laborSettings, allowCarryOver: !settings.laborSettings?.allowCarryOver}})}
+                        className={`flex-1 flex items-center justify-between px-6 rounded-2xl transition-all border-2 ${settings.laborSettings?.allowCarryOver ? 'border-success bg-success/10 text-success' : 'border-slate-200 bg-slate-50 dark:bg-bg-dark text-slate-400'}`}
+                     >
+                        <span className="text-xs font-black uppercase">Permitir acumular</span>
+                        <span className="material-symbols-outlined">{settings.laborSettings?.allowCarryOver ? 'toggle_on' : 'toggle_off'}</span>
+                     </button>
+                  </div>
+               </div>
+            </div>
+          </section>
+
+          {/* GESTIÓN DE INCIDENCIAS */}
+          <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
+            <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
+              <div className="size-12 rounded-xl bg-danger text-white flex items-center justify-center">
+                <span className="material-symbols-outlined">warning</span>
+              </div>
+              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Tipos de Incidencias y Ausencias</h3>
+            </div>
+            
+            <div className="p-10 space-y-8">
+               <div className="bg-slate-50 dark:bg-bg-dark p-6 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 space-y-6">
+                  <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em] ml-2">Crear Nuevo Tipo de Incidencia</h4>
+                  <div className="flex flex-col lg:flex-row gap-6 items-end">
+                     <div className="flex-1 w-full">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Nombre</label>
+                        <input 
+                          type="text" placeholder="Ej: Baja Enfermedad Común" 
+                          value={newIncident.name} onChange={e => setNewIncident({...newIncident, name: e.target.value})}
+                          className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-6 py-4 text-sm font-bold shadow-sm"
+                        />
+                     </div>
+                     <div className="flex gap-4 w-full lg:w-auto">
+                        <div className="flex-1 lg:flex-initial">
+                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Etiqueta Color</label>
+                           <select 
+                             value={newIncident.color} onChange={e => setNewIncident({...newIncident, color: e.target.value})}
+                             className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-4 py-4 text-sm font-bold shadow-sm cursor-pointer"
+                           >
+                              <option value="bg-slate-500">Gris</option>
+                              <option value="bg-primary">Azul</option>
+                              <option value="bg-success">Verde</option>
+                              <option value="bg-warning">Amarillo</option>
+                              <option value="bg-danger">Rojo</option>
+                              <option value="bg-purple-500">Morado</option>
+                           </select>
+                        </div>
+                        <div className="flex items-end pb-1 gap-2">
+                           <button 
+                             onClick={() => setNewIncident({...newIncident, requiresJustification: !newIncident.requiresJustification})}
+                             className={`size-12 rounded-2xl flex items-center justify-center transition-all ${newIncident.requiresJustification ? 'bg-primary text-white shadow-lg' : 'bg-white dark:bg-surface-dark text-slate-300'}`}
+                             title="Requiere Justificación"
+                           >
+                              <span className="material-symbols-outlined">description</span>
+                           </button>
+                           <button 
+                             onClick={() => setNewIncident({...newIncident, isPaid: !newIncident.isPaid})}
+                             className={`size-12 rounded-2xl flex items-center justify-center transition-all ${newIncident.isPaid ? 'bg-success text-white shadow-lg' : 'bg-white dark:bg-surface-dark text-slate-300'}`}
+                             title="Es Retribuido"
+                           >
+                              <span className="material-symbols-outlined">attach_money</span>
+                           </button>
+                        </div>
+                     </div>
+                     <button onClick={addIncidentType} className="h-14 px-8 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">
+                        Añadir
+                     </button>
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {settings.laborSettings?.incidentTypes.map((inc) => (
+                    <div key={inc.id} className="group p-6 bg-white dark:bg-surface-dark rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all relative overflow-hidden">
+                       <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity`}>
+                          <div className={`size-16 rounded-full ${inc.color}`}></div>
+                       </div>
+                       <div className="relative z-10">
+                          <div className="flex items-center gap-3 mb-4">
+                             <div className={`size-3 rounded-full ${inc.color}`}></div>
+                             <h4 className="font-black text-sm text-slate-900 dark:text-white uppercase tracking-tight leading-none">{inc.name}</h4>
+                          </div>
+                          <div className="flex gap-2">
+                             {inc.requiresJustification && (
+                               <span className="px-2 py-1 bg-slate-100 dark:bg-bg-dark rounded-lg text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                                 <span className="material-symbols-outlined text-[10px]">description</span> Justif.
+                               </span>
+                             )}
+                             {inc.isPaid ? (
+                               <span className="px-2 py-1 bg-success/10 rounded-lg text-[9px] font-bold text-success uppercase flex items-center gap-1">
+                                 <span className="material-symbols-outlined text-[10px]">attach_money</span> Pagado
+                               </span>
+                             ) : (
+                               <span className="px-2 py-1 bg-slate-100 dark:bg-bg-dark rounded-lg text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                                 <span className="material-symbols-outlined text-[10px]">money_off</span> No Pagado
+                               </span>
+                             )}
+                          </div>
+                          <button onClick={() => removeIncidentType(inc.id)} className="absolute bottom-6 right-6 text-slate-300 hover:text-danger transition-colors">
+                             <span className="material-symbols-outlined">delete</span>
+                          </button>
+                       </div>
+                    </div>
+                  ))}
+               </div>
+            </div>
+          </section>
+
+          {/* GESTIÓN OPERATIVA (NUEVA SECCIÓN) */}
+          <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
+            <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
+              <div className="size-12 rounded-xl bg-purple-500 text-white flex items-center justify-center">
+                <span className="material-symbols-outlined">badge</span>
+              </div>
+              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Gestión Operativa de Personal</h3>
+            </div>
+            
+            <div className="flex flex-col xl:flex-row">
+               {/* FORMULARIO */}
+               <div className="p-10 w-full xl:w-[450px] border-b xl:border-b-0 xl:border-r border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 space-y-8 shrink-0">
+                  <div className="flex bg-white dark:bg-surface-dark p-1.5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+                     <button onClick={() => setManageType('incident')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${manageType === 'incident' ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Incidencia</button>
+                     <button onClick={() => setManageType('vacation')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${manageType === 'vacation' ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Vacaciones</button>
+                  </div>
+
+                  <div className="space-y-6">
+                     <div className="space-y-2">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Empleado</label>
+                        <select value={selectedEmpId} onChange={(e) => setSelectedEmpId(e.target.value)} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-5 py-4 text-sm font-bold shadow-sm">
+                           <option value="">Seleccionar empleado...</option>
+                           {doctors?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                     </div>
+
+                     {manageType === 'incident' && (
+                       <div className="space-y-2">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Incidencia</label>
+                          <select value={eventData.typeId} onChange={(e) => setEventData({...eventData, typeId: e.target.value})} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-5 py-4 text-sm font-bold shadow-sm">
+                             <option value="">Seleccionar tipo...</option>
+                             {settings.laborSettings.incidentTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                       </div>
+                     )}
+
+                     <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha {manageType === 'vacation' ? 'Inicio' : ''}</label>
+                           <input type="date" value={eventData.date} onChange={e => setEventData({...eventData, date: e.target.value})} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-4 py-4 text-xs font-bold shadow-sm" />
+                        </div>
+                        {manageType === 'vacation' ? (
+                           <div className="space-y-2">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha Fin</label>
+                              <input type="date" min={eventData.date} value={eventData.endDate} onChange={e => setEventData({...eventData, endDate: e.target.value})} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-4 py-4 text-xs font-bold shadow-sm" />
+                           </div>
+                        ) : (
+                           <div className="space-y-2">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Duración (Opc.)</label>
+                              <input type="text" placeholder="Ej: 2h" value={eventData.duration} onChange={e => setEventData({...eventData, duration: e.target.value})} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-4 py-4 text-xs font-bold shadow-sm" />
+                           </div>
+                        )}
+                     </div>
+
+                     <div className="space-y-2">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Notas Internas</label>
+                        <textarea value={eventData.notes} onChange={e => setEventData({...eventData, notes: e.target.value})} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-5 py-4 text-xs font-medium h-24 shadow-sm resize-none" placeholder="Detalles para RRHH..."></textarea>
+                     </div>
+
+                     <button onClick={handleRegisterEvent} className="w-full py-4 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all">
+                        Registrar Evento
+                     </button>
+                  </div>
+               </div>
+
+               {/* TABLA HISTÓRICO GLOBAL */}
+               <div className="flex-1 p-10 flex flex-col">
+                  <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em] mb-6">Historial Global de la Empresa</h4>
+                  <div className="flex-1 overflow-hidden rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm bg-white dark:bg-surface-dark">
+                     <div className="overflow-y-auto h-[500px] custom-scrollbar">
+                        <table className="w-full text-left">
+                           <thead className="bg-slate-50 dark:bg-bg-dark sticky top-0 z-10">
+                              <tr>
+                                 <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
+                                 <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Empleado</th>
+                                 <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Tipo</th>
+                                 <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Detalle</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {globalHistory.length > 0 ? globalHistory.map((item: any, idx) => (
+                                 <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="px-6 py-4 text-xs font-bold text-slate-500">{item.date}</td>
+                                    <td className="px-6 py-4 text-xs font-black text-slate-800 dark:text-white uppercase">{item.empName}</td>
+                                    <td className="px-6 py-4">
+                                       <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${item.category === 'Vacaciones' ? 'bg-orange-400/10 text-orange-400' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'}`}>
+                                          {item.type || item.category}
+                                       </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right text-[10px] font-medium text-slate-400 italic">
+                                       {item.notes || item.duration || '-'}
+                                    </td>
+                                 </tr>
+                              )) : (
+                                 <tr><td colSpan={4} className="p-10 text-center text-slate-400 text-xs italic">Sin registros recientes</td></tr>
+                              )}
+                           </tbody>
+                        </table>
+                     </div>
+                  </div>
                </div>
             </div>
           </section>

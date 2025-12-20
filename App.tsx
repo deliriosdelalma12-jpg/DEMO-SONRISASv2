@@ -92,9 +92,9 @@ const INITIAL_APPOINTMENTS: Appointment[] = [
 ];
 
 const INITIAL_TASKS: Task[] = [
-  { id: 'T1', text: 'Confirmar citas de mañana', completed: false, priority: 'High', sub: 'Recepción' },
-  { id: 'T2', text: 'Pedir material de implantes', completed: true, priority: 'Medium', sub: 'Almacén' },
-  { id: 'T3', text: 'Revisar informe de Laura M.', completed: false, priority: 'Low', sub: 'Dra. Torres' }
+  { id: 'T1', title: 'Confirmar citas de mañana', description: 'Llamar a pacientes de primera hora para confirmar asistencia.', completed: false, priority: 'High', sub: 'Recepción' },
+  { id: 'T2', title: 'Pedir material de implantes', description: 'Faltan tornillos de titanio 3mm.', completed: true, priority: 'Medium', sub: 'Almacén' },
+  { id: 'T3', title: 'Revisar informe de Laura M.', description: 'Evaluar evolución tras ajuste de brackets.', completed: false, priority: 'Low', sub: 'Dra. Torres' }
 ];
 
 const App: React.FC = () => {
@@ -144,6 +144,18 @@ const App: React.FC = () => {
       agendaSubtitle: "Gestión de turnos y pacientes",
       patientsTitle: "Pacientes",
       patientsSubtitle: "Historial clínico centralizado"
+    },
+    laborSettings: {
+      vacationDaysPerYear: 30,
+      allowCarryOver: false,
+      businessDaysOnly: false,
+      defaultContractType: "Indefinido",
+      incidentTypes: [
+        { id: 'inc_1', name: 'Baja Médica (Enfermedad Común)', requiresJustification: true, isPaid: true, color: 'bg-blue-500' },
+        { id: 'inc_2', name: 'Retraso Injustificado', requiresJustification: false, isPaid: false, color: 'bg-warning' },
+        { id: 'inc_3', name: 'Ausencia Personal', requiresJustification: true, isPaid: false, color: 'bg-purple-500' },
+        { id: 'inc_4', name: 'Accidente Laboral', requiresJustification: true, isPaid: true, color: 'bg-danger' }
+      ]
     }
   });
 
@@ -179,7 +191,7 @@ const App: React.FC = () => {
           <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
           <Route path="/hr" element={<HRManagement doctors={doctors} setDoctors={setDoctors} />} />
           <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} />} />
-          <Route path="/settings" element={<Settings settings={settings} setSettings={setSettings} onToggleTheme={() => setDarkMode(!darkMode)} darkMode={darkMode} systemUsers={[currentUser]} setSystemUsers={() => {}} />} />
+          <Route path="/settings" element={<Settings settings={settings} setSettings={setSettings} onToggleTheme={() => setDarkMode(!darkMode)} darkMode={darkMode} systemUsers={[currentUser]} setSystemUsers={() => {}} doctors={doctors} setDoctors={setDoctors} />} />
         </Routes>
       </Layout>
 
