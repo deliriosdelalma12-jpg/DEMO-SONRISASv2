@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
 import React, { useEffect, useRef, useState } from 'react';
-import { ClinicSettings, Appointment, Doctor } from '../types';
+import { ClinicSettings, Appointment, Doctor, Branch } from '../types';
 
 interface VoiceAssistantProps {
   onClose: () => void;
@@ -9,9 +9,10 @@ interface VoiceAssistantProps {
   appointments: Appointment[];
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>;
   doctors: Doctor[];
+  branches?: Branch[]; // NEW PROP
 }
 
-const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appointments, setAppointments, doctors }) => {
+const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appointments, setAppointments, doctors, branches = [] }) => {
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [transcription, setTranscription] = useState<string>('');
@@ -58,6 +59,12 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
+      // Construct dynamic prompt with branch info
+      const activeBranches = branches.filter(b => b.status === 'Active');
+      const branchContext = activeBranches.length > 0 
+        ? `\n# SUCURSALES ACTIVAS:\n${activeBranches.map(b => `- ${b.name}: ${b.address}, ${b.city}. Horario: ${b.openingHours}`).join('\n')}`
+        : '\n# SUCURSAL: Única sede central.';
+
       const fullPrompt = `
         ${settings.aiPhoneSettings.systemPrompt}
         
@@ -68,11 +75,13 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
         Nombre de la clínica: ${settings.name}
         Servicios disponibles (con duración estimada):
         ${settings.services.map(s => `- ${s.name}: ${s.price}${settings.currency} (${s.duration} min)`).join('\n')}
+        ${branchContext}
         
         # SALUDO INICIAL OBLIGATORIO:
         "${settings.aiPhoneSettings.initialGreeting}"
         
         Debes sonar natural, con acento ${settings.aiPhoneSettings.accent} y hablar a una velocidad de ${settings.aiPhoneSettings.voiceSpeed}x.
+        Si el paciente pregunta por ubicaciones, usa la lista de sucursales activas.
       `;
 
       const sessionPromise = ai.live.connect({

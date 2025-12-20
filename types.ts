@@ -32,12 +32,33 @@ export interface ClinicService {
   duration: number; // Duración en minutos para optimizar agenda
 }
 
+// --- NEW BRANCH INTERFACE ---
+export interface Branch {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  zip: string;
+  phone: string;
+  email: string;
+  status: 'Active' | 'Inactive' | 'Maintenance';
+  coordinates: {
+    lat: string;
+    lng: string;
+  };
+  img: string;
+  manager?: string;
+  openingHours?: string;
+  description?: string;
+}
+
 // --- SECURITY & ROLES ---
 export type PermissionId = 
   | 'view_dashboard' 
   | 'view_agenda' 
   | 'view_patients' 
-  | 'view_doctors' 
+  | 'view_doctors'
+  | 'view_branches' // NEW PERMISSION
   | 'view_hr' 
   | 'view_metrics' 
   | 'view_settings' 

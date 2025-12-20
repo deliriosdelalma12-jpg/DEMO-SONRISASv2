@@ -29,6 +29,7 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
     { path: '/agenda', label: 'Agenda', icon: 'calendar_month', perm: 'view_agenda' },
     { path: '/patients', label: 'Pacientes', icon: 'group', perm: 'view_patients' },
     { path: '/doctors', label: 'Médicos', icon: 'medical_services', perm: 'view_doctors' },
+    { path: '/branches', label: 'Sucursales', icon: 'apartment', perm: 'view_branches' },
     { path: '/hr', label: 'Personal', icon: 'badge_calendar', perm: 'view_hr' },
     { path: '/metrics', label: 'Métricas', icon: 'leaderboard', perm: 'view_metrics' },
     { path: '/settings', label: 'Configuración', icon: 'settings', perm: 'view_settings' },

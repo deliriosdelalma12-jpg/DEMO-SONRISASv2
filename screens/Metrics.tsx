@@ -2,9 +2,9 @@
 import React, { useState, useMemo } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  Cell, PieChart, Pie, AreaChart, Area, Legend 
+  Cell, PieChart, Pie, AreaChart, Area, Legend, ComposedChart, Line
 } from 'recharts';
-import { Appointment, Doctor, Patient, ClinicSettings } from '../types';
+import { Appointment, Doctor, Patient, ClinicSettings, Branch } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from "jspdf";
 
@@ -12,7 +12,8 @@ interface MetricsProps {
   appointments: Appointment[];
   doctors: Doctor[];
   patients: Patient[];
-  settings?: ClinicSettings; // Add settings to access company name and context
+  settings?: ClinicSettings; 
+  branches?: Branch[];
 }
 
 const treatmentPrices: Record<string, number> = {
@@ -25,481 +26,324 @@ const treatmentPrices: Record<string, number> = {
   'Revisión Periódica': 45,
   'Implante Titanio': 1200,
   'Endodoncia Molar': 250,
-  'Blanqueamiento': 180
+  'Blanqueamiento': 180,
+  'Fisioterapia': 55,
+  'Radiografía': 40
 };
 
-const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients, settings }) => {
+const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients, settings, branches = [] }) => {
   const [branchFilter, setBranchFilter] = useState('Todas las sedes');
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
-  
-  // Nuevo Estado para el filtro de la comparativa
-  const [compFilter, setCompFilter] = useState<'1m' | '3m' | '6m' | '1y'>('3m');
-
-  // AI Analysis State
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<{diagnosis: string, conclusions: string, recommendations: string} | null>(null);
 
-  const branches = useMemo(() => {
+  // --- FILTERS & DATA PREPARATION ---
+
+  const branchOptions = useMemo(() => {
+    if (branches.length > 0) return ['Todas las sedes', ...branches.map(b => b.name)];
     const unique = Array.from(new Set(doctors.map(d => d.branch)));
     return ['Todas las sedes', ...unique];
-  }, [doctors]);
+  }, [doctors, branches]);
 
-  // --- FILTRADO MAESTRO DE DATOS (Contexto Sucursal) ---
-  // Esta variable contiene TODAS las citas históricas que pertenecen al contexto seleccionado (Global o Sucursal X)
   const relevantAppointments = useMemo(() => {
     if (branchFilter === 'Todas las sedes') {
       return appointments;
     }
-    // Filtrar doctores que pertenecen a la sucursal seleccionada
     const branchDocIds = new Set(doctors.filter(d => d.branch === branchFilter).map(d => d.id));
-    // Filtrar citas asociadas a esos doctores
     return appointments.filter(a => branchDocIds.has(a.doctorId));
   }, [appointments, doctors, branchFilter]);
 
-  // Lógica de Filtrado de Datos Visual (Para las gráficas SUPERIORES de Área/Pie/Top)
-  // Usa relevantAppointments como base en lugar de appointments crudos
   const filteredData = useMemo(() => {
     const now = new Date();
-    
     const getRangeDays = () => {
       if (timeRange === '7d') return 7;
       if (timeRange === '30d') return 30;
       if (timeRange === '90d') return 90;
       return 365;
     };
-
     const days = getRangeDays();
     const startDate = new Date();
     startDate.setDate(now.getDate() - days);
     
-    // Para volumen futuro (Agenda), extendemos el rango si es vista anual
-    const endDate = new Date();
-    if (timeRange === '1y') endDate.setMonth(now.getMonth() + 6); // Ver 6 meses a futuro
-    else endDate.setDate(now.getDate() + 7); // Ver 1 semana a futuro en vistas cortas
+    // Para visualización correcta, incluimos hasta el final del día de hoy
+    const endDate = new Date(); 
+    endDate.setHours(23, 59, 59, 999);
 
-    // Doctores visibles (para ranking)
-    const doctorsInBranch = branchFilter === 'Todas las sedes' 
-      ? doctors 
-      : doctors.filter(d => d.branch === branchFilter);
-
-    // Citas que caen en el rango visual (usamos relevantAppointments para asegurar consistencia)
-    const currentApts = relevantAppointments.filter(a => {
-      const d = new Date(a.date);
-      return d >= startDate && d <= endDate;
+    const doctorsInBranch = branchFilter === 'Todas las sedes' ? doctors : doctors.filter(d => d.branch === branchFilter);
+    
+    const currentApts = relevantAppointments.filter(a => { 
+        const d = new Date(a.date); 
+        return d >= startDate && d <= endDate; 
     });
 
-    // Periodo anterior para tendencias de ingresos (solo pasado)
-    const prevStartDate = new Date(startDate);
+    // Previous period for comparison
+    const prevStartDate = new Date(startDate); 
     prevStartDate.setDate(startDate.getDate() - days);
     const prevEndDate = new Date(startDate);
-
-    const prevApts = relevantAppointments.filter(a => {
-      const d = new Date(a.date);
-      return d >= prevStartDate && d < prevEndDate;
+    const prevApts = relevantAppointments.filter(a => { 
+        const d = new Date(a.date); 
+        return d >= prevStartDate && d < prevEndDate; 
     });
 
-    return { currentApts, prevApts, doctorsInBranch, startDate, prevStartDate, now, endDate, days };
+    return { currentApts, prevApts, doctorsInBranch, startDate, now, days };
   }, [relevantAppointments, doctors, branchFilter, timeRange]);
 
-  // KPIs (Superiores)
+  // --- STATISTICS CALCULATION ---
+
   const stats = useMemo(() => {
-    const { currentApts, prevApts, now } = filteredData;
+    const { currentApts, prevApts } = filteredData;
     
-    const calcRevenue = (list: Appointment[]) => 
-      list.filter(a => a.status === 'Completed').reduce((acc, curr) => acc + (treatmentPrices[curr.treatment] || 50), 0);
-
-    const rev = calcRevenue(currentApts.filter(a => new Date(a.date) <= now));
+    const calcRevenue = (list: Appointment[]) => list
+        .filter(a => a.status === 'Completed')
+        .reduce((acc, curr) => acc + (treatmentPrices[curr.treatment] || 50), 0);
+    
+    const rev = calcRevenue(currentApts);
     const prevRev = calcRevenue(prevApts);
-    const revTrend = prevRev === 0 ? '+100%' : `${(((rev - prevRev) / prevRev) * 100).toFixed(1)}%`;
+    const revTrend = prevRev === 0 ? 100 : ((rev - prevRev) / prevRev) * 100;
 
-    // El volumen incluye futuras
     const count = currentApts.length;
     const prevCount = prevApts.length;
-    const countTrend = prevCount === 0 ? '+100%' : `${(((count - prevCount) / prevCount) * 100).toFixed(1)}%`;
+    const countTrend = prevCount === 0 ? 100 : ((count - prevCount) / prevCount) * 100;
 
-    const pastApts = currentApts.filter(a => new Date(a.date) <= now);
-    const completed = pastApts.filter(a => a.status === 'Completed').length;
-    const cancelled = pastApts.filter(a => a.status === 'Cancelled').length;
-    const efficiency = pastApts.length > 0 ? ((completed / (pastApts.length - cancelled || 1)) * 100).toFixed(1) : '0';
+    const completed = currentApts.filter(a => a.status === 'Completed').length;
+    const cancelled = currentApts.filter(a => a.status === 'Cancelled').length;
+    const efficiency = (currentApts.length - cancelled) > 0 
+        ? ((completed / (currentApts.length - cancelled)) * 100).toFixed(1) 
+        : '0';
 
-    return { rev, revTrend, count, countTrend, efficiency };
+    return { rev, revTrend, count, countTrend, efficiency, cancelled };
   }, [filteredData]);
 
-  // Generación de Datos para Gráficas SUPERIORES
+  // --- ADVANCED CHARTS DATA ---
+
   const charts = useMemo(() => {
-    const { currentApts, doctorsInBranch, startDate, endDate, now } = filteredData;
+    const { currentApts, doctorsInBranch, now, days } = filteredData;
 
-    // 1. Pie Data (Estado de citas en el rango)
-    const statusMap = currentApts.reduce((acc: any, a) => {
-      acc[a.status] = (acc[a.status] || 0) + 1;
-      return acc;
-    }, {});
-
+    // 1. Status Pie Chart
+    const statusMap = currentApts.reduce((acc: any, a) => { acc[a.status] = (acc[a.status] || 0) + 1; return acc; }, {});
     const pieData = [
-      { name: 'Completadas', value: statusMap['Completed'] || 0, color: '#10b981' },
-      { name: 'Pendientes', value: statusMap['Pending'] || 0, color: '#3b82f6' },
-      { name: 'Canceladas', value: statusMap['Cancelled'] || 0, color: '#ef4444' },
-      { name: 'Confirmadas', value: statusMap['Confirmed'] || 0, color: '#6366f1' },
+        { name: 'Completadas', value: statusMap['Completed'] || 0, color: '#10b981' }, 
+        { name: 'Pendientes', value: statusMap['Pending'] || 0, color: '#3b82f6' }, 
+        { name: 'Canceladas', value: statusMap['Cancelled'] || 0, color: '#ef4444' }, 
+        { name: 'Agendadas', value: (statusMap['Confirmed'] || 0) + (statusMap['Rescheduled'] || 0), color: '#6366f1' }
     ].filter(d => d.value > 0);
 
-    // 2. Doctor Data (Productividad)
+    // 2. Doctor Performance (Composed: Revenue vs Appointments)
     const docData = doctorsInBranch.map(d => {
-      // Filtramos sobre relevantAppointments para asegurar consistencia de sucursal
-      const apts = relevantAppointments.filter(a => a.doctorId === d.id && new Date(a.date) >= startDate && new Date(a.date) <= now);
-      const rating = 4.2 + (parseInt(d.id.replace(/\D/g, '') || '0') % 9) / 10;
-      return {
-        name: d.name.split(' ').slice(-1)[0],
-        citas: apts.length,
-        facturacion: apts.filter(a => a.status === 'Completed').reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0),
-        rating: rating
+      const apts = currentApts.filter(a => a.doctorId === d.id);
+      const revenue = apts.filter(a => a.status === 'Completed').reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+      return { 
+          name: d.name.split(' ').slice(-1)[0], // Last name
+          fullName: d.name,
+          citas: apts.length, 
+          facturacion: revenue,
+          ticketMedio: apts.length > 0 ? Math.round(revenue / apts.length) : 0
       };
-    }).sort((a, b) => b.facturacion - a.facturacion).slice(0, 8);
+    }).sort((a, b) => b.facturacion - a.facturacion);
 
-    // 3. Top Treatments
-    const treatMap = currentApts.reduce((acc: any, a) => {
-      acc[a.treatment] = (acc[a.treatment] || 0) + 1;
-      return acc;
-    }, {});
+    // 3. Service Analysis (Top 5 & Bottom 5)
+    // We iterate over ALL known treatments to catch those with 0 sales
+    const allServicesStats = Object.keys(treatmentPrices).map(treatmentName => {
+        const apts = currentApts.filter(a => a.treatment === treatmentName);
+        const count = apts.length;
+        const revenue = apts.filter(a => a.status === 'Completed').reduce((acc, a) => acc + (treatmentPrices[treatmentName] || 0), 0);
+        return { name: treatmentName, count, revenue };
+    });
 
-    const topTreats = Object.entries(treatMap)
-      .map(([name, count]: any) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-
-    // 4. Area Data (Evolución REAL)
-    const areaData = [];
-    
-    if (timeRange === '7d' || timeRange === '30d') {
-      const daysToIterate = timeRange === '7d' ? 7 : 30;
-      for (let i = daysToIterate; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(now.getDate() - i);
-        const ds = d.toISOString().split('T')[0];
-        const dayApts = currentApts.filter(a => a.date === ds);
-        areaData.push({
-          name: timeRange === '7d' ? d.toLocaleDateString('es-ES', {weekday:'short'}) : d.getDate().toString(),
-          value: dayApts.filter(a => a.status === 'Completed').reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0),
-          volumen: dayApts.length
-        });
-      }
-    } else {
-      for (let i = 11; i >= -2; i--) { 
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const month = d.getMonth();
-        const year = d.getFullYear();
-        
-        const monthApts = currentApts.filter(a => {
-          const ad = new Date(a.date);
-          return ad.getMonth() === month && ad.getFullYear() === year;
-        });
-
-        areaData.push({
-          name: d.toLocaleDateString('es-ES', { month: 'short', year: i !== 0 ? '2-digit' : undefined }),
-          value: monthApts.filter(a => a.status === 'Completed').reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0),
-          volumen: monthApts.length
-        });
-      }
-    }
-
-    return { pieData, docData, topTreats, areaData };
-  }, [filteredData, timeRange, relevantAppointments]);
-
-  // --- NUEVA LÓGICA: Gráficas Comparativas (Respeta Filtro de Sede) ---
-  const comparativeData = useMemo(() => {
-    // Usamos 'relevantAppointments' (Ya filtrado por sede)
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    
-    let periods = 0;
-    let unit = 'month'; 
-
-    if (compFilter === '1m') { periods = 30; unit = 'day'; } 
-    else if (compFilter === '3m') { periods = 3; unit = 'month'; } 
-    else if (compFilter === '6m') { periods = 6; unit = 'month'; } 
-    else { periods = 12; unit = 'month'; }
-
-    const items = [];
-    
-    for (let i = periods - 1; i >= 0; i--) {
-        let label = '';
-        let currentVal = 0;
-        let prevVal = 0;
-
-        if (unit === 'day') {
-            const d = new Date();
-            d.setDate(now.getDate() - i);
-            const dStr = d.toISOString().split('T')[0];
-            label = d.getDate().toString();
-
-            const prevD = new Date(d);
-            prevD.setMonth(d.getMonth() - 1); 
-            const prevDStr = prevD.toISOString().split('T')[0];
-
-            currentVal = relevantAppointments
-                .filter(a => a.date === dStr && a.status === 'Completed')
-                .reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
-            
-            prevVal = relevantAppointments
-                .filter(a => a.date === prevDStr && a.status === 'Completed')
-                .reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
-
-        } else {
-            const d = new Date(currentYear, currentMonth - i, 1);
-            label = d.toLocaleDateString('es-ES', { month: 'short' });
-            const p = new Date(currentYear - 1, currentMonth - i, 1); 
-
-            currentVal = relevantAppointments
-                .filter(a => {
-                    const ad = new Date(a.date);
-                    return ad.getMonth() === d.getMonth() && ad.getFullYear() === d.getFullYear() && a.status === 'Completed';
-                })
-                .reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
-
-            prevVal = relevantAppointments
-                .filter(a => {
-                    const ad = new Date(a.date);
-                    return ad.getMonth() === p.getMonth() && ad.getFullYear() === p.getFullYear() && a.status === 'Completed';
-                })
-                .reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+    // Also catch treatments in appointments that might not be in our static price list
+    currentApts.forEach(a => {
+        if (!treatmentPrices[a.treatment] && !allServicesStats.find(s => s.name === a.treatment)) {
+            const count = currentApts.filter(x => x.treatment === a.treatment).length;
+            allServicesStats.push({ name: a.treatment, count, revenue: count * 50 }); // Fallback price
         }
+    });
 
-        items.push({ name: label, actual: currentVal, anterior: prevVal });
+    const topServices = [...allServicesStats].sort((a, b) => b.count - a.count).slice(0, 5);
+    const bottomServices = [...allServicesStats].sort((a, b) => a.count - b.count).slice(0, 5);
+
+    // 4. Financial Evolution (Area)
+    const areaData = [];
+    const step = days > 60 ? 30 : (days > 7 ? 1 : 1); // Group by month if range is large, else day
+    
+    for (let i = days; i >= 0; i -= step) {
+        const d = new Date(now); 
+        d.setDate(d.getDate() - i);
+        
+        let label = '';
+        let value = 0;
+        let count = 0;
+
+        if (step === 30) {
+             // Monthly grouping logic approximation
+             label = d.toLocaleDateString('es-ES', { month: 'short' });
+             const monthApts = currentApts.filter(a => {
+                 const ad = new Date(a.date);
+                 return ad.getMonth() === d.getMonth() && ad.getFullYear() === d.getFullYear();
+             });
+             value = monthApts.filter(a => a.status === 'Completed').reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+             count = monthApts.length;
+        } else {
+             // Daily
+             const dStr = d.toISOString().split('T')[0];
+             label = days === 7 ? d.toLocaleDateString('es-ES', { weekday: 'short' }) : d.getDate().toString();
+             const dayApts = currentApts.filter(a => a.date === dStr);
+             value = dayApts.filter(a => a.status === 'Completed').reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+             count = dayApts.length;
+        }
+        
+        // Avoid duplicate labels in chart if grouping is tight
+        if (!areaData.find(ad => ad.name === label)) {
+            areaData.push({ name: label, value, volumen: count });
+        }
     }
 
-    return items;
-  }, [relevantAppointments, compFilter]);
+    return { pieData, docData, topServices, bottomServices, areaData };
+  }, [filteredData]);
 
-  // Generación de Insights Manuales (Fallback)
-  const manualInsights = useMemo(() => {
-      const totalActual = comparativeData.reduce((acc, item) => acc + item.actual, 0);
-      const totalPrev = comparativeData.reduce((acc, item) => acc + item.anterior, 0);
-      const diff = totalActual - totalPrev;
-      const percent = totalPrev === 0 ? 100 : (diff / totalPrev) * 100;
-      const isPositive = diff >= 0;
+  // --- AI ACTIONS (MULTI-AGENT SYSTEM) ---
 
-      let conclusions = "";
-      let recommendations = "";
+  const prepareBranchContext = () => {
+    // Helper to get stats for specific set of appointments
+    const getStats = (apts: Appointment[]) => {
+      const revenue = apts.filter(a => a.status === 'Completed').reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+      const treatmentCounts = apts.reduce((acc: any, a) => { acc[a.treatment] = (acc[a.treatment] || 0) + 1; return acc; }, {});
+      const sortedTreatments = Object.entries(treatmentCounts).sort(([,a]: any, [,b]: any) => b - a);
+      return {
+        revenue,
+        appointments: apts.length,
+        topTreatment: sortedTreatments[0] ? `${sortedTreatments[0][0]} (${sortedTreatments[0][1]})` : 'N/A',
+        bottomTreatment: sortedTreatments.length > 0 ? `${sortedTreatments[sortedTreatments.length-1][0]} (${sortedTreatments[sortedTreatments.length-1][1]})` : 'N/A'
+      };
+    };
 
-      if (isPositive) {
-          conclusions = `Crecimiento del ${percent.toFixed(1)}% en ${branchFilter}. Tendencia al alza detectada.`;
-          recommendations = "Potenciar servicios rentables y evaluar ampliación de horarios.";
-      } else {
-          conclusions = `Ajuste del ${Math.abs(percent).toFixed(1)}% en ${branchFilter}. Ligera contracción respecto al periodo anterior.`;
-          recommendations = "Revisar tasas de cancelación y activar recall de pacientes.";
-      }
+    if (branchFilter !== 'Todas las sedes') {
+      // Single Branch Context
+      const branch = branches.find(b => b.name === branchFilter) || { name: branchFilter, address: 'Unknown', city: 'Unknown' };
+      const branchApts = appointments.filter(a => {
+         const doc = doctors.find(d => d.id === a.doctorId);
+         return doc?.branch === branchFilter;
+      });
+      return {
+        mode: 'SINGLE_BRANCH',
+        branchName: branch.name,
+        location: `${branch.address}, ${branch.city}`,
+        stats: getStats(branchApts)
+      };
+    } else {
+      // All Branches Context
+      const breakdown = branches.map(b => {
+        const branchApts = appointments.filter(a => {
+           const doc = doctors.find(d => d.id === a.doctorId);
+           return doc?.branch === b.name;
+        });
+        return {
+          branchName: b.name,
+          location: `${b.address}, ${b.city}`,
+          stats: getStats(branchApts)
+        };
+      });
+      
+      return {
+        mode: 'GLOBAL_COMPARATIVE',
+        globalStats: getStats(appointments),
+        branches: breakdown
+      };
+    }
+  };
 
-      return { totalActual, totalPrev, diff, percent, isPositive, conclusions, recommendations };
-  }, [comparativeData, branchFilter]);
-
-  // --- FUNCIÓN GENERADORA IA ---
   const generateAiAnalysis = async () => {
     setIsGeneratingAi(true);
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const companyName = settings?.name || "Clínica Médica";
-        const contextScope = "Global (Toda la Empresa)";
+        const contextData = prepareBranchContext();
         
-        // Preparar resumen de datos para el prompt
-        const topServices = charts.topTreats.map(t => `${t.name} (${t.count})`).join(", ");
-        const financialContext = `
-            Ámbito de Análisis: ${contextScope}
-            Ingresos Periodo Actual: ${settings?.currency || '€'}${manualInsights.totalActual.toLocaleString()}
-            Ingresos Periodo Anterior: ${settings?.currency || '€'}${manualInsights.totalPrev.toLocaleString()}
-            Variación: ${manualInsights.isPositive ? '+' : ''}${manualInsights.percent.toFixed(1)}%
-            Eficiencia Operativa: ${stats.efficiency}%
-            Servicios Top: ${topServices}
-        `;
-
         const prompt = `
-            Eres un Consultor Financiero Senior experto en gestión sanitaria para: ${companyName}.
-            
-            Analiza los siguientes DATOS REALES (${contextScope}):
-            ${financialContext}
+            ACT AS AN ADVANCED BUSINESS INTELLIGENCE SYSTEM WITH TWO INTERNAL AGENTS:
 
-            INSTRUCCIONES:
-            1. Analiza la rentabilidad Global de la empresa.
-            2. Busca causas operativas y oportunidades de crecimiento.
-            3. Sé muy ejecutivo.
+            AGENT 1: FINANCIAL MARKET EXPERT
+            - Specialized in the medical/dental sector.
+            - MUST USE GOOGLE SEARCH to find REAL-TIME trends in Spain and Global markets (2024-2025).
+            - Identifies gaps between global innovation and local application.
 
-            Devuelve JSON:
-            {
-                "diagnosis": "Diagnóstico de situación en 2 frases...",
-                "conclusions": "Análisis de causas clave...",
-                "recommendations": "3 acciones tácticas concretas..."
-            }
+            AGENT 2: OPERATIONS & STRATEGY EXPERT
+            - Specialized in location-based logic and socioeconomic analysis.
+            - Analyzes why certain treatments (high-ticket vs basic) sell better in specific branches based on their location (${contextData.mode === 'SINGLE_BRANCH' ? contextData.location : 'See branch list'}).
+            - Correlates "Bottom Services" with potential location mismatches or lack of promotion.
+
+            --- DATA CONTEXT ---
+            ${JSON.stringify(contextData, null, 2)}
+            --------------------
+
+            INSTRUCTIONS:
+            1. If mode is GLOBAL_COMPARATIVE: Provide a market overview, then analyze EACH branch individually, then synthesize. Compare performance anomalies.
+            2. If mode is SINGLE_BRANCH: Deep dive into that specific location's potential vs its actual sales (Top/Bottom treatments).
+            3. The output must be JSON with 3 fields: 'diagnosis', 'conclusions', 'recommendations'.
+            4. 'recommendations' must include specific business logic (e.g., "In the North branch, located in a high-income area, boost Invisible Orthodontics marketing as sales are below potential").
+            5. BE REALISTIC. Use the actual data provided.
+
+            Output JSON format only.
         `;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-3-pro-preview', // Pro model required for complex reasoning + search
             contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        diagnosis: { type: Type.STRING },
-                        conclusions: { type: Type.STRING },
-                        recommendations: { type: Type.STRING }
-                    }
-                }
+            tools: [{ googleSearch: {} }],
+            config: { 
+                responseMimeType: "application/json", 
+                responseSchema: { 
+                    type: Type.OBJECT, 
+                    properties: { 
+                        diagnosis: { type: Type.STRING }, 
+                        conclusions: { type: Type.STRING }, 
+                        recommendations: { type: Type.STRING } 
+                    } 
+                } 
             }
         });
-
-        const jsonText = response.text || "{}";
-        const result = JSON.parse(jsonText);
-        setAiAnalysis(result);
-
-    } catch (error) {
-        console.error("AI Generation Error", error);
-        alert("Error generando el análisis IA. Inténtalo de nuevo.");
-    } finally {
-        setIsGeneratingAi(false);
+        
+        // Extract Grounding Metadata (Sources)
+        // const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        // Ideally we would display sources, but for now we fit into the existing JSON structure.
+        
+        setAiAnalysis(JSON.parse(response.text || "{}"));
+    } catch (e) { 
+        console.error(e);
+        alert("Error generando análisis estratégico. Por favor intenta de nuevo."); 
+    } finally { 
+        setIsGeneratingAi(false); 
     }
   };
 
-  // --- GENERACIÓN PDF ---
   const downloadPDF = () => {
     const doc = new jsPDF();
-    const primaryColor = [59, 130, 246]; // Tailwind Blue-500 equivalent
-    const darkColor = [30, 41, 59]; // Slate-800
-
-    // Header Background
-    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.rect(0, 0, 210, 40, 'F');
-
-    // Title & Logo Text
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont("helvetica", "bold");
-    doc.text("Informe Estratégico de Rendimiento", 15, 20);
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(settings?.name || "Clínica Médica", 15, 28);
-    doc.text(`Generado: ${new Date().toLocaleDateString()}`, 15, 34);
-
-    // Branch Context Badge
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(140, 10, 55, 20, 3, 3, 'F');
-    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-    doc.setFontSize(8);
-    doc.text("ÁMBITO DEL ANÁLISIS", 145, 18);
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("GLOBAL EMPRESA", 145, 25);
-
-    // KPI Summary Section
-    let yPos = 55;
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("Resumen Ejecutivo", 15, yPos);
-    
-    yPos += 10;
-    // Draw 3 Boxes
-    const boxWidth = 55;
-    const boxHeight = 25;
-    const gap = 10;
-    
-    // Box 1: Actual
-    doc.setDrawColor(200, 200, 200);
-    doc.setFillColor(248, 250, 252);
-    doc.roundedRect(15, yPos, boxWidth, boxHeight, 2, 2, 'FD');
-    doc.setFontSize(8);
-    doc.setTextColor(100, 100, 100);
-    doc.text("Facturación Actual", 20, yPos + 8);
+    doc.setFontSize(18);
+    doc.text(`Informe Estratégico - ${branchFilter}`, 20, 20);
     doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.text(`${settings?.currency || '€'}${manualInsights.totalActual.toLocaleString()}`, 20, yPos + 18);
-
-    // Box 2: Previous
-    doc.roundedRect(15 + boxWidth + gap, yPos, boxWidth, boxHeight, 2, 2, 'FD');
-    doc.setFontSize(8);
-    doc.setTextColor(100, 100, 100);
-    doc.text("Periodo Anterior", 20 + boxWidth + gap, yPos + 8);
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.text(`${settings?.currency || '€'}${manualInsights.totalPrev.toLocaleString()}`, 20 + boxWidth + gap, yPos + 18);
-
-    // Box 3: Growth
-    doc.roundedRect(15 + (boxWidth + gap) * 2, yPos, boxWidth, boxHeight, 2, 2, 'FD');
-    doc.setFontSize(8);
-    doc.setTextColor(100, 100, 100);
-    doc.text("Crecimiento / Variación", 20 + (boxWidth + gap) * 2, yPos + 8);
-    doc.setFontSize(12);
-    doc.setTextColor(manualInsights.isPositive ? 0 : 220, manualInsights.isPositive ? 150 : 20, 60); // Green or Red
-    doc.text(`${manualInsights.isPositive ? '+' : ''}${manualInsights.percent.toFixed(1)}%`, 20 + (boxWidth + gap) * 2, yPos + 18);
-
-    // AI Analysis Content
-    yPos += 40;
+    doc.text(`Periodo: Últimos ${timeRange}`, 20, 30);
+    doc.text(`Facturación Total: ${stats.rev}€`, 20, 40);
     
-    const printSection = (title: string, content: string, icon: string) => {
-        doc.setFontSize(12);
-        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.setFont("helvetica", "bold");
-        doc.text(title.toUpperCase(), 15, yPos);
-        
-        // Line under title
-        doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.setLineWidth(0.5);
-        doc.line(15, yPos + 2, 195, yPos + 2);
-
-        yPos += 10;
-        doc.setFontSize(10);
-        doc.setTextColor(60, 60, 60);
-        doc.setFont("helvetica", "normal");
-        
-        const splitText = doc.splitTextToSize(content, 180);
-        doc.text(splitText, 15, yPos);
-        yPos += (splitText.length * 5) + 15;
-    };
-
-    const diagnosis = aiAnalysis ? aiAnalysis.diagnosis : displayInsights.diagnosis;
-    const conclusions = aiAnalysis ? aiAnalysis.conclusions : displayInsights.conclusions;
-    const recommendations = aiAnalysis ? aiAnalysis.recommendations : displayInsights.recommendations;
-
-    printSection("Diagnóstico Financiero", diagnosis, "");
-    printSection("Conclusiones de Mercado", conclusions, "");
-    printSection("Recomendaciones Estratégicas", recommendations, "");
-
-    // Footer
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text(`Informe confidencial generado por MediClinic AI - Global`, 105, 280, { align: "center" });
-
-    doc.save(`Informe_Estrategico_Global_${new Date().toISOString().split('T')[0]}.pdf`);
+    if (aiAnalysis) {
+        const splitText = doc.splitTextToSize(aiAnalysis.conclusions, 170);
+        doc.text(splitText, 20, 50);
+    }
+    
+    doc.save(`Metrics_${branchFilter}.pdf`);
   };
 
-  // Determinar qué insights mostrar (IA o Manual)
-  const displayInsights = aiAnalysis ? {
-      diagnosis: aiAnalysis.diagnosis,
-      conclusions: aiAnalysis.conclusions,
-      recommendations: aiAnalysis.recommendations,
-      percent: manualInsights.percent, 
-      isPositive: manualInsights.isPositive,
-      diff: manualInsights.diff
-  } : {
-      diagnosis: `Variación neta de ${settings?.currency || '€'}${manualInsights.diff.toLocaleString()} a nivel Global.`,
-      conclusions: manualInsights.conclusions,
-      recommendations: manualInsights.recommendations,
-      percent: manualInsights.percent,
-      isPositive: manualInsights.isPositive,
-      diff: manualInsights.diff
-  };
+  const displayInsights = aiAnalysis || { diagnosis: 'Sin análisis generado.', conclusions: 'Haz clic en Generar para obtener insights de mercado en tiempo real.', recommendations: '...' };
 
   return (
-    <div className="p-10 max-w-[1600px] mx-auto w-full space-y-10 animate-in fade-in duration-500">
+    <div className="p-10 max-w-[1600px] mx-auto w-full space-y-10 animate-in fade-in duration-500 pb-24">
       
-      {/* Header Estilizado */}
+      {/* HEADER & CONTROLS */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 bg-white dark:bg-surface-dark p-8 rounded-[3rem] border border-border-light dark:border-border-dark shadow-xl">
         <div className="space-y-1">
-          <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">Inteligencia de Negocio</h1>
+          <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">Panel de Analítica</h1>
           <div className="flex items-center gap-2 mt-2">
             <span className="size-2 bg-success rounded-full animate-pulse"></span>
-            <p className="text-slate-500 dark:text-slate-400 font-medium italic text-sm">Analizando {relevantAppointments.length.toLocaleString()} registros ({branchFilter})</p>
+            <p className="text-slate-500 dark:text-slate-400 font-medium italic text-sm">Datos en tiempo real • {branchFilter}</p>
           </div>
         </div>
-        
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Sucursal</label>
@@ -509,349 +353,192 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients, sett
                 onChange={(e) => setBranchFilter(e.target.value)}
                 className="bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-2xl px-6 py-3.5 text-sm font-bold appearance-none min-w-[200px] focus:ring-4 focus:ring-primary/10 transition-all outline-none"
               >
-                {branches.map(b => <option key={b} value={b}>{b}</option>)}
+                {branchOptions.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
               <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">location_on</span>
             </div>
           </div>
-
           <div className="flex flex-col gap-1.5">
-            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Rango Temporal</label>
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Periodo</label>
             <div className="flex bg-slate-100 dark:bg-bg-dark p-1.5 rounded-[1.25rem] border border-slate-200 dark:border-slate-700 shadow-inner">
               {(['7d', '30d', '90d', '1y'] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setTimeRange(r)}
-                  className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${timeRange === r ? 'bg-white dark:bg-surface-dark text-primary shadow-lg' : 'text-slate-400 hover:text-slate-800 dark:hover:text-white'}`}
-                >
-                  {r === '7d' ? '7 Días' : r === '30d' ? '30 Días' : r === '90d' ? 'Trimestre' : 'Año'}
-                </button>
+                <button key={r} onClick={() => setTimeRange(r)} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${timeRange === r ? 'bg-white dark:bg-surface-dark text-primary shadow-lg' : 'text-slate-400'}`}>{r}</button>
               ))}
             </div>
           </div>
         </div>
       </div>
 
-      {/* KPI Cards Dinámicas */}
+      {/* KPI CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-        {[
-          { label: "Facturación Bruta", val: `${settings?.currency || '€'}${stats.rev.toLocaleString()}`, icon: "payments", trend: stats.revTrend, color: "text-success", bg: "bg-success/10" },
-          { label: "Volumen de Citas", val: stats.count.toLocaleString(), icon: "calendar_month", trend: stats.countTrend, color: "text-primary", bg: "bg-primary/10" },
-          { label: "Pacientes Únicos", val: Math.floor(patients.length * 1.2).toLocaleString(), icon: "person_add", trend: "+12.4%", color: "text-blue-500", bg: "bg-blue-500/10" },
-          { label: "Tasa Eficiencia", val: `${stats.efficiency}%`, icon: "verified", trend: "Score", color: "text-orange-500", bg: "bg-orange-500/10" }
+        {[ 
+            { label: "Facturación Total", val: `${settings?.currency}${stats.rev.toLocaleString()}`, icon: "payments", color: "text-emerald-500", bg: "bg-emerald-500/10", trend: stats.revTrend }, 
+            { label: "Volumen de Citas", val: stats.count.toLocaleString(), icon: "calendar_month", color: "text-blue-500", bg: "bg-blue-500/10", trend: stats.countTrend }, 
+            { label: "Tasa de Cancelación", val: `${((stats.cancelled / (stats.count || 1)) * 100).toFixed(1)}%`, icon: "event_busy", color: "text-rose-500", bg: "bg-rose-500/10", invertTrend: true }, 
+            { label: "Eficiencia Operativa", val: `${stats.efficiency}%`, icon: "precision_manufacturing", color: "text-amber-500", bg: "bg-amber-500/10" } 
         ].map((kpi, i) => (
           <div key={i} className="bg-white dark:bg-surface-dark p-8 rounded-[2.5rem] border border-border-light dark:border-border-dark shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
-            <div className={`absolute -right-4 -top-4 size-24 ${kpi.bg} rounded-full opacity-0 group-hover:opacity-100 transition-all duration-500 scale-0 group-hover:scale-150`}></div>
+            <div className={`absolute -right-4 -top-4 size-24 ${kpi.bg} rounded-full opacity-0 group-hover:opacity-100 transition-all scale-0 group-hover:scale-150`}></div>
             <div className="flex justify-between items-start mb-6 relative z-10">
-              <div className={`size-14 ${kpi.bg} ${kpi.color} rounded-2xl flex items-center justify-center shadow-inner`}>
-                <span className="material-symbols-outlined text-3xl">{kpi.icon}</span>
-              </div>
-              <span className={`${kpi.color} text-[10px] font-black bg-slate-50 dark:bg-bg-dark px-3 py-1 rounded-full border border-current/20`}>{kpi.trend}</span>
+                <div className={`size-14 ${kpi.bg} ${kpi.color} rounded-2xl flex items-center justify-center shadow-inner`}><span className="material-symbols-outlined text-3xl">{kpi.icon}</span></div>
+                {kpi.trend !== undefined && (
+                    <span className={`px-2 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 ${((kpi.trend >= 0 && !kpi.invertTrend) || (kpi.trend < 0 && kpi.invertTrend)) ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+                        <span className="material-symbols-outlined text-xs">{kpi.trend >= 0 ? 'trending_up' : 'trending_down'}</span>
+                        {Math.abs(kpi.trend).toFixed(1)}%
+                    </span>
+                )}
             </div>
-            <div className="relative z-10">
-              <p className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">{kpi.label}</p>
-              <h3 className="text-3xl font-black text-slate-900 dark:text-white mt-1">{kpi.val}</h3>
-            </div>
+            <div className="relative z-10"><p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">{kpi.label}</p><h3 className="text-3xl font-black text-slate-900 dark:text-white mt-1">{kpi.val}</h3></div>
           </div>
         ))}
       </div>
 
-      {/* --- SECCIÓN COMPARATIVA CONTEXTUAL (FILTRADA POR SUCURSAL) --- */}
-      <div className={`rounded-[3rem] border p-10 shadow-xl space-y-8 animate-in slide-in-from-bottom-4 transition-colors duration-500 ${aiAnalysis ? 'bg-gradient-to-br from-white to-purple-50/50 dark:from-surface-dark dark:to-purple-900/10 border-purple-200 dark:border-purple-800' : 'bg-white dark:bg-surface-dark border-border-light dark:border-border-dark'}`}>
-         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
-            <div>
-               <div className="flex items-center gap-3">
-                  <div className={`size-10 rounded-xl flex items-center justify-center ${aiAnalysis ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30' : 'bg-purple-500/10 text-purple-500'}`}>
-                      <span className="material-symbols-outlined">{aiAnalysis ? 'psychology' : 'query_stats'}</span>
-                  </div>
-                  <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Análisis de Rendimiento: {branchFilter}</h3>
-               </div>
-               <p className="text-slate-400 text-xs font-bold mt-2 ml-14 italic">Comparativa de ingresos filtrada por los médicos asignados a esta sede.</p>
-            </div>
-            
-            <div className="flex flex-col md:flex-row items-center gap-4">
-                {/* Botones de IA y PDF solo para Global */}
-                {branchFilter === 'Todas las sedes' && (
-                    <>
-                        <button 
-                            onClick={downloadPDF}
-                            className="flex items-center gap-2 px-6 py-3 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:scale-105 transition-all"
-                        >
-                            <span className="material-symbols-outlined text-base">picture_as_pdf</span>
-                            Descargar Informe PDF
-                        </button>
-
-                        <button 
-                            onClick={generateAiAnalysis}
-                            disabled={isGeneratingAi}
-                            className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-purple-500/20 transition-all hover:scale-105 disabled:opacity-70 disabled:scale-100"
-                        >
-                            {isGeneratingAi ? (
-                                <>
-                                    <span className="material-symbols-outlined animate-spin text-base">sync</span>
-                                    Analizando Global...
-                                </>
-                            ) : (
-                                <>
-                                    <span className="material-symbols-outlined text-base">auto_awesome</span>
-                                    Generar Estrategia IA
-                                </>
-                            )}
-                        </button>
-                    </>
-                )}
-
-                {/* Filtros de Comparativa */}
-                <div className="flex bg-slate-100 dark:bg-bg-dark p-1.5 rounded-[1.25rem] border border-slate-200 dark:border-slate-700 shadow-inner">
-                  {[
-                    { id: '1m', label: '1M' },
-                    { id: '3m', label: '3M' },
-                    { id: '6m', label: '6M' },
-                    { id: '1y', label: '1A' }
-                  ].map((f) => (
-                    <button
-                      key={f.id}
-                      onClick={() => setCompFilter(f.id as any)}
-                      className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${compFilter === f.id ? 'bg-white dark:bg-surface-dark text-purple-600 shadow-lg scale-105' : 'text-slate-400 hover:text-slate-800 dark:hover:text-white'}`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-            </div>
-         </div>
-         
-         <div className="h-[350px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-               <BarChart data={comparativeData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} barGap={2}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} dy={10} fontWeight={700} />
-                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip 
-                     cursor={{ fill: 'transparent' }}
-                     contentStyle={{ backgroundColor: '#fff', border: 'none', borderRadius: '20px', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' }}
-                     itemStyle={{ fontWeight: '800', fontSize: '12px' }}
-                  />
-                  <Bar dataKey="actual" name="Actual" fill="#3b82f6" radius={[6, 6, 6, 6]} barSize={compFilter === '1y' ? 30 : 20} />
-                  <Bar dataKey="anterior" name="Anterior" fill="#cbd5e1" radius={[6, 6, 6, 6]} barSize={compFilter === '1y' ? 30 : 20} />
-               </BarChart>
-            </ResponsiveContainer>
-         </div>
-
-         {/* SECCIÓN DE INFORMES Y CONCLUSIONES (SOLO VISIBLE SI 'TODAS LAS SEDES') */}
-         {branchFilter === 'Todas las sedes' && (
-             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4">
-                <div className={`p-8 rounded-[2.5rem] border relative overflow-hidden group transition-colors ${aiAnalysis ? 'bg-white/80 dark:bg-surface-dark border-purple-200 dark:border-purple-800' : 'bg-slate-50 dark:bg-bg-dark border-slate-100 dark:border-slate-800'}`}>
-                   <div className={`absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity ${displayInsights.isPositive ? 'text-success' : 'text-danger'}`}>
-                      <span className="material-symbols-outlined text-8xl">{displayInsights.isPositive ? 'trending_up' : 'trending_down'}</span>
-                   </div>
-                   <div className="flex items-center gap-2 mb-4">
-                       {aiAnalysis && <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded text-[9px] font-black uppercase">IA</span>}
-                       <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Diagnóstico Global</h4>
-                   </div>
-                   <p className={`text-4xl font-black mb-2 ${displayInsights.isPositive ? 'text-success' : 'text-danger'}`}>
-                      {displayInsights.isPositive ? '+' : ''}{displayInsights.percent.toFixed(1)}%
-                   </p>
-                   <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
-                      {displayInsights.diagnosis}
-                   </p>
-                </div>
-
-                <div className={`p-8 rounded-[2.5rem] border relative transition-colors ${aiAnalysis ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800' : 'bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/10'}`}>
-                   <div className="flex items-center gap-2 mb-4">
-                       {aiAnalysis && <span className="px-2 py-0.5 bg-blue-100 text-blue-600 rounded text-[9px] font-black uppercase">IA</span>}
-                       <h4 className="text-[11px] font-black text-blue-500 uppercase tracking-widest flex items-center gap-2">
-                          <span className="material-symbols-outlined text-base">lightbulb</span> Conclusiones
-                       </h4>
-                   </div>
-                   <p className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-loose">
-                      {displayInsights.conclusions}
-                   </p>
-                </div>
-
-                <div className={`p-8 rounded-[2.5rem] border relative transition-colors ${aiAnalysis ? 'bg-purple-50/50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-800' : 'bg-purple-500/5 dark:bg-purple-500/10 border-purple-500/10'}`}>
-                   <div className="flex items-center gap-2 mb-4">
-                       {aiAnalysis && <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded text-[9px] font-black uppercase">IA</span>}
-                       <h4 className="text-[11px] font-black text-purple-500 uppercase tracking-widest flex items-center gap-2">
-                          <span className="material-symbols-outlined text-base">rocket_launch</span> Recomendaciones
-                       </h4>
-                   </div>
-                   <p className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-loose">
-                      {displayInsights.recommendations}
-                   </p>
-                </div>
-             </div>
-         )}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+      {/* DASHBOARD GRID */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
         
-        {/* Gráfica de Área (Movimiento y Fluidez) */}
-        <div className="lg:col-span-2 bg-white dark:bg-surface-dark rounded-[3rem] border border-border-light dark:border-border-dark p-10 shadow-xl space-y-8">
+        {/* ROW 1: EVOLUTION & STATUS */}
+        <div className="lg:col-span-2 bg-white dark:bg-surface-dark p-10 rounded-[3rem] border border-border-light dark:border-border-dark shadow-xl space-y-8">
           <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Evolución de Ingresos y Volumen</h3>
-              <p className="text-slate-400 text-xs font-bold mt-1 italic">Datos filtrados por: {branchFilter}</p>
-            </div>
-            <div className="flex items-center gap-6">
-               <div className="flex items-center gap-2">
-                  <span className="size-3 rounded-full bg-primary shadow-sm shadow-primary/40"></span>
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Facturación ({settings?.currency || '€'})</span>
-               </div>
-               <div className="flex items-center gap-2">
-                  <span className="size-3 rounded-full bg-slate-300 dark:bg-slate-700"></span>
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Volumen Citas</span>
-               </div>
-            </div>
+             <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Tendencia de Ingresos</h3>
           </div>
-          
-          <div className="h-[450px]">
+          <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={charts.areaData}>
+              <AreaChart data={charts.areaData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
                     <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} dy={10} />
-                <YAxis yAxisId="left" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#fff', border: 'none', borderRadius: '20px', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' }}
-                  itemStyle={{ fontWeight: '800', fontSize: '12px' }}
-                />
-                <Area yAxisId="left" type="monotone" dataKey="value" name={`Ingresos (${settings?.currency || '€'})`} stroke="#3b82f6" strokeWidth={5} fillOpacity={1} fill="url(#colorValue)" animationDuration={2000} />
-                <Area yAxisId="right" type="monotone" dataKey="volumen" name="Citas" stroke="#cbd5e1" strokeWidth={2} fillOpacity={0} animationDuration={2000} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 'bold'}} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 'bold'}} tickFormatter={(value) => `${value/1000}k`} />
+                <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} itemStyle={{color: '#3b82f6', fontWeight: 'bold'}} formatter={(value: number) => [`${value}€`, 'Facturación']} />
+                <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorVal)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Donut de Operaciones (Sleek) */}
-        <div className="bg-white dark:bg-surface-dark rounded-[3rem] border border-border-light dark:border-border-dark p-10 shadow-xl flex flex-col space-y-10">
-          <div>
-            <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight text-center">Estado Operativo</h3>
-            <p className="text-slate-400 text-xs font-bold mt-1 text-center italic">Desglose porcentual del periodo</p>
-          </div>
-          
-          <div className="h-[280px] relative">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={charts.pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={100}
-                  paddingAngle={8}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {charts.pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-               <span className="text-4xl font-black text-slate-900 dark:text-white">{stats.efficiency}%</span>
-               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Eficiencia</span>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {charts.pieData.map((s, i) => (
-              <div key={i} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-bg-dark rounded-2xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all">
-                <div className="flex items-center gap-3">
-                   <span className="size-3 rounded-full" style={{ backgroundColor: s.color }}></span>
-                   <span className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">{s.name}</span>
-                </div>
-                <span className="text-sm font-black text-slate-500">{s.value.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
+        <div className="bg-white dark:bg-surface-dark rounded-[3rem] border border-border-light dark:border-border-dark p-10 shadow-xl space-y-8 flex flex-col">
+           <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Estado de Citas</h3>
+           <div className="flex-1 min-h-[250px] w-full relative">
+             <ResponsiveContainer width="100%" height="100%">
+               <PieChart>
+                 <Pie data={charts.pieData} innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value" stroke="none">
+                   {charts.pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                 </Pie>
+                 <Tooltip />
+                 <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{fontSize: '10px', fontWeight: 'bold'}} />
+               </PieChart>
+             </ResponsiveContainer>
+             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
+                <span className="text-3xl font-black text-slate-900 dark:text-white">{stats.count}</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</span>
+             </div>
+           </div>
         </div>
+
+        {/* ROW 2: SERVICE ANALYSIS (SPLIT) */}
+        <div className="xl:col-span-3 grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            {/* TOP 5 SERVICES */}
+            <div className="bg-white dark:bg-surface-dark rounded-[3rem] border border-border-light dark:border-border-dark p-10 shadow-xl space-y-8">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Top 5 Servicios Más Demandados</h3>
+                    <span className="material-symbols-outlined text-success text-3xl">trending_up</span>
+                </div>
+                <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={charts.topServices} layout="vertical" margin={{ top: 0, right: 30, left: 20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10, fontWeight: 'bold'}} width={130} />
+                        <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} />
+                        <Bar dataKey="count" fill="#3b82f6" radius={[0, 10, 10, 0]} barSize={20} name="Ventas" />
+                    </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            {/* BOTTOM 5 SERVICES (LIST VIEW FOR CLARITY) */}
+            <div className="bg-white dark:bg-surface-dark rounded-[3rem] border border-border-light dark:border-border-dark p-10 shadow-xl space-y-8">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Top 5 Menos Demandados</h3>
+                    <span className="material-symbols-outlined text-orange-400 text-3xl">trending_down</span>
+                </div>
+                <div className="flex flex-col gap-4 h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                    {charts.bottomServices.map((service, idx) => (
+                        <div key={idx} className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-bg-dark border border-slate-100 dark:border-slate-800">
+                            <div className="size-10 rounded-xl bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 font-black text-sm">{idx + 1}</div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs font-black text-slate-800 dark:text-white uppercase truncate">{service.name}</p>
+                                <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full mt-2 overflow-hidden">
+                                    <div className="bg-orange-400 h-full rounded-full" style={{width: `${Math.max(service.count * 5, 5)}%`}}></div>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xl font-black text-slate-900 dark:text-white">{service.count}</p>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">Ventas</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+
+        {/* ROW 3: DOCTOR COMPARISON (COMPOSED CHART) */}
+        <div className="xl:col-span-3 bg-white dark:bg-surface-dark rounded-[3rem] border border-border-light dark:border-border-dark p-10 shadow-xl space-y-8">
+           <div className="flex items-center justify-between">
+              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Comparativa de Equipo: Facturación vs Volumen</h3>
+              <div className="flex gap-4">
+                  <div className="flex items-center gap-2"><span className="size-3 bg-primary rounded-sm"></span><span className="text-[10px] font-bold text-slate-500 uppercase">Facturación (€)</span></div>
+                  <div className="flex items-center gap-2"><span className="size-3 bg-orange-400 rounded-full"></span><span className="text-[10px] font-bold text-slate-500 uppercase">Citas (#)</span></div>
+              </div>
+           </div>
+           <div className="h-[350px] w-full">
+             <ResponsiveContainer width="100%" height="100%">
+               <ComposedChart data={charts.docData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                 <CartesianGrid stroke="#f1f5f9" strokeDasharray="3 3" vertical={false} />
+                 <XAxis dataKey="name" tick={{fontSize: 11, fontWeight: 'bold', fill: '#94a3b8'}} axisLine={false} tickLine={false} dy={10} />
+                 <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" tick={{fontSize: 11, fontWeight: 'bold', fill: '#3b82f6'}} axisLine={false} tickLine={false} tickFormatter={(val) => `${val/1000}k`} />
+                 <YAxis yAxisId="right" orientation="right" stroke="#fb923c" tick={{fontSize: 11, fontWeight: 'bold', fill: '#fb923c'}} axisLine={false} tickLine={false} />
+                 <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} cursor={{fill: '#f8fafc'}} />
+                 <Bar yAxisId="left" dataKey="facturacion" barSize={30} fill="#3b82f6" radius={[10, 10, 0, 0]} name="Facturación" />
+                 <Line yAxisId="right" type="monotone" dataKey="citas" stroke="#fb923c" strokeWidth={3} dot={{r: 4, strokeWidth: 2, fill: '#fff'}} name="Citas" />
+               </ComposedChart>
+             </ResponsiveContainer>
+           </div>
+        </div>
+
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-        
-        {/* Listado de Servicios TOP Estilizado */}
-        <div className="bg-white dark:bg-surface-dark rounded-[3rem] border border-border-light dark:border-border-dark p-10 shadow-xl space-y-8">
-           <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Servicios Más Demandados</h3>
-              <span className="material-symbols-outlined text-primary text-3xl">trending_up</span>
-           </div>
-           <div className="space-y-6">
-              {charts.topTreats.map((t, i) => (
-                <div key={i} className="group flex items-center gap-6 p-6 bg-slate-50 dark:bg-bg-dark rounded-[2.5rem] border border-transparent hover:border-primary transition-all">
-                   <div className="size-14 rounded-2xl bg-white dark:bg-surface-dark flex items-center justify-center font-black text-xl text-primary shadow-sm border border-slate-100 dark:border-slate-800 group-hover:scale-110 transition-transform">0{i+1}</div>
-                   <div className="flex-1">
-                      <h4 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">{t.name}</h4>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">{t.count.toLocaleString()} servicios agendados</p>
-                   </div>
-                   <div className="text-right">
-                      <span className="text-lg font-black text-primary">{settings?.currency || '€'}{((treatmentPrices[t.name] || 50) * t.count).toLocaleString()}</span>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Vol. Generado</p>
-                   </div>
-                </div>
-              ))}
-           </div>
-        </div>
-
-        {/* Productividad Médica (Tabla Estilizada) */}
-        <div className="bg-white dark:bg-surface-dark rounded-[3rem] border border-border-light dark:border-border-dark p-10 shadow-xl space-y-8 flex flex-col">
-           <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Productividad por Facultativo</h3>
-              <span className="material-symbols-outlined text-primary text-3xl">star</span>
-           </div>
-           
-           <div className="flex-1 overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 dark:bg-bg-dark text-[10px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-100 dark:border-slate-800">
-                  <tr>
-                    <th className="px-6 py-5">Especialista</th>
-                    <th className="px-6 py-5 text-center">Citas</th>
-                    <th className="px-6 py-5 text-center">Rating</th>
-                    <th className="px-6 py-5 text-right">Facturación</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {charts.docData.map((doc, i) => (
-                    <tr key={i} className="hover:bg-slate-50 dark:hover:bg-bg-dark/50 transition-colors">
-                      <td className="px-6 py-6">
-                        <span className="text-sm font-black text-slate-900 dark:text-white uppercase">{doc.name}</span>
-                      </td>
-                      <td className="px-6 py-6 text-center">
-                        <span className="px-3 py-1 bg-primary/10 text-primary rounded-xl text-xs font-black">{doc.citas.toLocaleString()}</span>
-                      </td>
-                      <td className="px-6 py-6 text-center">
-                         <div className="flex items-center justify-center gap-1.5">
-                            <span className="material-symbols-outlined text-warning text-lg filled">star</span>
-                            <span className="text-sm font-black text-slate-700 dark:text-slate-300">{doc.rating.toFixed(1)}</span>
-                         </div>
-                      </td>
-                      <td className="px-6 py-6 text-right">
-                        <span className="text-sm font-black text-slate-900 dark:text-white">{doc.facturacion.toLocaleString()}{settings?.currency || '€'}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-           </div>
-           
-           <div className="p-8 bg-primary/5 rounded-[2.5rem] border border-primary/10 flex items-center justify-between mt-auto">
-              <div>
-                 <p className="text-2xl font-black text-primary">{settings?.currency || '€'}{(stats.rev / (charts.docData.length || 1)).toFixed(0).toLocaleString()}</p>
-                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Ticket medio por facultativo</p>
-              </div>
-              <div className="flex gap-2">
-                 {[...Array(5)].map((_, i) => <div key={i} className="size-2 rounded-full bg-primary/30"></div>)}
-              </div>
-           </div>
-        </div>
+      {/* AI STRATEGY SECTION */}
+      <div className="bg-gradient-to-br from-white to-purple-50/50 dark:from-surface-dark dark:to-purple-900/10 border border-purple-200 dark:border-purple-800 rounded-[3rem] p-10 shadow-xl space-y-8">
+          <div className="flex justify-between items-center">
+            <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase">Estrategia Global AI ({branchFilter})</h3>
+            <div className="flex gap-4">
+                <button onClick={downloadPDF} className="px-6 py-3 bg-slate-800 text-white rounded-2xl text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform">Descargar PDF</button>
+                <button onClick={generateAiAnalysis} disabled={isGeneratingAi} className="px-6 py-3 bg-purple-600 text-white rounded-2xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:scale-105 transition-transform disabled:opacity-50">
+                  {isGeneratingAi ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">auto_awesome</span>} 
+                  {isGeneratingAi ? 'Analizando Mercado...' : 'Generar Análisis'}
+                </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="p-8 bg-white/80 dark:bg-bg-dark rounded-[2.5rem] border border-purple-100 dark:border-purple-900 shadow-sm">
+                <h4 className="text-[11px] font-black text-purple-500 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="material-symbols-outlined text-sm">query_stats</span> Diagnóstico Financiero</h4>
+                <p className="text-xs font-medium leading-relaxed text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{displayInsights.diagnosis}</p>
+            </div>
+            <div className="p-8 bg-white/80 dark:bg-bg-dark rounded-[2.5rem] border border-purple-100 dark:border-purple-900 shadow-sm">
+                <h4 className="text-[11px] font-black text-purple-500 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="material-symbols-outlined text-sm">location_city</span> Contexto Operativo</h4>
+                <p className="text-xs font-medium leading-relaxed text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{displayInsights.conclusions}</p>
+            </div>
+            <div className="p-8 bg-white/80 dark:bg-bg-dark rounded-[2.5rem] border border-purple-100 dark:border-purple-900 shadow-sm">
+                <h4 className="text-[11px] font-black text-purple-500 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="material-symbols-outlined text-sm">lightbulb</span> Recomendaciones Estratégicas</h4>
+                <p className="text-xs font-medium leading-relaxed text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{displayInsights.recommendations}</p>
+            </div>
+          </div>
       </div>
     </div>
   );

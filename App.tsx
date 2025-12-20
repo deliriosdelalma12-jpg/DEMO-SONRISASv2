@@ -6,13 +6,14 @@ import Agenda from './screens/Agenda';
 import Metrics from './screens/Metrics';
 import Patients from './screens/Patients';
 import Doctors from './screens/Doctors';
+import Branches from './screens/Branches';
 import HRManagement from './screens/HRManagement';
 import Settings from './screens/Settings';
 import Layout from './components/Layout';
 import VoiceAssistant from './components/VoiceAssistant';
 import DoctorDetailModal from './components/DoctorDetailModal';
 import PatientDetailModal from './components/PatientDetailModal';
-import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate, Task, RoleDefinition, AppointmentStatus } from './types';
+import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate, Task, RoleDefinition, AppointmentStatus, Branch } from './types';
 
 export const COLOR_TEMPLATES: ColorTemplate[] = [
   { id: 'ocean', name: 'Océano', primary: '#3b82f6', dark: '#1d4ed8', light: '#dbeafe' },
@@ -28,7 +29,7 @@ const INITIAL_ROLES: RoleDefinition[] = [
     id: 'admin_role',
     name: 'Administrador Global',
     isSystem: true,
-    permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'view_doctors', 'view_hr', 'view_metrics', 'view_settings', 'view_all_data', 'can_edit']
+    permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'view_doctors', 'view_branches', 'view_hr', 'view_metrics', 'view_settings', 'view_all_data', 'can_edit']
   },
   {
     id: 'doctor_role',
@@ -40,7 +41,31 @@ const INITIAL_ROLES: RoleDefinition[] = [
     id: 'reception_role',
     name: 'Recepción',
     isSystem: false,
-    permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'view_all_data', 'can_edit'] 
+    permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'view_branches', 'view_all_data', 'can_edit'] 
+  }
+];
+
+const INITIAL_BRANCHES: Branch[] = [
+  {
+    id: 'B1', name: 'Centro', address: 'Av. de la Constitución 120', city: 'Madrid', zip: '28001',
+    phone: '910 000 001', email: 'centro@mediclinic.com', status: 'Active',
+    coordinates: { lat: '40.416775', lng: '-3.703790' },
+    img: 'https://img.freepik.com/foto-gratis/pasillo-hospital-borroso_1101-37.jpg',
+    openingHours: '08:00 - 21:00', manager: 'Carlos D.'
+  },
+  {
+    id: 'B2', name: 'Norte', address: 'Paseo de la Castellana 250', city: 'Madrid', zip: '28046',
+    phone: '910 000 002', email: 'norte@mediclinic.com', status: 'Active',
+    coordinates: { lat: '40.478905', lng: '-3.688172' },
+    img: 'https://img.freepik.com/foto-gratis/sala-espera-lujo_1098-16147.jpg',
+    openingHours: '09:00 - 20:00', manager: 'Laura M.'
+  },
+  {
+    id: 'B3', name: 'Sur', address: 'Av. de Andalucía 85', city: 'Getafe', zip: '28903',
+    phone: '910 000 003', email: 'sur@mediclinic.com', status: 'Maintenance',
+    coordinates: { lat: '40.308256', lng: '-3.732669' },
+    img: 'https://img.freepik.com/foto-gratis/edificio-hospital-moderno_1127-3135.jpg',
+    openingHours: '08:00 - 15:00', manager: 'Sergio R.'
   }
 ];
 
@@ -217,6 +242,7 @@ const App: React.FC = () => {
   // regenerando los datos base y eliminando lo creado por el usuario.
   const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
   const [doctors, setDoctors] = useState<Doctor[]>(INITIAL_DOCTORS);
+  const [branches, setBranches] = useState<Branch[]>(INITIAL_BRANCHES);
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_DEMO_APPOINTMENTS);
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
 
@@ -373,9 +399,10 @@ const App: React.FC = () => {
           <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={currentUser} />} />
           <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} />} />
           <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={currentUser} team={doctors} />} />
-          <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
+          <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} branches={branches} />} />
+          <Route path="/branches" element={<Branches branches={branches} setBranches={setBranches} doctors={doctors} setDoctors={setDoctors} />} />
           <Route path="/hr" element={<HRManagement doctors={doctors} setDoctors={setDoctors} />} />
-          <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} settings={settings} />} />
+          <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} settings={settings} branches={branches} />} />
           <Route 
             path="/settings" 
             element={
@@ -416,7 +443,7 @@ const App: React.FC = () => {
         />
       )}
 
-      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} />}
+      {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} />}
     </HashRouter>
   );
 };
