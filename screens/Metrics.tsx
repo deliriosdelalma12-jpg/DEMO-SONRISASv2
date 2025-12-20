@@ -4,12 +4,15 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Cell, PieChart, Pie, AreaChart, Area, Legend 
 } from 'recharts';
-import { Appointment, Doctor, Patient } from '../types';
+import { Appointment, Doctor, Patient, ClinicSettings } from '../types';
+import { GoogleGenAI, Type } from "@google/genai";
+import { jsPDF } from "jspdf";
 
 interface MetricsProps {
   appointments: Appointment[];
   doctors: Doctor[];
   patients: Patient[];
+  settings?: ClinicSettings; // Add settings to access company name and context
 }
 
 const treatmentPrices: Record<string, number> = {
@@ -25,16 +28,36 @@ const treatmentPrices: Record<string, number> = {
   'Blanqueamiento': 180
 };
 
-const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) => {
+const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients, settings }) => {
   const [branchFilter, setBranchFilter] = useState('Todas las sedes');
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
+  
+  // Nuevo Estado para el filtro de la comparativa
+  const [compFilter, setCompFilter] = useState<'1m' | '3m' | '6m' | '1y'>('3m');
+
+  // AI Analysis State
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<{diagnosis: string, conclusions: string, recommendations: string} | null>(null);
 
   const branches = useMemo(() => {
     const unique = Array.from(new Set(doctors.map(d => d.branch)));
     return ['Todas las sedes', ...unique];
   }, [doctors]);
 
-  // Lógica de Filtrado de Datos Sincronizada con el Volumen Real
+  // --- FILTRADO MAESTRO DE DATOS (Contexto Sucursal) ---
+  // Esta variable contiene TODAS las citas históricas que pertenecen al contexto seleccionado (Global o Sucursal X)
+  const relevantAppointments = useMemo(() => {
+    if (branchFilter === 'Todas las sedes') {
+      return appointments;
+    }
+    // Filtrar doctores que pertenecen a la sucursal seleccionada
+    const branchDocIds = new Set(doctors.filter(d => d.branch === branchFilter).map(d => d.id));
+    // Filtrar citas asociadas a esos doctores
+    return appointments.filter(a => branchDocIds.has(a.doctorId));
+  }, [appointments, doctors, branchFilter]);
+
+  // Lógica de Filtrado de Datos Visual (Para las gráficas SUPERIORES de Área/Pie/Top)
+  // Usa relevantAppointments como base en lugar de appointments crudos
   const filteredData = useMemo(() => {
     const now = new Date();
     
@@ -54,29 +77,31 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
     if (timeRange === '1y') endDate.setMonth(now.getMonth() + 6); // Ver 6 meses a futuro
     else endDate.setDate(now.getDate() + 7); // Ver 1 semana a futuro en vistas cortas
 
+    // Doctores visibles (para ranking)
     const doctorsInBranch = branchFilter === 'Todas las sedes' 
       ? doctors 
       : doctors.filter(d => d.branch === branchFilter);
-    const doctorIds = new Set(doctorsInBranch.map(d => d.id));
 
-    // Citas que caen en el rango visual
-    const currentApts = appointments.filter(a => {
+    // Citas que caen en el rango visual (usamos relevantAppointments para asegurar consistencia)
+    const currentApts = relevantAppointments.filter(a => {
       const d = new Date(a.date);
-      return d >= startDate && d <= endDate && doctorIds.has(a.doctorId);
+      return d >= startDate && d <= endDate;
     });
 
     // Periodo anterior para tendencias de ingresos (solo pasado)
     const prevStartDate = new Date(startDate);
     prevStartDate.setDate(startDate.getDate() - days);
-    const prevApts = appointments.filter(a => {
+    const prevEndDate = new Date(startDate);
+
+    const prevApts = relevantAppointments.filter(a => {
       const d = new Date(a.date);
-      return d >= prevStartDate && d < startDate && doctorIds.has(a.doctorId);
+      return d >= prevStartDate && d < prevEndDate;
     });
 
-    return { currentApts, prevApts, doctorsInBranch, startDate, now, endDate };
-  }, [appointments, doctors, branchFilter, timeRange]);
+    return { currentApts, prevApts, doctorsInBranch, startDate, prevStartDate, now, endDate, days };
+  }, [relevantAppointments, doctors, branchFilter, timeRange]);
 
-  // KPIs
+  // KPIs (Superiores)
   const stats = useMemo(() => {
     const { currentApts, prevApts, now } = filteredData;
     
@@ -100,7 +125,7 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
     return { rev, revTrend, count, countTrend, efficiency };
   }, [filteredData]);
 
-  // Generación de Datos para Gráficas con Agregación Temporal Correcta
+  // Generación de Datos para Gráficas SUPERIORES
   const charts = useMemo(() => {
     const { currentApts, doctorsInBranch, startDate, endDate, now } = filteredData;
 
@@ -119,7 +144,8 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
 
     // 2. Doctor Data (Productividad)
     const docData = doctorsInBranch.map(d => {
-      const apts = currentApts.filter(a => a.doctorId === d.id && new Date(a.date) <= now);
+      // Filtramos sobre relevantAppointments para asegurar consistencia de sucursal
+      const apts = relevantAppointments.filter(a => a.doctorId === d.id && new Date(a.date) >= startDate && new Date(a.date) <= now);
       const rating = 4.2 + (parseInt(d.id.replace(/\D/g, '') || '0') % 9) / 10;
       return {
         name: d.name.split(' ').slice(-1)[0],
@@ -144,7 +170,6 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
     const areaData = [];
     
     if (timeRange === '7d' || timeRange === '30d') {
-      // Agregación por día
       const daysToIterate = timeRange === '7d' ? 7 : 30;
       for (let i = daysToIterate; i >= 0; i--) {
         const d = new Date();
@@ -158,9 +183,7 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
         });
       }
     } else {
-      // Agregación por mes (Para 90d y 1y)
-      // Generamos los últimos 12 meses desde hoy
-      for (let i = 11; i >= -2; i--) { // Desde hace 11 meses hasta dentro de 2 meses
+      for (let i = 11; i >= -2; i--) { 
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const month = d.getMonth();
         const year = d.getFullYear();
@@ -179,7 +202,290 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
     }
 
     return { pieData, docData, topTreats, areaData };
-  }, [filteredData, timeRange]);
+  }, [filteredData, timeRange, relevantAppointments]);
+
+  // --- NUEVA LÓGICA: Gráficas Comparativas (Respeta Filtro de Sede) ---
+  const comparativeData = useMemo(() => {
+    // Usamos 'relevantAppointments' (Ya filtrado por sede)
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    
+    let periods = 0;
+    let unit = 'month'; 
+
+    if (compFilter === '1m') { periods = 30; unit = 'day'; } 
+    else if (compFilter === '3m') { periods = 3; unit = 'month'; } 
+    else if (compFilter === '6m') { periods = 6; unit = 'month'; } 
+    else { periods = 12; unit = 'month'; }
+
+    const items = [];
+    
+    for (let i = periods - 1; i >= 0; i--) {
+        let label = '';
+        let currentVal = 0;
+        let prevVal = 0;
+
+        if (unit === 'day') {
+            const d = new Date();
+            d.setDate(now.getDate() - i);
+            const dStr = d.toISOString().split('T')[0];
+            label = d.getDate().toString();
+
+            const prevD = new Date(d);
+            prevD.setMonth(d.getMonth() - 1); 
+            const prevDStr = prevD.toISOString().split('T')[0];
+
+            currentVal = relevantAppointments
+                .filter(a => a.date === dStr && a.status === 'Completed')
+                .reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+            
+            prevVal = relevantAppointments
+                .filter(a => a.date === prevDStr && a.status === 'Completed')
+                .reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+
+        } else {
+            const d = new Date(currentYear, currentMonth - i, 1);
+            label = d.toLocaleDateString('es-ES', { month: 'short' });
+            const p = new Date(currentYear - 1, currentMonth - i, 1); 
+
+            currentVal = relevantAppointments
+                .filter(a => {
+                    const ad = new Date(a.date);
+                    return ad.getMonth() === d.getMonth() && ad.getFullYear() === d.getFullYear() && a.status === 'Completed';
+                })
+                .reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+
+            prevVal = relevantAppointments
+                .filter(a => {
+                    const ad = new Date(a.date);
+                    return ad.getMonth() === p.getMonth() && ad.getFullYear() === p.getFullYear() && a.status === 'Completed';
+                })
+                .reduce((acc, a) => acc + (treatmentPrices[a.treatment] || 50), 0);
+        }
+
+        items.push({ name: label, actual: currentVal, anterior: prevVal });
+    }
+
+    return items;
+  }, [relevantAppointments, compFilter]);
+
+  // Generación de Insights Manuales (Fallback)
+  const manualInsights = useMemo(() => {
+      const totalActual = comparativeData.reduce((acc, item) => acc + item.actual, 0);
+      const totalPrev = comparativeData.reduce((acc, item) => acc + item.anterior, 0);
+      const diff = totalActual - totalPrev;
+      const percent = totalPrev === 0 ? 100 : (diff / totalPrev) * 100;
+      const isPositive = diff >= 0;
+
+      let conclusions = "";
+      let recommendations = "";
+
+      if (isPositive) {
+          conclusions = `Crecimiento del ${percent.toFixed(1)}% en ${branchFilter}. Tendencia al alza detectada.`;
+          recommendations = "Potenciar servicios rentables y evaluar ampliación de horarios.";
+      } else {
+          conclusions = `Ajuste del ${Math.abs(percent).toFixed(1)}% en ${branchFilter}. Ligera contracción respecto al periodo anterior.`;
+          recommendations = "Revisar tasas de cancelación y activar recall de pacientes.";
+      }
+
+      return { totalActual, totalPrev, diff, percent, isPositive, conclusions, recommendations };
+  }, [comparativeData, branchFilter]);
+
+  // --- FUNCIÓN GENERADORA IA ---
+  const generateAiAnalysis = async () => {
+    setIsGeneratingAi(true);
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const companyName = settings?.name || "Clínica Médica";
+        const contextScope = "Global (Toda la Empresa)";
+        
+        // Preparar resumen de datos para el prompt
+        const topServices = charts.topTreats.map(t => `${t.name} (${t.count})`).join(", ");
+        const financialContext = `
+            Ámbito de Análisis: ${contextScope}
+            Ingresos Periodo Actual: ${settings?.currency || '€'}${manualInsights.totalActual.toLocaleString()}
+            Ingresos Periodo Anterior: ${settings?.currency || '€'}${manualInsights.totalPrev.toLocaleString()}
+            Variación: ${manualInsights.isPositive ? '+' : ''}${manualInsights.percent.toFixed(1)}%
+            Eficiencia Operativa: ${stats.efficiency}%
+            Servicios Top: ${topServices}
+        `;
+
+        const prompt = `
+            Eres un Consultor Financiero Senior experto en gestión sanitaria para: ${companyName}.
+            
+            Analiza los siguientes DATOS REALES (${contextScope}):
+            ${financialContext}
+
+            INSTRUCCIONES:
+            1. Analiza la rentabilidad Global de la empresa.
+            2. Busca causas operativas y oportunidades de crecimiento.
+            3. Sé muy ejecutivo.
+
+            Devuelve JSON:
+            {
+                "diagnosis": "Diagnóstico de situación en 2 frases...",
+                "conclusions": "Análisis de causas clave...",
+                "recommendations": "3 acciones tácticas concretas..."
+            }
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        diagnosis: { type: Type.STRING },
+                        conclusions: { type: Type.STRING },
+                        recommendations: { type: Type.STRING }
+                    }
+                }
+            }
+        });
+
+        const jsonText = response.text || "{}";
+        const result = JSON.parse(jsonText);
+        setAiAnalysis(result);
+
+    } catch (error) {
+        console.error("AI Generation Error", error);
+        alert("Error generando el análisis IA. Inténtalo de nuevo.");
+    } finally {
+        setIsGeneratingAi(false);
+    }
+  };
+
+  // --- GENERACIÓN PDF ---
+  const downloadPDF = () => {
+    const doc = new jsPDF();
+    const primaryColor = [59, 130, 246]; // Tailwind Blue-500 equivalent
+    const darkColor = [30, 41, 59]; // Slate-800
+
+    // Header Background
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.rect(0, 0, 210, 40, 'F');
+
+    // Title & Logo Text
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.text("Informe Estratégico de Rendimiento", 15, 20);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(settings?.name || "Clínica Médica", 15, 28);
+    doc.text(`Generado: ${new Date().toLocaleDateString()}`, 15, 34);
+
+    // Branch Context Badge
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(140, 10, 55, 20, 3, 3, 'F');
+    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+    doc.setFontSize(8);
+    doc.text("ÁMBITO DEL ANÁLISIS", 145, 18);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("GLOBAL EMPRESA", 145, 25);
+
+    // KPI Summary Section
+    let yPos = 55;
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Resumen Ejecutivo", 15, yPos);
+    
+    yPos += 10;
+    // Draw 3 Boxes
+    const boxWidth = 55;
+    const boxHeight = 25;
+    const gap = 10;
+    
+    // Box 1: Actual
+    doc.setDrawColor(200, 200, 200);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(15, yPos, boxWidth, boxHeight, 2, 2, 'FD');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text("Facturación Actual", 20, yPos + 8);
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${settings?.currency || '€'}${manualInsights.totalActual.toLocaleString()}`, 20, yPos + 18);
+
+    // Box 2: Previous
+    doc.roundedRect(15 + boxWidth + gap, yPos, boxWidth, boxHeight, 2, 2, 'FD');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text("Periodo Anterior", 20 + boxWidth + gap, yPos + 8);
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${settings?.currency || '€'}${manualInsights.totalPrev.toLocaleString()}`, 20 + boxWidth + gap, yPos + 18);
+
+    // Box 3: Growth
+    doc.roundedRect(15 + (boxWidth + gap) * 2, yPos, boxWidth, boxHeight, 2, 2, 'FD');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text("Crecimiento / Variación", 20 + (boxWidth + gap) * 2, yPos + 8);
+    doc.setFontSize(12);
+    doc.setTextColor(manualInsights.isPositive ? 0 : 220, manualInsights.isPositive ? 150 : 20, 60); // Green or Red
+    doc.text(`${manualInsights.isPositive ? '+' : ''}${manualInsights.percent.toFixed(1)}%`, 20 + (boxWidth + gap) * 2, yPos + 18);
+
+    // AI Analysis Content
+    yPos += 40;
+    
+    const printSection = (title: string, content: string, icon: string) => {
+        doc.setFontSize(12);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.setFont("helvetica", "bold");
+        doc.text(title.toUpperCase(), 15, yPos);
+        
+        // Line under title
+        doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.setLineWidth(0.5);
+        doc.line(15, yPos + 2, 195, yPos + 2);
+
+        yPos += 10;
+        doc.setFontSize(10);
+        doc.setTextColor(60, 60, 60);
+        doc.setFont("helvetica", "normal");
+        
+        const splitText = doc.splitTextToSize(content, 180);
+        doc.text(splitText, 15, yPos);
+        yPos += (splitText.length * 5) + 15;
+    };
+
+    const diagnosis = aiAnalysis ? aiAnalysis.diagnosis : displayInsights.diagnosis;
+    const conclusions = aiAnalysis ? aiAnalysis.conclusions : displayInsights.conclusions;
+    const recommendations = aiAnalysis ? aiAnalysis.recommendations : displayInsights.recommendations;
+
+    printSection("Diagnóstico Financiero", diagnosis, "");
+    printSection("Conclusiones de Mercado", conclusions, "");
+    printSection("Recomendaciones Estratégicas", recommendations, "");
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Informe confidencial generado por MediClinic AI - Global`, 105, 280, { align: "center" });
+
+    doc.save(`Informe_Estrategico_Global_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  // Determinar qué insights mostrar (IA o Manual)
+  const displayInsights = aiAnalysis ? {
+      diagnosis: aiAnalysis.diagnosis,
+      conclusions: aiAnalysis.conclusions,
+      recommendations: aiAnalysis.recommendations,
+      percent: manualInsights.percent, 
+      isPositive: manualInsights.isPositive,
+      diff: manualInsights.diff
+  } : {
+      diagnosis: `Variación neta de ${settings?.currency || '€'}${manualInsights.diff.toLocaleString()} a nivel Global.`,
+      conclusions: manualInsights.conclusions,
+      recommendations: manualInsights.recommendations,
+      percent: manualInsights.percent,
+      isPositive: manualInsights.isPositive,
+      diff: manualInsights.diff
+  };
 
   return (
     <div className="p-10 max-w-[1600px] mx-auto w-full space-y-10 animate-in fade-in duration-500">
@@ -190,7 +496,7 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
           <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">Inteligencia de Negocio</h1>
           <div className="flex items-center gap-2 mt-2">
             <span className="size-2 bg-success rounded-full animate-pulse"></span>
-            <p className="text-slate-500 dark:text-slate-400 font-medium italic text-sm">Analizando {appointments.length.toLocaleString()} registros de actividad clínica</p>
+            <p className="text-slate-500 dark:text-slate-400 font-medium italic text-sm">Analizando {relevantAppointments.length.toLocaleString()} registros ({branchFilter})</p>
           </div>
         </div>
         
@@ -229,7 +535,7 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
       {/* KPI Cards Dinámicas */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
         {[
-          { label: "Facturación Bruta", val: `€${stats.rev.toLocaleString()}`, icon: "payments", trend: stats.revTrend, color: "text-success", bg: "bg-success/10" },
+          { label: "Facturación Bruta", val: `${settings?.currency || '€'}${stats.rev.toLocaleString()}`, icon: "payments", trend: stats.revTrend, color: "text-success", bg: "bg-success/10" },
           { label: "Volumen de Citas", val: stats.count.toLocaleString(), icon: "calendar_month", trend: stats.countTrend, color: "text-primary", bg: "bg-primary/10" },
           { label: "Pacientes Únicos", val: Math.floor(patients.length * 1.2).toLocaleString(), icon: "person_add", trend: "+12.4%", color: "text-blue-500", bg: "bg-blue-500/10" },
           { label: "Tasa Eficiencia", val: `${stats.efficiency}%`, icon: "verified", trend: "Score", color: "text-orange-500", bg: "bg-orange-500/10" }
@@ -250,6 +556,134 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
         ))}
       </div>
 
+      {/* --- SECCIÓN COMPARATIVA CONTEXTUAL (FILTRADA POR SUCURSAL) --- */}
+      <div className={`rounded-[3rem] border p-10 shadow-xl space-y-8 animate-in slide-in-from-bottom-4 transition-colors duration-500 ${aiAnalysis ? 'bg-gradient-to-br from-white to-purple-50/50 dark:from-surface-dark dark:to-purple-900/10 border-purple-200 dark:border-purple-800' : 'bg-white dark:bg-surface-dark border-border-light dark:border-border-dark'}`}>
+         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+            <div>
+               <div className="flex items-center gap-3">
+                  <div className={`size-10 rounded-xl flex items-center justify-center ${aiAnalysis ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30' : 'bg-purple-500/10 text-purple-500'}`}>
+                      <span className="material-symbols-outlined">{aiAnalysis ? 'psychology' : 'query_stats'}</span>
+                  </div>
+                  <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Análisis de Rendimiento: {branchFilter}</h3>
+               </div>
+               <p className="text-slate-400 text-xs font-bold mt-2 ml-14 italic">Comparativa de ingresos filtrada por los médicos asignados a esta sede.</p>
+            </div>
+            
+            <div className="flex flex-col md:flex-row items-center gap-4">
+                {/* Botones de IA y PDF solo para Global */}
+                {branchFilter === 'Todas las sedes' && (
+                    <>
+                        <button 
+                            onClick={downloadPDF}
+                            className="flex items-center gap-2 px-6 py-3 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:scale-105 transition-all"
+                        >
+                            <span className="material-symbols-outlined text-base">picture_as_pdf</span>
+                            Descargar Informe PDF
+                        </button>
+
+                        <button 
+                            onClick={generateAiAnalysis}
+                            disabled={isGeneratingAi}
+                            className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-purple-500/20 transition-all hover:scale-105 disabled:opacity-70 disabled:scale-100"
+                        >
+                            {isGeneratingAi ? (
+                                <>
+                                    <span className="material-symbols-outlined animate-spin text-base">sync</span>
+                                    Analizando Global...
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-base">auto_awesome</span>
+                                    Generar Estrategia IA
+                                </>
+                            )}
+                        </button>
+                    </>
+                )}
+
+                {/* Filtros de Comparativa */}
+                <div className="flex bg-slate-100 dark:bg-bg-dark p-1.5 rounded-[1.25rem] border border-slate-200 dark:border-slate-700 shadow-inner">
+                  {[
+                    { id: '1m', label: '1M' },
+                    { id: '3m', label: '3M' },
+                    { id: '6m', label: '6M' },
+                    { id: '1y', label: '1A' }
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => setCompFilter(f.id as any)}
+                      className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${compFilter === f.id ? 'bg-white dark:bg-surface-dark text-purple-600 shadow-lg scale-105' : 'text-slate-400 hover:text-slate-800 dark:hover:text-white'}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+            </div>
+         </div>
+         
+         <div className="h-[350px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+               <BarChart data={comparativeData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} dy={10} fontWeight={700} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip 
+                     cursor={{ fill: 'transparent' }}
+                     contentStyle={{ backgroundColor: '#fff', border: 'none', borderRadius: '20px', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' }}
+                     itemStyle={{ fontWeight: '800', fontSize: '12px' }}
+                  />
+                  <Bar dataKey="actual" name="Actual" fill="#3b82f6" radius={[6, 6, 6, 6]} barSize={compFilter === '1y' ? 30 : 20} />
+                  <Bar dataKey="anterior" name="Anterior" fill="#cbd5e1" radius={[6, 6, 6, 6]} barSize={compFilter === '1y' ? 30 : 20} />
+               </BarChart>
+            </ResponsiveContainer>
+         </div>
+
+         {/* SECCIÓN DE INFORMES Y CONCLUSIONES (SOLO VISIBLE SI 'TODAS LAS SEDES') */}
+         {branchFilter === 'Todas las sedes' && (
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4">
+                <div className={`p-8 rounded-[2.5rem] border relative overflow-hidden group transition-colors ${aiAnalysis ? 'bg-white/80 dark:bg-surface-dark border-purple-200 dark:border-purple-800' : 'bg-slate-50 dark:bg-bg-dark border-slate-100 dark:border-slate-800'}`}>
+                   <div className={`absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity ${displayInsights.isPositive ? 'text-success' : 'text-danger'}`}>
+                      <span className="material-symbols-outlined text-8xl">{displayInsights.isPositive ? 'trending_up' : 'trending_down'}</span>
+                   </div>
+                   <div className="flex items-center gap-2 mb-4">
+                       {aiAnalysis && <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded text-[9px] font-black uppercase">IA</span>}
+                       <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Diagnóstico Global</h4>
+                   </div>
+                   <p className={`text-4xl font-black mb-2 ${displayInsights.isPositive ? 'text-success' : 'text-danger'}`}>
+                      {displayInsights.isPositive ? '+' : ''}{displayInsights.percent.toFixed(1)}%
+                   </p>
+                   <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+                      {displayInsights.diagnosis}
+                   </p>
+                </div>
+
+                <div className={`p-8 rounded-[2.5rem] border relative transition-colors ${aiAnalysis ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800' : 'bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/10'}`}>
+                   <div className="flex items-center gap-2 mb-4">
+                       {aiAnalysis && <span className="px-2 py-0.5 bg-blue-100 text-blue-600 rounded text-[9px] font-black uppercase">IA</span>}
+                       <h4 className="text-[11px] font-black text-blue-500 uppercase tracking-widest flex items-center gap-2">
+                          <span className="material-symbols-outlined text-base">lightbulb</span> Conclusiones
+                       </h4>
+                   </div>
+                   <p className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-loose">
+                      {displayInsights.conclusions}
+                   </p>
+                </div>
+
+                <div className={`p-8 rounded-[2.5rem] border relative transition-colors ${aiAnalysis ? 'bg-purple-50/50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-800' : 'bg-purple-500/5 dark:bg-purple-500/10 border-purple-500/10'}`}>
+                   <div className="flex items-center gap-2 mb-4">
+                       {aiAnalysis && <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded text-[9px] font-black uppercase">IA</span>}
+                       <h4 className="text-[11px] font-black text-purple-500 uppercase tracking-widest flex items-center gap-2">
+                          <span className="material-symbols-outlined text-base">rocket_launch</span> Recomendaciones
+                       </h4>
+                   </div>
+                   <p className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-loose">
+                      {displayInsights.recommendations}
+                   </p>
+                </div>
+             </div>
+         )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         
         {/* Gráfica de Área (Movimiento y Fluidez) */}
@@ -257,12 +691,12 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Evolución de Ingresos y Volumen</h3>
-              <p className="text-slate-400 text-xs font-bold mt-1 italic">Sincronización basada en {timeRange === '1y' ? 'meses reales' : 'días naturales'}</p>
+              <p className="text-slate-400 text-xs font-bold mt-1 italic">Datos filtrados por: {branchFilter}</p>
             </div>
             <div className="flex items-center gap-6">
                <div className="flex items-center gap-2">
                   <span className="size-3 rounded-full bg-primary shadow-sm shadow-primary/40"></span>
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Facturación (€)</span>
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Facturación ({settings?.currency || '€'})</span>
                </div>
                <div className="flex items-center gap-2">
                   <span className="size-3 rounded-full bg-slate-300 dark:bg-slate-700"></span>
@@ -288,7 +722,7 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
                   contentStyle={{ backgroundColor: '#fff', border: 'none', borderRadius: '20px', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' }}
                   itemStyle={{ fontWeight: '800', fontSize: '12px' }}
                 />
-                <Area yAxisId="left" type="monotone" dataKey="value" name="Ingresos (€)" stroke="#3b82f6" strokeWidth={5} fillOpacity={1} fill="url(#colorValue)" animationDuration={2000} />
+                <Area yAxisId="left" type="monotone" dataKey="value" name={`Ingresos (${settings?.currency || '€'})`} stroke="#3b82f6" strokeWidth={5} fillOpacity={1} fill="url(#colorValue)" animationDuration={2000} />
                 <Area yAxisId="right" type="monotone" dataKey="volumen" name="Citas" stroke="#cbd5e1" strokeWidth={2} fillOpacity={0} animationDuration={2000} />
               </AreaChart>
             </ResponsiveContainer>
@@ -359,7 +793,7 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">{t.count.toLocaleString()} servicios agendados</p>
                    </div>
                    <div className="text-right">
-                      <span className="text-lg font-black text-primary">€{((treatmentPrices[t.name] || 50) * t.count).toLocaleString()}</span>
+                      <span className="text-lg font-black text-primary">{settings?.currency || '€'}{((treatmentPrices[t.name] || 50) * t.count).toLocaleString()}</span>
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Vol. Generado</p>
                    </div>
                 </div>
@@ -400,7 +834,7 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
                          </div>
                       </td>
                       <td className="px-6 py-6 text-right">
-                        <span className="text-sm font-black text-slate-900 dark:text-white">{doc.facturacion.toLocaleString()}€</span>
+                        <span className="text-sm font-black text-slate-900 dark:text-white">{doc.facturacion.toLocaleString()}{settings?.currency || '€'}</span>
                       </td>
                     </tr>
                   ))}
@@ -410,7 +844,7 @@ const Metrics: React.FC<MetricsProps> = ({ appointments, doctors, patients }) =>
            
            <div className="p-8 bg-primary/5 rounded-[2.5rem] border border-primary/10 flex items-center justify-between mt-auto">
               <div>
-                 <p className="text-2xl font-black text-primary">€{(stats.rev / (charts.docData.length || 1)).toFixed(0).toLocaleString()}</p>
+                 <p className="text-2xl font-black text-primary">{settings?.currency || '€'}{(stats.rev / (charts.docData.length || 1)).toFixed(0).toLocaleString()}</p>
                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Ticket medio por facultativo</p>
               </div>
               <div className="flex gap-2">

@@ -12,7 +12,7 @@ import Layout from './components/Layout';
 import VoiceAssistant from './components/VoiceAssistant';
 import DoctorDetailModal from './components/DoctorDetailModal';
 import PatientDetailModal from './components/PatientDetailModal';
-import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate, Task, RoleDefinition } from './types';
+import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate, Task, RoleDefinition, AppointmentStatus } from './types';
 
 export const COLOR_TEMPLATES: ColorTemplate[] = [
   { id: 'ocean', name: 'Océano', primary: '#3b82f6', dark: '#1d4ed8', light: '#dbeafe' },
@@ -119,15 +119,88 @@ const INITIAL_PATIENTS: Patient[] = [
     medicalHistory: 'Ninguna patología previa. Revisión rutinaria.',
     weight: '32', height: '135', bloodType: 'B+', allergies: ['Nueces'],
     associatedDoctorId: 'D3', associatedDoctorName: 'Dra. Sofia Mendez'
+  },
+  {
+    id: 'P1004', name: 'Roberto Fernandez', birthDate: '1978-02-14', gender: 'Masculino',
+    identityDocument: '33445566C', phone: '699 777 888', email: 'roberto.f@gmail.com', address: 'Calle Pez 22',
+    img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Roberto&backgroundColor=e2e8f0',
+    medicalHistory: 'Diabetes tipo 2. Control periódico.',
+    weight: '90', height: '178', bloodType: 'AB+', allergies: [],
+    associatedDoctorId: 'D1', associatedDoctorName: 'Dra. Ana Torres'
+  },
+  {
+    id: 'P1005', name: 'Elena White', birthDate: '1995-07-22', gender: 'Femenino',
+    identityDocument: 'X1234567Z', phone: '699 999 000', email: 'elena.w@yahoo.com', address: 'Gran Vía 10',
+    img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Elena&backgroundColor=e2e8f0',
+    medicalHistory: 'Limpieza anual. Sin antecedentes relevantes.',
+    weight: '58', height: '170', bloodType: 'O-', allergies: [],
+    associatedDoctorId: 'D2', associatedDoctorName: 'Dr. Carlos Ruiz'
   }
 ];
 
-const INITIAL_APPOINTMENTS: Appointment[] = [
-  { id: 'A1', patientId: 'P1001', patientName: 'Laura Martínez', doctorId: 'D1', doctorName: 'Dra. Ana Torres', date: new Date().toISOString().split('T')[0], time: '09:00', treatment: 'Revisión Ortodoncia', status: 'Confirmed' },
-  { id: 'A2', patientId: 'P1002', patientName: 'Pedro Gomez', doctorId: 'D2', doctorName: 'Dr. Carlos Ruiz', date: new Date().toISOString().split('T')[0], time: '10:30', treatment: 'Implante Titanio', status: 'Pending' },
-  { id: 'A3', patientId: 'P1003', patientName: 'María Rodríguez', doctorId: 'D3', doctorName: 'Dra. Sofia Mendez', date: new Date().toISOString().split('T')[0], time: '12:00', treatment: 'Limpieza Dental', status: 'Completed' },
-  { id: 'A4', patientId: 'P1001', patientName: 'Laura Martínez', doctorId: 'D1', doctorName: 'Dra. Ana Torres', date: new Date(Date.now() + 86400000).toISOString().split('T')[0], time: '16:00', treatment: 'Urgencia', status: 'Confirmed' },
-];
+// --- GENERADOR DE CITAS DEMO DINÁMICO ---
+// Esta función se ejecuta al cargar la App y genera 30 citas para el MES ACTUAL
+// Asegurando que la data base siempre esté "viva" y actualizada.
+const generateDemoAppointments = (): Appointment[] => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-11
+  const daysInMonth = new Date(year, month + 1, 0).getDate(); // Días reales del mes actual
+
+  const treatments = [
+    'Limpieza Dental', 'Consulta General', 'Ortodoncia', 'Implante Titanio', 
+    'Revisión Periódica', 'Blanqueamiento', 'Urgencia', 'Cirugía Maxilofacial'
+  ];
+  const statuses: AppointmentStatus[] = ['Confirmed', 'Confirmed', 'Confirmed', 'Completed', 'Completed', 'Pending', 'Cancelled', 'Rescheduled'];
+  const times = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'];
+
+  const demoAppointments: Appointment[] = [];
+
+  for (let i = 0; i < 30; i++) {
+    // Selección aleatoria de recursos existentes
+    const doctor = INITIAL_DOCTORS[Math.floor(Math.random() * INITIAL_DOCTORS.length)];
+    const patient = INITIAL_PATIENTS[Math.floor(Math.random() * INITIAL_PATIENTS.length)];
+    const treatment = treatments[Math.floor(Math.random() * treatments.length)];
+    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    
+    // Generar día aleatorio dentro del mes actual
+    const day = Math.floor(Math.random() * daysInMonth) + 1;
+    const time = times[Math.floor(Math.random() * times.length)];
+    
+    // Formatear fecha YYYY-MM-DD
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    // Lógica para estados pasados/futuros
+    let finalStatus = status;
+    const aptDateObj = new Date(year, month, day);
+    const todayObj = new Date();
+    todayObj.setHours(0,0,0,0); // Comparar solo fecha
+
+    // Si la fecha generada es futura, no puede estar 'Completed' (a menos que sea demo logic flexible, pero mejor 'Confirmed')
+    if (aptDateObj > todayObj && status === 'Completed') {
+        finalStatus = 'Confirmed';
+    }
+    // Si la fecha es pasada y es 'Confirmed', idealmente pasaría a 'Pending' o 'Completed', pero lo dejamos aleatorio para que el usuario pueda 'Completarla'
+
+    demoAppointments.push({
+      id: `DEMO_APT_${i}`,
+      patientId: patient.id,
+      patientName: patient.name,
+      doctorId: doctor.id,
+      doctorName: doctor.name,
+      date: dateStr,
+      time: time,
+      treatment: treatment,
+      status: finalStatus
+    });
+  }
+
+  // Ordenar por fecha
+  return demoAppointments.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+};
+
+// Generamos la data UNA VEZ al cargar el módulo
+const INITIAL_DEMO_APPOINTMENTS = generateDemoAppointments();
 
 const INITIAL_TASKS: Task[] = [
   { id: 'T1', title: 'Confirmar citas de mañana', description: 'Llamar a pacientes de primera hora para confirmar asistencia.', completed: false, priority: 'High', sub: 'Recepción' },
@@ -139,9 +212,12 @@ const App: React.FC = () => {
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   
   // --- STATE MANAGEMENT ---
+  // Utilizamos los datos generados dinámicamente como estado inicial.
+  // Al refrescar la página, este componente se desmonta y monta de nuevo,
+  // regenerando los datos base y eliminando lo creado por el usuario.
   const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
   const [doctors, setDoctors] = useState<Doctor[]>(INITIAL_DOCTORS);
-  const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
+  const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_DEMO_APPOINTMENTS);
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
 
   // --- GLOBAL MODAL STATE ---
@@ -299,7 +375,7 @@ const App: React.FC = () => {
           <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={currentUser} team={doctors} />} />
           <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
           <Route path="/hr" element={<HRManagement doctors={doctors} setDoctors={setDoctors} />} />
-          <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} />} />
+          <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} settings={settings} />} />
           <Route 
             path="/settings" 
             element={

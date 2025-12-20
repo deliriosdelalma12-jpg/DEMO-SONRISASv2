@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { ClinicSettings, User, ClinicService, FileAttachment, VoiceAccent, AppLanguage, AppLabels, LaborIncidentType, Doctor, AttendanceRecord, VacationRequest, RoleDefinition, PermissionId } from '../types';
 import { COLOR_TEMPLATES } from '../App';
 import { generatePersonalityPrompt, speakText } from '../services/gemini';
@@ -58,9 +58,16 @@ const AVAILABLE_PERMISSIONS: {id: PermissionId, label: string, group: string}[] 
   { id: 'can_edit', label: 'Permiso de Edición', group: 'Acciones' },
 ];
 
+const MEDICAL_SPECIALTIES = [
+  'Odontología General', 'Ortodoncia', 'Implantología', 'Cirugía Maxilofacial', 
+  'Endodoncia', 'Periodoncia', 'Odontopediatría', 'Estética Dental', 
+  'Medicina General', 'Fisioterapia', 'Dermatología'
+];
+
 const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleTheme, darkMode, systemUsers, setSystemUsers, doctors, setDoctors, onOpenDoctor }) => {
   const [activeTab, setActiveTab] = useState<'company' | 'labor' | 'visual' | 'assistant'>('company');
   const [showSuccessMsg, setShowSuccessMsg] = useState(false);
+  const [successMessageText, setSuccessMessageText] = useState('Registro guardado');
   const [isGeneratingPersonality, setIsGeneratingPersonality] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
@@ -74,6 +81,31 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
   // State for Roles Management
   const [editingRole, setEditingRole] = useState<RoleDefinition | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
+
+  // State for Employee Registration (Alta de Usuarios)
+  const initialEmployeeState = {
+    name: '', surname: '', dni: '',
+    email: '', phone: '',
+    address: '', city: '', zip: '', province: '',
+    roleId: '', 
+    jobTitle: '',
+    specialty: '', 
+    username: '', password: '',
+    avatar: 'https://i.pravatar.cc/150?u=new_user'
+  };
+  const [newEmployee, setNewEmployee] = useState(initialEmployeeState);
+  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
+  const [isDoctorRoleSelected, setIsDoctorRoleSelected] = useState(false);
+  const employeeAvatarRef = useRef<HTMLInputElement>(null);
+
+  // Check if selected role is a doctor
+  useEffect(() => {
+    const role = settings.roles.find(r => r.id === newEmployee.roleId);
+    // Simple logic: if role name contains "Médico" or "Facultativo" or ID contains "doctor"
+    const isDoc = role ? (role.name.toLowerCase().includes('médico') || role.name.toLowerCase().includes('facultativo') || role.id.includes('doctor')) : false;
+    setIsDoctorRoleSelected(isDoc);
+  }, [newEmployee.roleId, settings.roles]);
+
 
   // State for Labor Management (Definitions)
   const [newIncident, setNewIncident] = useState<Partial<LaborIncidentType>>({
@@ -170,8 +202,113 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
   };
 
   const handleGlobalSave = () => {
+    setSuccessMessageText('Configuración Maestra Guardada');
     setShowSuccessMsg(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => setShowSuccessMsg(false), 3000);
+  };
+
+  // --- Employee Registration Handlers ---
+  const handleEmployeeAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewEmployee(prev => ({ ...prev, avatar: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const validateEmployeeForm = () => {
+    const errors: {[key: string]: string} = {};
+    const { name, surname, dni, email, roleId, username, password, specialty, phone } = newEmployee;
+
+    if (!name.trim()) errors.name = "El nombre es obligatorio.";
+    if (!surname.trim()) errors.surname = "Los apellidos son obligatorios.";
+    if (!dni.trim()) errors.dni = "El DNI/NIE es obligatorio.";
+    
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim()) {
+        errors.email = "El email es obligatorio.";
+    } else if (!emailRegex.test(email)) {
+        errors.email = "Formato inválido. Debe contener '@' y un dominio.";
+    }
+
+    // Phone validation
+    const phoneRegex = /^[0-9+ ]{9,}$/;
+    if (phone && !phoneRegex.test(phone)) {
+        errors.phone = "Teléfono inválido. Mínimo 9 dígitos.";
+    }
+
+    if (!roleId) errors.roleId = "Debes asignar un rol al usuario.";
+    if (!username.trim()) errors.username = "El usuario de acceso es obligatorio.";
+    if (!password.trim()) errors.password = "La contraseña es obligatoria.";
+    
+    if (isDoctorRoleSelected && !specialty) {
+        errors.specialty = "La especialidad es obligatoria para roles médicos.";
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleCreateEmployee = () => {
+    if (!validateEmployeeForm()) {
+        // Scroll to top of the specific section if needed, or simply let the user see the red texts
+        return; 
+    }
+
+    const { name, surname, dni, email, roleId, username, password, specialty, avatar, jobTitle, phone } = newEmployee;
+    const fullName = `${name} ${surname}`;
+    const newId = `U${Math.floor(Math.random() * 10000)}`;
+
+    // 1. Create System User
+    const newUser: User = {
+      id: newId,
+      username: username,
+      name: fullName,
+      role: roleId,
+      img: avatar
+    };
+    setSystemUsers(prev => [...prev, newUser]);
+
+    // 2. If Doctor, Create Doctor Entry
+    if (isDoctorRoleSelected && setDoctors) {
+      const newDoctor: Doctor = {
+        id: `D${Math.floor(Math.random() * 10000)}`, // Distinct ID for doctor registry
+        name: fullName,
+        role: roleId,
+        specialty: specialty,
+        status: 'Active',
+        img: avatar,
+        branch: 'Centro', // Default
+        phone: phone,
+        corporateEmail: email,
+        docs: [],
+        schedule: {
+            'Lunes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+            'Martes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+            'Miércoles': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+            'Jueves': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+            'Viernes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '00:00', end: '00:00', active: false } }
+        },
+        vacationDaysTotal: 30,
+        vacationDaysTaken: 0,
+        vacationHistory: [],
+        attendanceHistory: [],
+        contractType: 'Indefinido',
+        hourlyRate: 0,
+      };
+      setDoctors(prev => [...prev, newDoctor]);
+    }
+
+    // 3. Reset and Notify
+    setNewEmployee(initialEmployeeState);
+    setFormErrors({});
+    setSuccessMessageText(`Usuario ${username} registrado con éxito en el sistema.`);
+    setShowSuccessMsg(true);
     setTimeout(() => setShowSuccessMsg(false), 3000);
   };
 
@@ -219,7 +356,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
     const newRole: RoleDefinition = {
       id: 'role_' + Math.random().toString(36).substr(2, 9),
       name: newRoleName,
-      isSystem: false,
+      isSystem: false, // Ensure false
       permissions: ['view_dashboard'] // Default permission
     };
     setSettings(prev => ({
@@ -231,19 +368,26 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
   };
 
   const handleDeleteRole = (id: string) => {
-    // Prevent system role deletion
-    const role = settings.roles.find(r => r.id === id);
-    if (role?.isSystem) {
+    const roleToDelete = settings.roles.find(r => r.id === id);
+    
+    if (!roleToDelete) return; // Role doesn't exist
+
+    if (roleToDelete.isSystem) {
         alert("Los roles de sistema no pueden ser eliminados.");
         return;
     }
 
-    if (window.confirm('¿Seguro que deseas eliminar este rol? Los usuarios asignados perderán sus permisos.')) {
+    if (window.confirm(`¿Estás seguro de que deseas eliminar el rol "${roleToDelete.name}"? Esta acción no se puede deshacer.`)) {
+      // 1. Clear editing if it's the one being deleted
+      if (editingRole?.id === id) {
+          setEditingRole(null);
+      }
+      
+      // 2. Update Settings
       setSettings(prev => ({
         ...prev,
         roles: prev.roles.filter(r => r.id !== id)
       }));
-      if (editingRole?.id === id) setEditingRole(null);
     }
   };
 
@@ -452,7 +596,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4">
            <div className="bg-success text-white px-8 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-black uppercase tracking-widest text-[10px]">
               <span className="material-symbols-outlined">check_circle</span>
-              {editingRecordId ? 'Registro actualizado' : 'Registro guardado y sincronizado'}
+              {editingRecordId ? 'Registro actualizado' : successMessageText}
            </div>
         </div>
       )}
@@ -495,6 +639,209 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                   <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={e => {const f = e.target.files?.[0]; if(f) {const r = new FileReader(); r.onload = (re) => setSettings({...settings, logo: re.target?.result as string}); r.readAsDataURL(f);}}} />
                </div>
             </div>
+          </section>
+
+          {/* NEW: ALTA DE EMPLEADOS Y USUARIOS */}
+          <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
+             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
+                <div className="size-12 rounded-xl bg-blue-500 text-white flex items-center justify-center"><span className="material-symbols-outlined">person_add</span></div>
+                <div>
+                   <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Alta de Usuarios y Empleados</h3>
+                   <p className="text-[10px] font-black text-primary uppercase tracking-widest">Registro detallado y credenciales de acceso</p>
+                </div>
+             </div>
+             
+             <div className="p-10 space-y-10">
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+                   
+                   {/* Col 1: Datos Personales e Identidad */}
+                   <div className="space-y-6">
+                      <div className="flex items-center gap-2 mb-2">
+                         <span className="size-2 bg-blue-500 rounded-full"></span>
+                         <h4 className="text-xs font-black uppercase text-slate-500 tracking-widest">Datos Personales</h4>
+                      </div>
+                      
+                      <div className="flex gap-4 items-center mb-6">
+                         <div className="relative group shrink-0">
+                            <div className="size-20 rounded-2xl bg-cover bg-center border-2 border-slate-200 dark:border-slate-700 shadow-md" style={{backgroundImage: `url('${newEmployee.avatar}')`}}>
+                               <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => employeeAvatarRef.current?.click()}>
+                                  <span className="material-symbols-outlined text-white">edit</span>
+                               </div>
+                            </div>
+                            <input type="file" ref={employeeAvatarRef} className="hidden" accept="image/*" onChange={handleEmployeeAvatarChange} />
+                         </div>
+                         <div className="flex-1 space-y-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase">Foto de Perfil</p>
+                            <button onClick={() => employeeAvatarRef.current?.click()} className="text-xs font-bold text-primary hover:underline">Subir imagen</button>
+                         </div>
+                      </div>
+
+                      <div className="space-y-4">
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre <span className="text-danger">*</span></label>
+                            <input type="text" value={newEmployee.name} onChange={e => setNewEmployee({...newEmployee, name: e.target.value})} className={`w-full bg-slate-50 dark:bg-bg-dark border ${formErrors.name ? 'border-danger' : 'border-slate-200 dark:border-slate-700'} rounded-xl px-4 py-3 text-sm font-bold`} />
+                            {formErrors.name && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.name}</span>}
+                         </div>
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Apellidos <span className="text-danger">*</span></label>
+                            <input type="text" value={newEmployee.surname} onChange={e => setNewEmployee({...newEmployee, surname: e.target.value})} className={`w-full bg-slate-50 dark:bg-bg-dark border ${formErrors.surname ? 'border-danger' : 'border-slate-200 dark:border-slate-700'} rounded-xl px-4 py-3 text-sm font-bold`} />
+                            {formErrors.surname && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.surname}</span>}
+                         </div>
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">DNI / NIE <span className="text-danger">*</span></label>
+                            <input type="text" value={newEmployee.dni} onChange={e => setNewEmployee({...newEmployee, dni: e.target.value})} className={`w-full bg-slate-50 dark:bg-bg-dark border ${formErrors.dni ? 'border-danger' : 'border-slate-200 dark:border-slate-700'} rounded-xl px-4 py-3 text-sm font-bold`} />
+                            {formErrors.dni && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.dni}</span>}
+                         </div>
+                      </div>
+                   </div>
+
+                   {/* Col 2: Dirección y Contacto */}
+                   <div className="space-y-6">
+                      <div className="flex items-center gap-2 mb-2">
+                         <span className="size-2 bg-purple-500 rounded-full"></span>
+                         <h4 className="text-xs font-black uppercase text-slate-500 tracking-widest">Ubicación y Contacto</h4>
+                      </div>
+                      
+                      <div className="space-y-4">
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Dirección Completa</label>
+                            <input type="text" placeholder="Calle, Número, Piso..." value={newEmployee.address} onChange={e => setNewEmployee({...newEmployee, address: e.target.value})} className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold" />
+                         </div>
+                         <div className="grid grid-cols-2 gap-4">
+                            <div>
+                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Código Postal</label>
+                               <input type="text" value={newEmployee.zip} onChange={e => setNewEmployee({...newEmployee, zip: e.target.value})} className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold" />
+                            </div>
+                            <div>
+                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Ciudad</label>
+                               <input type="text" value={newEmployee.city} onChange={e => setNewEmployee({...newEmployee, city: e.target.value})} className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold" />
+                            </div>
+                         </div>
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Provincia</label>
+                            <input type="text" value={newEmployee.province} onChange={e => setNewEmployee({...newEmployee, province: e.target.value})} className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold" />
+                         </div>
+                         <div className="grid grid-cols-2 gap-4 pt-2">
+                            <div>
+                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Email <span className="text-danger">*</span></label>
+                               <input type="email" value={newEmployee.email} onChange={e => setNewEmployee({...newEmployee, email: e.target.value})} className={`w-full bg-slate-50 dark:bg-bg-dark border ${formErrors.email ? 'border-danger' : 'border-slate-200 dark:border-slate-700'} rounded-xl px-4 py-3 text-sm font-bold`} />
+                               {formErrors.email && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.email}</span>}
+                            </div>
+                            <div>
+                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono</label>
+                               <input type="tel" value={newEmployee.phone} onChange={e => setNewEmployee({...newEmployee, phone: e.target.value})} className={`w-full bg-slate-50 dark:bg-bg-dark border ${formErrors.phone ? 'border-danger' : 'border-slate-200 dark:border-slate-700'} rounded-xl px-4 py-3 text-sm font-bold`} />
+                               {formErrors.phone && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.phone}</span>}
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+
+                   {/* Col 3: Rol, Cargo y Acceso */}
+                   <div className="space-y-6">
+                      <div className="flex items-center gap-2 mb-2">
+                         <span className="size-2 bg-success rounded-full"></span>
+                         <h4 className="text-xs font-black uppercase text-slate-500 tracking-widest">Rol y Credenciales</h4>
+                      </div>
+
+                      <div className="space-y-4 bg-slate-50 dark:bg-slate-900/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-800">
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Cargo / Puesto</label>
+                            <input type="text" placeholder="Ej: Recepcionista Senior" value={newEmployee.jobTitle} onChange={e => setNewEmployee({...newEmployee, jobTitle: e.target.value})} className="w-full bg-white dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold" />
+                         </div>
+                         
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Asignar Rol de Sistema <span className="text-danger">*</span></label>
+                            <div className="relative">
+                               <select 
+                                  value={newEmployee.roleId} 
+                                  onChange={e => setNewEmployee({...newEmployee, roleId: e.target.value})}
+                                  className={`w-full bg-white dark:bg-bg-dark border ${formErrors.roleId ? 'border-danger' : 'border-slate-200 dark:border-slate-700'} rounded-xl px-4 py-3 text-sm font-bold appearance-none cursor-pointer`}
+                               >
+                                  <option value="">-- Seleccionar Rol --</option>
+                                  {settings.roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                               </select>
+                               <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 pointer-events-none">expand_more</span>
+                            </div>
+                            {formErrors.roleId && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.roleId}</span>}
+                         </div>
+
+                         {/* DYNAMIC DOCTOR FIELD */}
+                         {isDoctorRoleSelected && (
+                            <div className="animate-in slide-in-from-top-2 fade-in">
+                               <label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Especialidad Médica <span className="text-danger">*</span></label>
+                               <div className="relative">
+                                  <select 
+                                     value={newEmployee.specialty} 
+                                     onChange={e => setNewEmployee({...newEmployee, specialty: e.target.value})}
+                                     className={`w-full bg-white dark:bg-bg-dark border-2 ${formErrors.specialty ? 'border-danger' : 'border-primary/20'} rounded-xl px-4 py-3 text-sm font-bold appearance-none cursor-pointer text-primary`}
+                                  >
+                                     <option value="">-- Seleccionar Especialidad --</option>
+                                     {MEDICAL_SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                  <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-primary pointer-events-none">medical_services</span>
+                               </div>
+                               {formErrors.specialty && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.specialty}</span>}
+                            </div>
+                         )}
+                      </div>
+
+                      <div className="space-y-4 pt-2">
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Usuario de Acceso <span className="text-danger">*</span></label>
+                            <input type="text" value={newEmployee.username} onChange={e => setNewEmployee({...newEmployee, username: e.target.value})} className={`w-full bg-slate-50 dark:bg-bg-dark border ${formErrors.username ? 'border-danger' : 'border-slate-200 dark:border-slate-700'} rounded-xl px-4 py-3 text-sm font-bold`} />
+                            {formErrors.username && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.username}</span>}
+                         </div>
+                         <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña (Segura) <span className="text-danger">*</span></label>
+                            <input type="password" value={newEmployee.password} onChange={e => setNewEmployee({...newEmployee, password: e.target.value})} className={`w-full bg-slate-50 dark:bg-bg-dark border ${formErrors.password ? 'border-danger' : 'border-slate-200 dark:border-slate-700'} rounded-xl px-4 py-3 text-sm font-bold tracking-widest`} />
+                            {formErrors.password && <span className="text-danger text-[9px] font-bold ml-1">{formErrors.password}</span>}
+                         </div>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="flex justify-end pt-6 border-t border-slate-100 dark:border-slate-800">
+                   <button onClick={handleCreateEmployee} className="h-16 px-12 bg-blue-600 text-white rounded-[2rem] font-black uppercase tracking-widest hover:bg-blue-700 hover:scale-105 transition-all shadow-xl shadow-blue-500/30 flex items-center gap-3">
+                      <span className="material-symbols-outlined text-2xl">save</span> Guardar y Registrar
+                   </button>
+                </div>
+
+                {/* --- REGISTERED USERS LIST (VISUAL CONFIRMATION) --- */}
+                <div className="pt-10">
+                   <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">Directorio de Usuarios Registrados</h4>
+                   <div className="bg-slate-50/50 dark:bg-bg-dark/30 rounded-[2rem] border border-slate-100 dark:border-slate-800 overflow-hidden">
+                      <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                         <table className="w-full text-left">
+                            <thead className="bg-white dark:bg-surface-dark sticky top-0 z-10">
+                               <tr>
+                                  <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Usuario</th>
+                                  <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Nombre Completo</th>
+                                  <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Rol Asignado</th>
+                               </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                               {systemUsers.map(u => (
+                                  <tr key={u.id} className="hover:bg-white dark:hover:bg-surface-dark transition-colors">
+                                     <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                           <div className="size-8 rounded-full bg-cover bg-center border border-slate-200 dark:border-slate-700" style={{backgroundImage: `url('${u.img}')`}}></div>
+                                           <span className="text-xs font-bold text-slate-600 dark:text-slate-300">@{u.username}</span>
+                                        </div>
+                                     </td>
+                                     <td className="px-6 py-4 text-xs font-black text-slate-800 dark:text-white uppercase">{u.name}</td>
+                                     <td className="px-6 py-4">
+                                        <span className="px-2 py-1 bg-slate-200 dark:bg-slate-800 rounded-lg text-[9px] font-bold text-slate-500 uppercase">
+                                           {settings.roles.find(r => r.id === u.role)?.name || 'Sin Rol'}
+                                        </span>
+                                     </td>
+                                  </tr>
+                               ))}
+                            </tbody>
+                         </table>
+                      </div>
+                   </div>
+                </div>
+             </div>
           </section>
 
           {/* RBAC SECTION REDESIGNED */}
@@ -546,7 +893,11 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                             </div>
                             {!editingRole.isSystem && (
                                 <button 
-                                    onClick={() => handleDeleteRole(editingRole.id)}
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteRole(editingRole.id);
+                                    }}
                                     className="px-6 py-2.5 bg-danger/10 text-danger rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-danger hover:text-white transition-all shadow-sm"
                                 >
                                     <span className="material-symbols-outlined text-sm">delete</span> Eliminar Rol
