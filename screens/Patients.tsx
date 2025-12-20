@@ -44,6 +44,8 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
   const [isCreating, setIsCreating] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [viewingDoc, setViewingDoc] = useState<FileAttachment | null>(null);
   
   const initialNewPatient: Partial<Patient> = {
     name: '', gender: 'Masculino', birthDate: new Date().toISOString().split('T')[0], identityDocument: '', phone: '', email: '', address: '', medicalHistory: '', img: FLAT_ICON_MALE, allergies: [], attachments: [], savedReports: [], history: [], weight: '', height: '', bloodType: 'A+', associatedDoctorId: team[0]?.id || ''
@@ -130,6 +132,12 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
     setNewPatient(initialNewPatient);
   };
 
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
   // --- GESTIÓN DE ARCHIVOS ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -146,7 +154,21 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
       const updatedAttachments = [newFile, ...(editData.attachments || [])];
       setEditData({ ...editData, attachments: updatedAttachments });
       setPatients(prev => prev.map(p => p.id === editData.id ? { ...p, attachments: updatedAttachments } : p));
+      triggerToast("Archivo subido correctamente");
     }
+  };
+
+  const handleEmailFile = (file: FileAttachment) => {
+    if (!editData.email) {
+      alert("Este paciente no tiene un email configurado.");
+      return;
+    }
+    const subject = encodeURIComponent(`Documento: ${file.name} - ${clinicSettings.name}`);
+    const body = encodeURIComponent(`Estimado/a ${editData.name},\n\nAdjunto le remitimos el documento "${file.name}" solicitado.\n\nAtentamente,\nEl equipo de ${clinicSettings.name}`);
+    
+    // Abrir cliente de correo
+    window.location.href = `mailto:${editData.email}?subject=${subject}&body=${body}`;
+    triggerToast(`Abriendo correo para enviar a ${editData.email}`);
   };
 
   // --- FUNCIONALIDADES IA ---
@@ -223,9 +245,7 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
     setEditData({ ...editData, attachments: updatedAttachments });
     setPatients(prev => prev.map(p => p.id === editData.id ? { ...p, attachments: updatedAttachments } : p));
     
-    // Mostrar Toast de confirmación
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+    triggerToast("Informe guardado en archivos");
   };
 
   const printReport = () => {
@@ -288,8 +308,7 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
                 <span className="material-symbols-outlined text-xl font-bold">check</span>
               </div>
               <div>
-                <p className="font-bold text-sm">Informe guardado en archivos</p>
-                <p className="text-[10px] text-slate-300 uppercase tracking-widest mt-0.5">Consultable en pestaña 'Docs'</p>
+                <p className="font-bold text-sm">{toastMessage}</p>
               </div>
            </div>
         </div>
@@ -456,7 +475,19 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
                                             <p className="text-[11px] text-slate-400 font-black uppercase mt-1 tracking-widest">{file.date} • {file.size}</p>
                                             {file.isAiGenerated && <span className="inline-block mt-1 px-2 py-0.5 bg-primary/10 text-primary text-[9px] font-black uppercase rounded-lg">Generado por IA</span>}
                                         </div>
-                                        <a href={file.url} download={file.name} className="size-12 rounded-2xl bg-slate-50 dark:bg-slate-800 hover:bg-primary hover:text-white transition-all flex items-center justify-center text-slate-400 shadow-sm"><span className="material-symbols-outlined text-2xl">download</span></a>
+                                        <div className="flex flex-col gap-2">
+                                           <div className="flex gap-2">
+                                              <button onClick={() => setViewingDoc(file)} className="size-10 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all flex items-center justify-center text-slate-400 shadow-sm" title="Ver documento">
+                                                <span className="material-symbols-outlined text-xl">visibility</span>
+                                              </button>
+                                              <a href={file.url} download={file.name} className="size-10 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-primary hover:text-white transition-all flex items-center justify-center text-slate-400 shadow-sm" title="Descargar">
+                                                <span className="material-symbols-outlined text-xl">download</span>
+                                              </a>
+                                           </div>
+                                           <button onClick={() => handleEmailFile(file)} className="w-full py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all flex items-center justify-center text-[10px] font-black uppercase shadow-sm gap-1" title="Enviar por correo">
+                                             <span className="material-symbols-outlined text-sm">mail</span> Email
+                                           </button>
+                                        </div>
                                     </div>
                                 ))}
                                 {(!editData.attachments || editData.attachments.length === 0) && (
@@ -612,6 +643,21 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
                 </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* MODAL DE PREVISUALIZACIÓN DE DOCUMENTOS */}
+      {viewingDoc && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-xl animate-in fade-in duration-300">
+           <div className="bg-white dark:bg-surface-dark w-full max-w-5xl h-[85vh] rounded-[3.5rem] overflow-hidden flex flex-col relative shadow-[0_40px_100px_rgba(0,0,0,0.5)] border border-white/20">
+              <header className="px-10 py-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
+                 <div className="flex items-center gap-4"><span className="material-symbols-outlined text-primary text-3xl">description</span><h3 className="font-black text-lg uppercase tracking-tight text-slate-800 dark:text-white">{viewingDoc.name}</h3></div>
+                 <button onClick={() => setViewingDoc(null)} className="size-12 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 transition-colors"><span className="material-symbols-outlined text-4xl">close</span></button>
+              </header>
+              <div className="flex-1 bg-slate-100 dark:bg-bg-dark flex items-center justify-center overflow-hidden">
+                 {viewingDoc.type.includes('image') ? <img src={viewingDoc.url} alt={viewingDoc.name} className="max-w-full max-h-full object-contain shadow-2xl" /> : <iframe src={viewingDoc.url} className="w-full h-full border-none bg-white" title={viewingDoc.name}></iframe>}
+              </div>
+           </div>
         </div>
       )}
 

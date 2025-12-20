@@ -157,7 +157,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
 
   const handleSaveProfile = () => {
     if (editDocData && setDoctors) {
-      // Validaciones al guardar cambios en perfil
       const missing = [];
       if (!editDocData.name?.trim()) missing.push("Nombre");
       if (!editDocData.specialty?.trim()) missing.push("Especialidad");
@@ -177,7 +176,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
   const handleCreateDoctor = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validación detallada con alertas
     const missing = [];
     if (!newDocData.name?.trim()) missing.push("Nombre y Apellidos");
     if (!newDocData.specialty?.trim()) missing.push("Especialidad Clínica");
@@ -196,7 +194,6 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
       
       setDoctors(prev => [...prev, doctorToAdd]);
       setIsCreating(false);
-      // Reset form
       setNewDocData({
         id: '',
         name: '',
@@ -253,6 +250,16 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
         setNewDocData({ ...newDocData, docs: [...(newDocData.docs || []), newDoc] });
       }
     }
+  };
+  
+  const handleEmailDoc = (file: FileAttachment) => {
+    if (!editDocData?.corporateEmail) {
+      alert("Este médico no tiene un email corporativo configurado.");
+      return;
+    }
+    const subject = encodeURIComponent(`Documento Corporativo: ${file.name}`);
+    const body = encodeURIComponent(`Estimado/a ${editDocData.name},\n\nAdjunto le remitimos el documento "${file.name}" asociado a su expediente.\n\nAtentamente,\nRecursos Humanos`);
+    window.location.href = `mailto:${editDocData.corporateEmail}?subject=${subject}&body=${body}`;
   };
 
   const handleAddAttendance = () => {
@@ -483,7 +490,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                         <span className="material-symbols-outlined text-2xl">{t.icon}</span> {t.label}
                       </button>
                     ))}
-                 </nav>
+                 </div>
 
                  <div className="flex-1 overflow-y-auto p-12 custom-scrollbar space-y-12 bg-transparent">
                     
@@ -734,15 +741,20 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
                                     <p className="text-base font-black truncate text-slate-800 dark:text-white leading-tight">{file.name}</p>
                                     <p className="text-[11px] text-slate-400 font-black uppercase mt-1 tracking-widest">{file.date} • {file.size}</p>
                                  </div>
-                                 <div className="flex items-center gap-3">
-                                    <button onClick={() => setViewingDoc(file)} className="size-12 rounded-2xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all flex items-center justify-center text-slate-400" title="Previsualizar"><span className="material-symbols-outlined text-2xl">visibility</span></button>
-                                    <a href={file.url} download={file.name} className="size-12 rounded-2xl bg-slate-50 dark:bg-slate-800 hover:bg-primary hover:text-white transition-all flex items-center justify-center text-slate-400 shadow-sm" title="Descargar"><span className="material-symbols-outlined text-2xl">download</span></a>
-                                    {isEditing && <button onClick={() => setEditDocData({...editDocData, docs: editDocData.docs.filter(d => d.id !== file.id)})} className="size-12 rounded-2xl bg-danger/10 text-danger hover:bg-danger hover:text-white transition-all flex items-center justify-center shadow-sm" title="Eliminar"><span className="material-symbols-outlined text-2xl">delete</span></button>}
+                                 <div className="flex flex-col gap-2">
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setViewingDoc(file)} className="size-10 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all flex items-center justify-center text-slate-400 shadow-sm" title="Ver documento"><span className="material-symbols-outlined text-xl">visibility</span></button>
+                                        <a href={file.url} download={file.name} className="size-10 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-primary hover:text-white transition-all flex items-center justify-center text-slate-400 shadow-sm" title="Descargar"><span className="material-symbols-outlined text-xl">download</span></a>
+                                        {isEditing && <button onClick={() => setEditDocData({...editDocData, docs: editDocData.docs.filter(d => d.id !== file.id)})} className="size-10 rounded-xl bg-danger/10 text-danger hover:bg-danger hover:text-white transition-all flex items-center justify-center shadow-sm" title="Eliminar"><span className="material-symbols-outlined text-xl">delete</span></button>}
+                                    </div>
+                                    <button onClick={() => handleEmailDoc(file)} className="w-full py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all flex items-center justify-center text-[10px] font-black uppercase shadow-sm gap-1" title="Enviar por correo">
+                                       <span className="material-symbols-outlined text-sm">mail</span> Email
+                                    </button>
                                  </div>
                               </div>
                             ))}
                             {(!editDocData.docs || editDocData.docs.length === 0) && (
-                              <div className="col-span-2 py-24 flex flex-col items-center gap-6 opacity-30 italic">
+                              <div className="col-span-2 py-24 flex flex-col items-center gap-6 opacity-30 italic text-center">
                                 <span className="material-symbols-outlined text-8xl">folder_open</span>
                                 <p className="font-black text-xl uppercase tracking-widest">Sin archivos digitalizados</p>
                               </div>
