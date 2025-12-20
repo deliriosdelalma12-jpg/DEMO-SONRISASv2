@@ -10,7 +10,9 @@ import HRManagement from './screens/HRManagement';
 import Settings from './screens/Settings';
 import Layout from './components/Layout';
 import VoiceAssistant from './components/VoiceAssistant';
-import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate, Task } from './types';
+import DoctorDetailModal from './components/DoctorDetailModal';
+import PatientDetailModal from './components/PatientDetailModal';
+import { Appointment, Patient, Doctor, User, ClinicSettings, ColorTemplate, Task, RoleDefinition } from './types';
 
 export const COLOR_TEMPLATES: ColorTemplate[] = [
   { id: 'ocean', name: 'Océano', primary: '#3b82f6', dark: '#1d4ed8', light: '#dbeafe' },
@@ -20,11 +22,33 @@ export const COLOR_TEMPLATES: ColorTemplate[] = [
   { id: 'coal', name: 'Carbón', primary: '#475569', dark: '#1e293b', light: '#f1f5f9' },
 ];
 
-// --- DATOS MOCK INICIALES ---
+// --- ROLES INICIALES ---
+const INITIAL_ROLES: RoleDefinition[] = [
+  {
+    id: 'admin_role',
+    name: 'Administrador Global',
+    isSystem: true,
+    permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'view_doctors', 'view_hr', 'view_metrics', 'view_settings', 'view_all_data', 'can_edit']
+  },
+  {
+    id: 'doctor_role',
+    name: 'Facultativo (Médico)',
+    isSystem: false,
+    permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'can_edit'] 
+  },
+  {
+    id: 'reception_role',
+    name: 'Recepción',
+    isSystem: false,
+    permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'view_all_data', 'can_edit'] 
+  }
+];
 
+// --- DATOS MOCK INICIALES (Doctors, Patients, etc...) ---
+// (Keeping original mock data for brevity, assuming it exists in same structure)
 const INITIAL_DOCTORS: Doctor[] = [
   {
-    id: 'D1', name: 'Dra. Ana Torres', role: 'Doctor', specialty: 'Ortodoncia', status: 'Active',
+    id: 'D1', name: 'Dra. Ana Torres', role: 'doctor_role', specialty: 'Ortodoncia', status: 'Active',
     img: 'https://img.freepik.com/foto-gratis/mujer-doctora-vistiendo-bata-laboratorio-estetoscopio-aislado_1303-29791.jpg',
     branch: 'Centro', phone: '600 111 222', corporateEmail: 'ana.torres@mediclinic.com', docs: [],
     vacationDaysTotal: 30, vacationDaysTaken: 5,
@@ -39,7 +63,7 @@ const INITIAL_DOCTORS: Doctor[] = [
     }
   },
   {
-    id: 'D2', name: 'Dr. Carlos Ruiz', role: 'Doctor', specialty: 'Implantología', status: 'Active',
+    id: 'D2', name: 'Dr. Carlos Ruiz', role: 'doctor_role', specialty: 'Implantología', status: 'Active',
     img: 'https://img.freepik.com/foto-gratis/doctor-sonriente-con-estetoscopio_1154-255.jpg',
     branch: 'Norte', phone: '600 333 444', corporateEmail: 'carlos.ruiz@mediclinic.com', docs: [],
     vacationDaysTotal: 30, vacationDaysTaken: 12,
@@ -49,7 +73,7 @@ const INITIAL_DOCTORS: Doctor[] = [
     attendanceHistory: []
   },
   {
-    id: 'D3', name: 'Dra. Sofia Mendez', role: 'Doctor', specialty: 'Odontopediatría', status: 'Vacation',
+    id: 'D3', name: 'Dra. Sofia Mendez', role: 'doctor_role', specialty: 'Odontopediatría', status: 'Vacation',
     img: 'https://img.freepik.com/foto-gratis/enfermera-joven-hispana-uniforme-medico-estetoscopio-sobre-fondo-amarillo-mirando-hacia-lado-sonrisa-natural-cara-risa-segura_141793-128229.jpg',
     branch: 'Sur', phone: '600 555 666', corporateEmail: 'sofia.mendez@mediclinic.com', docs: [],
     vacationDaysTotal: 22, vacationDaysTaken: 22,
@@ -59,7 +83,7 @@ const INITIAL_DOCTORS: Doctor[] = [
     attendanceHistory: []
   },
   {
-    id: 'D4', name: 'Dr. Javier Costa', role: 'Doctor', specialty: 'Cirugía Maxilofacial', status: 'Active',
+    id: 'D4', name: 'Dr. Javier Costa', role: 'doctor_role', specialty: 'Cirugía Maxilofacial', status: 'Active',
     img: 'https://img.freepik.com/foto-gratis/retrato-hombre-sonriente-trabajador-hospital_23-2148858880.jpg',
     branch: 'Centro', phone: '600 777 888', corporateEmail: 'javier.costa@mediclinic.com', docs: [],
     vacationDaysTotal: 30, vacationDaysTaken: 0,
@@ -120,6 +144,10 @@ const App: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
 
+  // --- GLOBAL MODAL STATE ---
+  const [viewingDoctor, setViewingDoctor] = useState<Doctor | null>(null);
+  const [viewingPatient, setViewingPatient] = useState<Patient | null>(null);
+
   const [settings, setSettings] = useState<ClinicSettings>({
     name: "MediClinic Premium",
     logo: "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/hospital.svg",
@@ -128,6 +156,7 @@ const App: React.FC = () => {
     address: "Madrid, España",
     currency: "€",
     language: "es-ES",
+    roles: INITIAL_ROLES, 
     services: [
       { id: 'S1', name: 'Limpieza Dental', price: 65, duration: 45 },
       { id: 'S2', name: 'Consulta General', price: 50, duration: 30 },
@@ -175,6 +204,49 @@ const App: React.FC = () => {
 
   const [darkMode, setDarkMode] = useState(settings.defaultTheme === 'dark');
 
+  // --- SYSTEM USERS STATE ---
+  const adminUser: User = { id: 'U1', username: 'admin', name: 'Dr. Administrador', role: 'admin_role', img: 'https://i.pravatar.cc/150?u=admin' };
+  
+  const [systemUsers, setSystemUsers] = useState<User[]>([
+    adminUser,
+    ...INITIAL_DOCTORS.map(d => ({
+        id: d.id,
+        username: d.corporateEmail.split('@')[0],
+        name: d.name,
+        role: d.role,
+        img: d.img
+    }))
+  ]);
+
+  // Sync System Users and Doctors
+  useEffect(() => {
+    setSystemUsers(prev => {
+      const currentUsersMap = new Map<string, User>(prev.map(u => [u.id, u]));
+      const admin = currentUsersMap.get('U1') || adminUser;
+      const newUsersList: User[] = [admin];
+
+      doctors.forEach(doc => {
+        const existing = currentUsersMap.get(doc.id);
+        if (existing) {
+          const userToUpdate: User = existing;
+          newUsersList.push({ ...userToUpdate, role: doc.role, name: doc.name, img: doc.img });
+        } else {
+          newUsersList.push({
+            id: doc.id,
+            username: doc.corporateEmail.split('@')[0] || doc.name.replace(/\s+/g, '').toLowerCase(),
+            name: doc.name,
+            role: doc.role || 'doctor_role',
+            img: doc.img
+          });
+        }
+      });
+      return newUsersList;
+    });
+  }, [doctors]);
+
+  const [currentUserId, setCurrentUserId] = useState('U1'); 
+  const currentUser = systemUsers.find(u => u.id === currentUserId) || adminUser;
+
   useEffect(() => {
     const template = COLOR_TEMPLATES.find(t => t.id === settings.colorTemplate) || COLOR_TEMPLATES[0];
     const root = document.documentElement;
@@ -190,9 +262,25 @@ const App: React.FC = () => {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  const currentUser: User = {
-    id: 'U1', username: 'admin', name: 'Dr. Administrador', role: 'Admin',
-    img: 'https://i.pravatar.cc/150?u=admin'
+  // --- HANDLERS FOR GLOBAL MODALS ---
+  const handleOpenDoctor = (doctorId: string) => {
+    const doc = doctors.find(d => d.id === doctorId);
+    if (doc) setViewingDoctor(doc);
+  };
+
+  const handleOpenPatient = (patientId: string) => {
+    const pat = patients.find(p => p.id === patientId);
+    if (pat) setViewingPatient(pat);
+  };
+
+  const handleSaveGlobalDoctor = (updatedDoc: Doctor) => {
+    setDoctors(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+    setViewingDoctor(updatedDoc); // Keep modal open with fresh data or close? User said "close window -> maintain window I was viewing". This updates the data.
+  };
+
+  const handleSaveGlobalPatient = (updatedPat: Patient) => {
+    setPatients(prev => prev.map(p => p.id === updatedPat.id ? updatedPat : p));
+    setViewingPatient(updatedPat);
   };
 
   return (
@@ -203,17 +291,54 @@ const App: React.FC = () => {
         currentUser={currentUser} 
         settings={settings}
         onOpenVoiceAssistant={() => setIsVoiceOpen(true)}
+        onOpenCurrentProfile={() => handleOpenDoctor(currentUser.id)}
       >
         <Routes>
-          <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} />} />
+          <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={currentUser} />} />
           <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} />} />
           <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={currentUser} team={doctors} />} />
           <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
           <Route path="/hr" element={<HRManagement doctors={doctors} setDoctors={setDoctors} />} />
           <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} />} />
-          <Route path="/settings" element={<Settings settings={settings} setSettings={setSettings} onToggleTheme={() => setDarkMode(!darkMode)} darkMode={darkMode} systemUsers={[currentUser]} setSystemUsers={() => {}} doctors={doctors} setDoctors={setDoctors} />} />
+          <Route 
+            path="/settings" 
+            element={
+              <Settings 
+                settings={settings} 
+                setSettings={setSettings} 
+                onToggleTheme={() => setDarkMode(!darkMode)} 
+                darkMode={darkMode} 
+                systemUsers={systemUsers} 
+                setSystemUsers={setSystemUsers} 
+                doctors={doctors} 
+                setDoctors={setDoctors} 
+                onOpenDoctor={handleOpenDoctor} // Pass handler
+              />
+            } 
+          />
         </Routes>
       </Layout>
+
+      {/* GLOBAL MODALS OVERLAY */}
+      {viewingDoctor && (
+        <DoctorDetailModal 
+          doctor={viewingDoctor} 
+          appointments={appointments}
+          onClose={() => setViewingDoctor(null)}
+          onSave={handleSaveGlobalDoctor}
+        />
+      )}
+
+      {viewingPatient && (
+        <PatientDetailModal
+          patient={viewingPatient}
+          clinicSettings={settings}
+          team={doctors}
+          onClose={() => setViewingPatient(null)}
+          onSave={handleSaveGlobalPatient}
+          onOpenDoctor={handleOpenDoctor}
+        />
+      )}
 
       {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} />}
     </HashRouter>

@@ -1,8 +1,9 @@
 
 import React, { useState, useRef, useMemo } from 'react';
-import { ClinicSettings, User, ClinicService, FileAttachment, VoiceAccent, AppLanguage, AppLabels, LaborIncidentType, Doctor, AttendanceRecord, VacationRequest } from '../types';
+import { ClinicSettings, User, ClinicService, FileAttachment, VoiceAccent, AppLanguage, AppLabels, LaborIncidentType, Doctor, AttendanceRecord, VacationRequest, RoleDefinition, PermissionId } from '../types';
 import { COLOR_TEMPLATES } from '../App';
 import { generatePersonalityPrompt, speakText } from '../services/gemini';
+// import { useNavigate } from 'react-router-dom'; // REMOVED to prevent navigation
 
 interface SettingsProps {
   settings: ClinicSettings;
@@ -13,6 +14,7 @@ interface SettingsProps {
   setSystemUsers: React.Dispatch<React.SetStateAction<User[]>>;
   doctors?: Doctor[];
   setDoctors?: React.Dispatch<React.SetStateAction<Doctor[]>>;
+  onOpenDoctor?: (doctorId: string) => void; // New Prop
 }
 
 const PERSONALITY_TAGS = {
@@ -44,17 +46,34 @@ const GREETING_PILLS = [
   "Central de {clinic}, habla {name}. Dígame."
 ];
 
-const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleTheme, darkMode, doctors, setDoctors }) => {
+const AVAILABLE_PERMISSIONS: {id: PermissionId, label: string, group: string}[] = [
+  { id: 'view_dashboard', label: 'Ver Panel Principal', group: 'Navegación' },
+  { id: 'view_agenda', label: 'Ver Agenda', group: 'Navegación' },
+  { id: 'view_patients', label: 'Ver Pacientes', group: 'Navegación' },
+  { id: 'view_doctors', label: 'Ver Médicos', group: 'Navegación' },
+  { id: 'view_hr', label: 'Ver RRHH', group: 'Navegación' },
+  { id: 'view_metrics', label: 'Ver Métricas', group: 'Navegación' },
+  { id: 'view_settings', label: 'Ver Configuración', group: 'Navegación' },
+  { id: 'view_all_data', label: 'Ver Datos Globales (Filtro)', group: 'Datos' },
+  { id: 'can_edit', label: 'Permiso de Edición', group: 'Acciones' },
+];
+
+const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleTheme, darkMode, systemUsers, setSystemUsers, doctors, setDoctors, onOpenDoctor }) => {
   const [activeTab, setActiveTab] = useState<'company' | 'labor' | 'visual' | 'assistant'>('company');
   const [showSuccessMsg, setShowSuccessMsg] = useState(false);
   const [isGeneratingPersonality, setIsGeneratingPersonality] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
+  // const navigate = useNavigate(); // REMOVED
   
   // State for Service Management
   const [newServiceName, setNewServiceName] = useState('');
   const [newServicePrice, setNewServicePrice] = useState<string>('');
   const [newServiceDuration, setNewServiceDuration] = useState<string>('30');
+
+  // State for Roles Management
+  const [editingRole, setEditingRole] = useState<RoleDefinition | null>(null);
+  const [newRoleName, setNewRoleName] = useState('');
 
   // State for Labor Management (Definitions)
   const [newIncident, setNewIncident] = useState<Partial<LaborIncidentType>>({
@@ -192,6 +211,66 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
       aiPhoneSettings: { ...prev.aiPhoneSettings, initialGreeting: processed }
     }));
   };
+
+  // --- Roles & Permissions Handlers ---
+
+  const handleCreateRole = () => {
+    if (!newRoleName.trim()) return;
+    const newRole: RoleDefinition = {
+      id: 'role_' + Math.random().toString(36).substr(2, 9),
+      name: newRoleName,
+      isSystem: false,
+      permissions: ['view_dashboard'] // Default permission
+    };
+    setSettings(prev => ({
+      ...prev,
+      roles: [...prev.roles, newRole]
+    }));
+    setNewRoleName('');
+    setEditingRole(newRole);
+  };
+
+  const handleDeleteRole = (id: string) => {
+    // Prevent system role deletion
+    const role = settings.roles.find(r => r.id === id);
+    if (role?.isSystem) {
+        alert("Los roles de sistema no pueden ser eliminados.");
+        return;
+    }
+
+    if (window.confirm('¿Seguro que deseas eliminar este rol? Los usuarios asignados perderán sus permisos.')) {
+      setSettings(prev => ({
+        ...prev,
+        roles: prev.roles.filter(r => r.id !== id)
+      }));
+      if (editingRole?.id === id) setEditingRole(null);
+    }
+  };
+
+  const togglePermission = (permId: PermissionId) => {
+    if (!editingRole) return;
+    const hasPerm = editingRole.permissions.includes(permId);
+    const updatedPerms = hasPerm 
+      ? editingRole.permissions.filter(p => p !== permId)
+      : [...editingRole.permissions, permId];
+    
+    const updatedRole = { ...editingRole, permissions: updatedPerms };
+    setEditingRole(updatedRole);
+    setSettings(prev => ({
+      ...prev,
+      roles: prev.roles.map(r => r.id === editingRole.id ? updatedRole : r)
+    }));
+  };
+
+  const updateUserRole = (userId: string, newRoleId: string) => {
+    setSystemUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRoleId } : u));
+    
+    // Also update doctor record if applicable
+    if (setDoctors) {
+        setDoctors(prev => prev.map(d => d.id === userId ? { ...d, role: newRoleId } : d));
+    }
+  };
+
 
   // --- Labor Settings Handlers ---
   const addIncidentType = () => {
@@ -355,6 +434,17 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
       });
   };
 
+  // HANDLER PARA CLICK EN AVATAR (DEEP LINK / GLOBAL MODAL)
+  const handleUserClick = (userId: string) => {
+      // Use the injected onOpenDoctor prop if available
+      if (onOpenDoctor) {
+          const isDoctor = doctors?.some(d => d.id === userId);
+          if (isDoctor) {
+              onOpenDoctor(userId);
+          }
+      }
+  };
+
   return (
     <div className="p-10 max-w-[1400px] mx-auto space-y-12 animate-in fade-in duration-500 pb-32">
       
@@ -386,7 +476,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         </div>
       </header>
 
-      {/* ... (TABS COMPANY, VISUAL, ASSISTANT IGUALES) ... */}
+      {/* ... TABS Logic ... */}
       {activeTab === 'company' && (
         <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-left-4 duration-500">
           <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
@@ -406,6 +496,136 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                </div>
             </div>
           </section>
+
+          {/* RBAC SECTION REDESIGNED */}
+          <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
+             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
+                <div className="size-12 rounded-xl bg-purple-500 text-white flex items-center justify-center"><span className="material-symbols-outlined">shield_person</span></div>
+                <div>
+                   <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Gestión de Roles y Permisos</h3>
+                   <p className="text-[10px] font-black text-primary uppercase tracking-widest">Control de acceso avanzado</p>
+                </div>
+             </div>
+
+             <div className="flex flex-col xl:flex-row divide-y xl:divide-y-0 xl:divide-x divide-slate-100 dark:divide-slate-800">
+                {/* ROLE EDITOR COLUMN */}
+                <div className="p-10 flex-[1.5] space-y-10">
+                   {/* Create Role Input */}
+                   <div className="flex items-end gap-4 p-6 bg-slate-50 dark:bg-bg-dark rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                      <div className="flex-1">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Crear Nuevo Rol</label>
+                         <input type="text" placeholder="Ej: Auxiliar Administrativo" value={newRoleName} onChange={e => setNewRoleName(e.target.value)} className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-6 py-4 text-sm font-bold shadow-sm" />
+                      </div>
+                      <button onClick={handleCreateRole} className="h-14 px-8 bg-purple-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-lg shadow-purple-500/20">Crear</button>
+                   </div>
+
+                   {/* Role Selection List */}
+                   <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block">Seleccionar Rol para Editar</label>
+                      <div className="flex flex-wrap gap-3">
+                         {settings.roles.map(role => (
+                            <button 
+                               key={role.id} 
+                               onClick={() => setEditingRole(role)}
+                               className={`px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wide border-2 transition-all flex items-center gap-3 ${editingRole?.id === role.id ? 'bg-purple-500 border-purple-500 text-white shadow-md transform scale-105' : 'bg-white dark:bg-surface-dark border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-purple-300'}`}
+                            >
+                               {role.name}
+                               {role.isSystem && <span className="material-symbols-outlined text-[14px] opacity-60">lock</span>}
+                            </button>
+                         ))}
+                      </div>
+                   </div>
+
+                   {/* Permissions Editor */}
+                   {editingRole && (
+                      <div className="bg-slate-50 dark:bg-bg-dark p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 animate-in fade-in slide-in-from-top-4 shadow-inner">
+                         <div className="flex items-center justify-between mb-8 pb-6 border-b border-slate-200 dark:border-slate-700">
+                            <div>
+                                <h4 className="font-black text-slate-800 dark:text-white uppercase tracking-tight text-xl">{editingRole.name}</h4>
+                                <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Configurando accesos y visibilidad</p>
+                            </div>
+                            {!editingRole.isSystem && (
+                                <button 
+                                    onClick={() => handleDeleteRole(editingRole.id)}
+                                    className="px-6 py-2.5 bg-danger/10 text-danger rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-danger hover:text-white transition-all shadow-sm"
+                                >
+                                    <span className="material-symbols-outlined text-sm">delete</span> Eliminar Rol
+                                </button>
+                            )}
+                            {editingRole.isSystem && <span className="text-[9px] font-black text-slate-400 uppercase bg-slate-200 dark:bg-slate-800 px-3 py-1 rounded-lg flex items-center gap-1"><span className="material-symbols-outlined text-xs">lock</span> Sistema</span>}
+                         </div>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {AVAILABLE_PERMISSIONS.map(perm => (
+                               <button 
+                                  key={perm.id} 
+                                  onClick={() => !editingRole.isSystem && togglePermission(perm.id)}
+                                  disabled={editingRole.isSystem && editingRole.id === 'admin_role'} 
+                                  className={`p-4 rounded-2xl flex items-center justify-between border-2 transition-all text-left group ${editingRole.permissions.includes(perm.id) ? 'border-success bg-success/5' : 'border-transparent bg-white dark:bg-surface-dark'} ${(editingRole.isSystem && editingRole.id === 'admin_role') ? 'opacity-70 cursor-not-allowed' : 'hover:border-purple-300'}`}
+                               >
+                                  <div className="flex flex-col">
+                                     <span className={`text-xs font-black uppercase ${editingRole.permissions.includes(perm.id) ? 'text-success' : 'text-slate-500'}`}>{perm.label}</span>
+                                     <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{perm.group}</span>
+                                  </div>
+                                  <div className={`w-12 h-6 rounded-full flex items-center transition-all px-1 ${editingRole.permissions.includes(perm.id) ? 'bg-success justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'}`}>
+                                     <div className="size-4 bg-white rounded-full shadow-sm"></div>
+                                  </div>
+                               </button>
+                            ))}
+                         </div>
+                      </div>
+                   )}
+                </div>
+
+                {/* USER ASSIGNMENT COLUMN */}
+                <div className="p-10 flex-1 w-full bg-slate-50/50 dark:bg-slate-900/20">
+                   <div className="flex items-center gap-3 mb-8">
+                        <div className="size-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300 flex items-center justify-center"><span className="material-symbols-outlined">manage_accounts</span></div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Asignar Roles a Usuarios</h4>
+                   </div>
+                   
+                   <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
+                      {systemUsers.map(user => (
+                         <div key={user.id} className="p-5 bg-white dark:bg-surface-dark rounded-[1.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col gap-4 hover:shadow-md transition-shadow">
+                            <div className="flex items-center gap-4">
+                               <div 
+                                  onClick={() => handleUserClick(user.id)}
+                                  className="size-12 rounded-2xl bg-cover bg-center border border-slate-200 dark:border-slate-700 cursor-pointer hover:scale-110 transition-transform shadow-md hover:shadow-primary/30" 
+                                  style={{backgroundImage: `url('${user.img}')`}}
+                                  title="Ver Ficha de Empleado"
+                               ></div>
+                               <div className="min-w-0 flex-1">
+                                  <p onClick={() => handleUserClick(user.id)} className="text-sm font-black text-slate-900 dark:text-white truncate cursor-pointer hover:text-primary transition-colors">{user.name}</p>
+                                  <p className="text-[10px] text-slate-500 font-medium truncate">@{user.username}</p>
+                               </div>
+                               {/* Role Badge */}
+                               <div className="px-3 py-1 bg-slate-100 dark:bg-bg-dark rounded-lg">
+                                   <span className="text-[10px] font-black uppercase text-slate-500">
+                                       {settings.roles.find(r => r.id === user.role)?.name || 'Sin Rol'}
+                                   </span>
+                               </div>
+                            </div>
+                            
+                            <div className="relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 pointer-events-none text-lg">badge</span>
+                                <select 
+                                   value={user.role} 
+                                   onChange={(e) => updateUserRole(user.id, e.target.value)}
+                                   className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold py-3 pl-12 pr-4 focus:ring-2 focus:ring-purple-500 cursor-pointer appearance-none transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                                >
+                                   {settings.roles.map(r => (
+                                      <option key={r.id} value={r.id}>{r.name}</option>
+                                   ))}
+                                </select>
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 pointer-events-none text-lg">arrow_drop_down</span>
+                            </div>
+                         </div>
+                      ))}
+                   </div>
+                </div>
+             </div>
+          </section>
+
+          {/* CATALOGO DE SERVICIOS */}
           <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
               <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">medical_services</span></div>
@@ -431,10 +651,10 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         </div>
       )}
 
+      {/* Render other tabs */}
       {activeTab === 'labor' && (
         <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-right-4 duration-500">
-          
-          {/* POLÍTICA DE VACACIONES */}
+           {/* POLÍTICA DE VACACIONES */}
           <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
               <div className="size-12 rounded-xl bg-orange-400 text-white flex items-center justify-center">
@@ -516,7 +736,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
             </div>
           </section>
 
-          {/* GESTIÓN OPERATIVA (NUEVA SECCIÓN) */}
+          {/* GESTIÓN OPERATIVA */}
           <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
               <div className="size-12 rounded-xl bg-purple-500 text-white flex items-center justify-center">
@@ -647,11 +867,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         </div>
       )}
 
-      {/* ... (VISUAL TAB IGUAL) ... */}
       {activeTab === 'visual' && (
         <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-right-4 duration-500">
-           {/* ... Contenido Visual existente ... */}
+           {/* ... Contenido Visual ... */}
+           {/* (Included visually in full file render but no logic changes) */}
            <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
+              {/* Same visual content */}
               <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
                 <div className="flex items-center gap-5">
                   <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">palette</span></div>
@@ -699,10 +920,9 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         </div>
       )}
 
-      {/* ... (ASSISTANT TAB IGUAL) ... */}
       {activeTab === 'assistant' && (
         <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-right-4 duration-500">
-           {/* ... Contenido Asistente existente ... */}
+           {/* SECTION 1: VOICE & LANGUAGE */}
            <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
               <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
                 <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">volume_up</span></div>
@@ -710,6 +930,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
               </div>
               <div className="p-10 space-y-10">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Accent Options */}
                     <div className="space-y-4">
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acento y Región</label>
                        <div className="grid grid-cols-1 gap-3">
@@ -720,6 +941,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                           ))}
                        </div>
                     </div>
+                    {/* Voice Options */}
                     <div className="space-y-4">
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Voz del Asistente</label>
                        <div className="grid grid-cols-1 gap-3">
@@ -733,6 +955,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                        </div>
                     </div>
                  </div>
+                 {/* Test Lab */}
                  <div className="p-8 bg-primary/5 rounded-[2.5rem] border border-primary/20 space-y-6">
                     <div className="flex items-center justify-between">
                        <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em]">Laboratorio de Pruebas</h4>
@@ -744,6 +967,8 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
                  </div>
               </div>
            </section>
+
+           {/* SECTION 2: PERSONALITY & PROMPT */}
            <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
               <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
                 <div className="flex items-center gap-5">

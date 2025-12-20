@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Appointment, Task, User, Patient, Doctor, ClinicSettings } from '../types';
 import AppointmentDetailModal from '../components/AppointmentDetailModal';
@@ -13,6 +13,7 @@ interface DashboardProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   patients: Patient[];
   doctors: Doctor[];
+  currentUser?: User; // Pass current user for permission checks
 }
 
 const treatmentPrices: Record<string, number> = {
@@ -28,14 +29,30 @@ const treatmentPrices: Record<string, number> = {
   'Blanqueamiento': 180
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppointments, tasks, setTasks, patients, doctors }) => {
+const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppointments, tasks, setTasks, patients, doctors, currentUser }) => {
   const navigate = useNavigate();
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<'High'|'Medium'|'Low'>('Medium');
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
+  
+  // PERMISSIONS CHECK
+  const userRole = settings.roles.find(r => r.id === currentUser?.role);
+  const canViewAllData = userRole?.permissions.includes('view_all_data');
+  
+  // If user cannot view all data, force selection to themselves (if they are a doctor)
+  const isDoctor = doctors.find(d => d.id === currentUser?.id);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('ALL');
+
+  useEffect(() => {
+    if (!canViewAllData && isDoctor) {
+      setSelectedDoctorId(isDoctor.id);
+    } else if (!canViewAllData && !isDoctor) {
+        // If not a doctor and can't view all data, theoretically shouldn't happen or see empty
+        // keeping ALL for now but list will be filtered potentially if we wanted strict ownership
+    }
+  }, [canViewAllData, isDoctor]);
 
   // Drag and Drop refs
   const dragItem = useRef<number | null>(null);
@@ -145,20 +162,25 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
             {selectedDoctorId === 'ALL' ? 'Vista General de la Clínica' : `Panel de Control: ${doctors.find(d => d.id === selectedDoctorId)?.name}`}
           </p>
         </div>
+        
+        {/* Only show filter if can view all data, otherwise show locked indicator */}
         <div className="flex items-center gap-4 bg-white dark:bg-surface-dark p-2 rounded-2xl shadow-sm border border-border-light dark:border-border-dark">
           <div className="px-4 py-2 bg-slate-100 dark:bg-bg-dark rounded-xl">
-            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Filtrar por Médico</p>
+            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">
+              {canViewAllData ? 'Filtrar por Médico' : 'Vista Restringida'}
+            </p>
             <select 
               value={selectedDoctorId}
+              disabled={!canViewAllData}
               onChange={(e) => setSelectedDoctorId(e.target.value)}
-              className="bg-transparent border-none p-0 text-sm font-bold text-slate-800 dark:text-white focus:ring-0 cursor-pointer w-48"
+              className={`bg-transparent border-none p-0 text-sm font-bold focus:ring-0 w-48 ${!canViewAllData ? 'text-slate-400 cursor-not-allowed' : 'text-slate-800 dark:text-white cursor-pointer'}`}
             >
               <option value="ALL">Todos los Médicos</option>
               {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
-          <div className="size-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-            <span className="material-symbols-outlined">filter_list</span>
+          <div className={`size-10 rounded-xl flex items-center justify-center ${canViewAllData ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-slate-400'}`}>
+            <span className="material-symbols-outlined">{canViewAllData ? 'filter_list' : 'lock'}</span>
           </div>
         </div>
       </div>

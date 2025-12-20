@@ -1,7 +1,9 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Patient, Appointment, FileAttachment, ClinicSettings, User, MedicalReport, Doctor } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { jsPDF } from "jspdf";
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 const FLAT_ICON_MALE = 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Felix&backgroundColor=e2e8f0';
 const FLAT_ICON_FEMALE = 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Aneka&backgroundColor=e2e8f0';
@@ -44,6 +46,8 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
   const [isCreating, setIsCreating] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [showToast, setShowToast] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   
   const initialNewPatient: Partial<Patient> = {
     name: '', gender: 'Masculino', birthDate: new Date().toISOString().split('T')[0], identityDocument: '', phone: '', email: '', address: '', medicalHistory: '', img: FLAT_ICON_MALE, allergies: [], attachments: [], savedReports: [], history: [], weight: '', height: '', bloodType: 'A+', associatedDoctorId: team[0]?.id || ''
@@ -58,6 +62,18 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
   // Referencias
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- AUTO OPEN PATIENT IF QUERY PARAM EXISTS ---
+  useEffect(() => {
+    const openId = searchParams.get('openId');
+    if (openId && patients.length > 0) {
+      const targetP = patients.find(p => p.id === openId);
+      if (targetP) {
+        openFicha(targetP);
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [patients, searchParams]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiChat]);
 
@@ -277,6 +293,11 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
     doc.save(`Informe_Clinico_${selectedPatient.name.replace(/\s+/g, '_')}.pdf`);
   };
 
+  const handleDoctorClick = (docId: string) => {
+      // Check if valid doctor and navigate
+      if (docId) navigate(`/doctors?openId=${docId}`);
+  };
+
   return (
     <div className="p-10 max-w-[1600px] mx-auto w-full space-y-12 no-print">
       
@@ -353,6 +374,18 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
                        <div className="flex items-center gap-4 mt-3">
                          <span className="px-4 py-1.5 bg-primary/10 text-primary rounded-xl text-[11px] font-black uppercase tracking-widest">EXPEDIENTE: {editData.id}</span>
                          <span className="px-4 py-1.5 bg-success/10 text-success rounded-xl text-[11px] font-black uppercase tracking-widest">{editData.gender}</span>
+                         
+                         {/* ENLACE A MEDICO */}
+                         {editData.associatedDoctorId && (
+                             <button 
+                                onClick={() => handleDoctorClick(editData.associatedDoctorId)}
+                                className="px-4 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-primary rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 group transition-colors"
+                             >
+                                <span className="material-symbols-outlined text-sm">stethoscope</span>
+                                Dr. Asignado
+                                <span className="material-symbols-outlined text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
+                             </button>
+                         )}
                        </div>
                     </div>
                </div>

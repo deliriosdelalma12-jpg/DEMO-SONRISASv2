@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { User, ClinicSettings } from '../types';
+import { User, ClinicSettings, PermissionId } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,21 +10,32 @@ interface LayoutProps {
   currentUser: User;
   settings: ClinicSettings;
   onOpenVoiceAssistant: () => void;
+  onOpenCurrentProfile?: () => void; // New prop
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, currentUser, settings, onOpenVoiceAssistant }) => {
+const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, currentUser, settings, onOpenVoiceAssistant, onOpenCurrentProfile }) => {
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
 
-  const navItems = [
-    { path: '/', label: 'Dashboard', icon: 'dashboard' },
-    { path: '/agenda', label: 'Agenda', icon: 'calendar_month' },
-    { path: '/patients', label: 'Pacientes', icon: 'group' },
-    { path: '/doctors', label: 'Médicos', icon: 'medical_services' },
-    { path: '/hr', label: 'Personal', icon: 'badge_calendar' },
-    { path: '/metrics', label: 'Métricas', icon: 'leaderboard' },
-    { path: '/settings', label: 'Configuración', icon: 'settings' },
+  // Helper to check if current user has permission for a specific route/feature
+  const hasPermission = (requiredPermission: PermissionId) => {
+    const userRole = settings.roles.find(r => r.id === currentUser.role);
+    if (!userRole) return false; // Default to blocked if role not found
+    return userRole.permissions.includes(requiredPermission);
+  };
+
+  const navItemsRaw = [
+    { path: '/', label: 'Dashboard', icon: 'dashboard', perm: 'view_dashboard' },
+    { path: '/agenda', label: 'Agenda', icon: 'calendar_month', perm: 'view_agenda' },
+    { path: '/patients', label: 'Pacientes', icon: 'group', perm: 'view_patients' },
+    { path: '/doctors', label: 'Médicos', icon: 'medical_services', perm: 'view_doctors' },
+    { path: '/hr', label: 'Personal', icon: 'badge_calendar', perm: 'view_hr' },
+    { path: '/metrics', label: 'Métricas', icon: 'leaderboard', perm: 'view_metrics' },
+    { path: '/settings', label: 'Configuración', icon: 'settings', perm: 'view_settings' },
   ];
+
+  // Filter items based on permissions
+  const navItems = navItemsRaw.filter(item => hasPermission(item.perm as PermissionId));
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg-light dark:bg-bg-dark transition-colors duration-300 no-print">
@@ -116,15 +127,18 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
                 <div className="flex items-center gap-1.5 mt-1.5">
                    <span className="size-1.5 bg-success rounded-full animate-pulse"></span>
                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest leading-none">
-                     {currentUser.role}
+                     {/* Show Role Name instead of raw ID */}
+                     {settings.roles.find(r => r.id === currentUser.role)?.name || 'Usuario'}
                    </p>
                 </div>
               </div>
               
-              <div className="relative">
+              <div className="relative group">
                 <div 
-                  className="size-14 rounded-2xl bg-cover bg-center border-2 border-primary/20 shadow-xl shadow-primary/10 transform hover:scale-105 transition-transform cursor-pointer" 
+                  onClick={onOpenCurrentProfile}
+                  className="size-14 rounded-2xl bg-cover bg-center border-2 border-primary/20 shadow-xl shadow-primary/10 transform group-hover:scale-105 transition-transform cursor-pointer" 
                   style={{ backgroundImage: `url("${currentUser.img}")` }}
+                  title="Ver Mi Ficha"
                 ></div>
                 <div className="absolute -bottom-1 -right-1 size-5 bg-success border-2 border-white dark:border-surface-dark rounded-full"></div>
               </div>

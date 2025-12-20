@@ -32,11 +32,30 @@ export interface ClinicService {
   duration: number; // Duración en minutos para optimizar agenda
 }
 
+// --- SECURITY & ROLES ---
+export type PermissionId = 
+  | 'view_dashboard' 
+  | 'view_agenda' 
+  | 'view_patients' 
+  | 'view_doctors' 
+  | 'view_hr' 
+  | 'view_metrics' 
+  | 'view_settings' 
+  | 'view_all_data' // Allows seeing data from other doctors
+  | 'can_edit';     // Global write permission
+
+export interface RoleDefinition {
+  id: string;
+  name: string;
+  permissions: PermissionId[];
+  isSystem?: boolean; // Admin cannot be deleted
+}
+
 export interface User {
   id: string;
   username: string;
   name: string;
-  role: UserRole;
+  role: string; // Now maps to RoleDefinition.id
   img?: string;
 }
 
@@ -76,7 +95,7 @@ export interface VacationRequest {
 export interface Doctor {
   id: string;
   name: string;
-  role: UserRole;
+  role: string; // Maps to RoleDefinition.id
   specialty: string;
   status: 'Active' | 'Inactive' | 'Vacation' | 'Medical Leave';
   img: string;
@@ -164,7 +183,8 @@ export interface ClinicSettings {
   colorTemplate: string;
   labels: AppLabels;
   visuals: VisualSettings;
-  laborSettings: LaborSettings; // New field
+  laborSettings: LaborSettings;
+  roles: RoleDefinition[]; // New Field for RBAC
 }
 
 export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';

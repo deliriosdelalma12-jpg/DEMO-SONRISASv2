@@ -1,7 +1,8 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Doctor, Appointment, AppointmentStatus, DaySchedule, FileAttachment, AttendanceRecord } from '../types';
 import AppointmentDetailModal from '../components/AppointmentDetailModal';
+import { useSearchParams } from 'react-router-dom';
 
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
@@ -85,6 +86,7 @@ interface DoctorsProps {
 }
 
 const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedDoctorForAgenda, setSelectedDoctorForAgenda] = useState<Doctor | null>(null);
   const [selectedDoctorForProfile, setSelectedDoctorForProfile] = useState<Doctor | null>(null);
   const [activeTab, setActiveTab] = useState<'perfil' | 'horario' | 'laboral' | 'rendimiento' | 'docs'>('perfil');
@@ -104,6 +106,19 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors }) 
   const createFileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const editAvatarInputRef = useRef<HTMLInputElement>(null);
+
+  // --- RELACIONES INDIRECTAS: AUTO-OPEN LOGIC ---
+  useEffect(() => {
+    const openId = searchParams.get('openId');
+    if (openId && doctors.length > 0) {
+      const targetDoc = doctors.find(d => d.id === openId);
+      if (targetDoc) {
+        handleOpenProfile(targetDoc);
+        // Limpiamos el param para que al recargar no se vuelva a abrir si el usuario lo cierra
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [doctors, searchParams]);
 
   const getInitialSchedule = (): Record<string, DaySchedule> => DAYS.reduce((acc, day) => ({
     ...acc,

@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Appointment, AppointmentStatus, Patient, Doctor } from '../types';
+import { useNavigate } from 'react-router-dom';
 
 interface AppointmentDetailModalProps {
   appointment: Appointment;
@@ -26,6 +27,7 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
   const [newDate, setNewDate] = useState(appointment.date);
   const [newTime, setNewTime] = useState(appointment.time);
   const [selectedDoctorId, setSelectedDoctorId] = useState(appointment.doctorId);
+  const navigate = useNavigate();
 
   const getStatusColor = (status: AppointmentStatus) => {
     switch (status) {
@@ -48,6 +50,12 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
     setSelectedDoctorId(docId);
     const doc = doctors.find(d => d.id === docId);
     onUpdateStatus(appointment.id, appointment.status, appointment.date, appointment.time, docId, doc?.name);
+  };
+
+  const handlePatientClick = () => {
+      // Navigate to patient profile
+      navigate(`/patients?openId=${appointment.patientId}`);
+      onClose();
   };
 
   const filteredPatients = patients.filter(p => 
@@ -215,8 +223,8 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
             <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
               <span className="material-symbols-outlined text-xl">person</span>
             </div>
-            <div className="min-w-0">
-              <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">{appointment.patientName}</h4>
+            <div className="min-w-0 cursor-pointer group" onClick={handlePatientClick} title="Ver Expediente de Paciente">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-primary transition-colors">{appointment.patientName} <span className="material-symbols-outlined text-[10px] opacity-0 group-hover:opacity-100">open_in_new</span></h4>
               <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tight">Paciente ID: {appointment.patientId}</p>
             </div>
           </div>
