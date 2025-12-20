@@ -39,9 +39,14 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
       )}
 
       <header className="flex flex-col gap-6">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">Configuración del Sistema</h1>
-          <p className="text-slate-500 dark:text-slate-400 font-medium italic text-base">Personaliza la identidad de tu marca, políticas laborales y la inteligencia de tu asistente.</p>
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div className="flex flex-col gap-2">
+            <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">Configuración del Sistema</h1>
+            <p className="text-slate-500 dark:text-slate-400 font-medium italic text-base">Personaliza la identidad de tu marca, políticas laborales y la inteligencia de tu asistente.</p>
+          </div>
+          <button onClick={handleGlobalSave} className="h-14 px-10 bg-primary text-white rounded-md font-black text-sm uppercase tracking-wider shadow-sm hover:bg-primary-dark transition-all flex items-center gap-3 shrink-0">
+            <span className="material-symbols-outlined text-xl">save</span> Guardar Configuración Maestra
+          </button>
         </div>
         <div className="flex bg-white dark:bg-bg-dark p-1 rounded-lg w-fit border border-slate-200 dark:border-slate-800">
            <button onClick={() => setActiveTab('company')} className={`px-6 py-2.5 rounded-md text-xs font-black uppercase tracking-[0.1em] transition-all flex items-center gap-2 ${activeTab === 'company' ? 'bg-slate-100 dark:bg-surface-dark text-primary' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">business</span> Empresa</button>

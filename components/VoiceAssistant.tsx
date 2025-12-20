@@ -18,11 +18,11 @@ interface VoiceAssistantProps {
 // 1. BUSCAR CITA Y PACIENTE (ENRICHED)
 const declarationFindAppointment: FunctionDeclaration = {
   name: "findAppointment",
-  description: "Busca citas y ficha de paciente por nombre. Úsala SIEMPRE cuando el usuario diga su nombre para personalizar la conversación.",
+  description: "Busca citas y ficha de paciente por nombre. Úsala para REPROGRAMAR, CANCELAR o reconocer a un paciente recurrente.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      patientName: { type: Type.STRING, description: "Nombre completo del paciente (Nombre y Apellidos)" }
+      patientName: { type: Type.STRING, description: "Nombre (o nombre y apellidos) del paciente" }
     },
     required: ["patientName"]
   }
@@ -43,7 +43,7 @@ const declarationCheckAvailability: FunctionDeclaration = {
 
 const declarationCreateAppointment: FunctionDeclaration = {
   name: "createAppointment",
-  description: "Agenda una nueva cita. REQUIERE NOMBRE COMPLETO (Nombre + Apellidos).",
+  description: "Agenda una nueva cita. Funciona para pacientes nuevos o existentes.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -214,33 +214,40 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
         Sector: ${settings.sector}
         
         # BASE DE CONOCIMIENTOS:
-        Tienes acceso a documentos internos. Úsalos para responder dudas técnicas.
         ${kbContext}
 
         # HORARIO DE APERTURA:
         ${scheduleDesc}
-        NO AGENDAR/REPROGRAMAR fuera de este horario.
+        NO AGENDAR fuera de este horario.
 
-        # REGLA DE ORO DE PERSONALIZACIÓN:
-        1. **TU SALUDAS PRIMERO**: Di tu saludo configurado apenas conecte.
-        2. **IDENTIFICACIÓN**: Si el usuario dice su nombre, usa 'findAppointment' INMEDIATAMENTE.
-        3. **USO DE DATOS**: La herramienta 'findAppointment' te devolverá citas Y DATOS DEL PACIENTE (historial, alergias, edad). ÚSALOS.
-           - Ejemplo: "Hola Laura, veo que hace 6 meses no vienes a revisión..."
-           - Ejemplo: "Teniendo en cuenta tu alergia a la penicilina..."
-        4. **NOMBRE COMPLETO**: Pide siempre Nombre y Apellidos para evitar errores.
+        # REGLAS FUNDAMENTALES DE INTERACCIÓN:
+
+        1. **TU HABLAS PRIMERO Y AL INSTANTE**:
+           - En cuanto conecte la llamada, di tu saludo configurado. NO ESPERES A QUE EL USUARIO DIGA "HOLA".
+           - NO PUEDE HABER SILENCIOS INICIALES.
+
+        2. **AGENDAMIENTO (NUEVOS VS RECURRENTES)**:
+           - Si el usuario quiere **AGENDAR**: Pide el nombre. No importa si no existe en la base de datos (paciente nuevo). AGENDA LA CITA.
+           - Si el usuario quiere **REPROGRAMAR o CANCELAR**: AQUÍ SÍ es obligatorio usar 'findAppointment' para encontrar la cita original. Si no la encuentras, dilo.
+
+        3. **TRATAMIENTO DEL NOMBRE (NATURALIDAD)**:
+           - Una vez el usuario te diga su nombre, ÚSALO.
+           - **REGLA DE ORO**: No repitas el nombre completo todo el tiempo (ej: NO digas "Claro Adexe Díaz, dime Adexe Díaz").
+           - Usa solo el nombre de pila (ej: "Claro Adexe") O usa "Señor/Señora Apellido" si quieres ser formal.
+           - Infiere el género por el nombre (Adexe -> Masculino -> Señor / María -> Femenino -> Señora).
+
+        4. **NOMBRE COMPLETO**:
+           - Para buscar en la base de datos o crear ficha, pide SIEMPRE "Nombre y Apellidos".
 
         # TUS HERRAMIENTAS:
-        - findAppointment: Úsala para recuperar FICHA DEL PACIENTE y citas.
-        - createAppointment: Para nuevas citas.
+        - findAppointment: Úsala para Reprogramar, Cancelar o buscar historial.
+        - createAppointment: Para AGENDAR (sea nuevo o viejo).
         - rescheduleAppointment: Requiere ID.
         - cancelAppointment: Requiere ID.
-        - checkAvailability: Úsala para verificar huecos.
-        - getServiceDetails: Precios e info.
+        - checkAvailability: Consultar huecos.
 
         # SALUDO CONFIGURADO:
         "${settings.aiPhoneSettings.initialGreeting}"
-        
-        Habla natural, con acento ${settings.aiPhoneSettings.accent}.
       `;
 
       const sessionPromise = ai.live.connect({
@@ -264,9 +271,10 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
             source.connect(scriptProcessor);
             scriptProcessor.connect(audioContextRef.current!.destination);
 
-            // 2. FORCE INITIAL GREETING
+            // 2. FORCE INITIAL GREETING IMMEDIATELY
+            // Mensaje imperativo para eliminar el silencio inicial.
             sessionPromise.then(s => s.sendRealtimeInput([{ 
-                text: `La llamada acaba de conectar. El usuario está al teléfono. DI TU SALUDO INICIAL EXACTAMENTE COMO ESTÁ CONFIGURADO: "${settings.aiPhoneSettings.initialGreeting}"` 
+                text: `SISTEMA: La llamada ha conectado. El usuario está esperando. DI TU SALUDO INICIAL AHORA MISMO: "${settings.aiPhoneSettings.initialGreeting}"` 
             }]));
           },
           onmessage: async (m: LiveServerMessage) => {
@@ -299,7 +307,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                     const args = fc.args as any;
 
                     try {
-                        // NEW TOOL: FIND APPOINTMENT + PATIENT PROFILE
+                        // TOOL: FIND APPOINTMENT
                         if (fc.name === "findAppointment") {
                             const nameQuery = args.patientName.toLowerCase();
                             // 1. Find appointments
@@ -312,25 +320,25 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                             const patientProfile = patientsRef.current.find(p => p.name.toLowerCase().includes(nameQuery));
 
                             if (matches.length === 0 && !patientProfile) {
-                                result = { found: false, message: "No encontré paciente ni citas con ese nombre. Pide el nombre completo de nuevo." };
+                                // IMPORTANT: If not found, tell the model it's okay to proceed if booking new.
+                                result = { 
+                                    found: false, 
+                                    message: "No encontré registro previo. Si el usuario quiere AGENDAR, procede a crear una cita nueva pidiendo los datos. Si quiere CANCELAR/REPROGRAMAR, confirma el nombre." 
+                                };
                             } else {
                                 result = { 
                                     found: true, 
                                     patientContext: patientProfile ? {
                                         name: patientProfile.name,
-                                        age: 30, // Mock age calc
-                                        allergies: patientProfile.allergies,
-                                        medicalHistory: patientProfile.medicalHistory,
-                                        lastVisit: "Hace 6 meses (Simulado)" 
+                                        isVIP: false
                                     } : "Perfil no encontrado, solo citas.",
                                     matches: matches.map(a => ({
                                         id: a.id,
                                         date: a.date,
                                         time: a.time,
-                                        treatment: a.treatment,
-                                        doctor: a.doctorName
+                                        treatment: a.treatment
                                     })),
-                                    message: `Encontré datos. Usa el 'patientContext' para personalizar la respuesta.`
+                                    message: `Encontré datos. Usa el nombre de pila o 'Señor/Señora' + Apellido para dirigirte al usuario.`
                                 };
                             }
                         }
@@ -343,7 +351,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                                     a.time.startsWith(args.time.substring(0,2)) && 
                                     ['Confirmed', 'Pending', 'Rescheduled'].includes(a.status)
                                 );
-                                result = { available: !busy, message: busy ? "Horario ocupado por otra cita" : "Horario disponible" };
+                                result = { available: !busy, message: busy ? "Horario ocupado" : "Horario disponible" };
                             }
                         } 
                         else if (fc.name === "createAppointment") {
@@ -378,11 +386,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                                 };
                                 setAppointments(prev => [...prev, newApt]);
                                 
-                                const statusMsg = initialStatus === 'Pending' 
-                                    ? `Cita creada como PENDIENTE. Recuérdale al usuario que debe confirmar ${policyRef.current?.confirmationWindow}h antes.` 
-                                    : "Cita creada y CONFIRMADA exitosamente.";
-                                
-                                result = { success: true, id: newApt.id, message: statusMsg, status: initialStatus };
+                                result = { success: true, id: newApt.id, message: "Cita creada. Llama al paciente por su nombre de pila o apellido para confirmar." };
                             }
                         }
                         else if (fc.name === "rescheduleAppointment") {
@@ -396,7 +400,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                                     setAppointments(prev => prev.map(a => a.id === targetId ? { ...a, date: args.newDate, time: args.newTime, status: 'Rescheduled' } : a));
                                     result = { success: true, message: `Cita reprogramada al ${args.newDate} a las ${args.newTime}` };
                                 } else {
-                                    result = { success: false, message: "Error interno: ID de cita no encontrado para reprogramar." };
+                                    result = { success: false, message: "Error interno: ID de cita no encontrado." };
                                 }
                             }
                         }
@@ -408,7 +412,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                                 setAppointments(prev => prev.map(a => a.id === targetId ? { ...a, status: 'Cancelled' } : a));
                                 result = { success: true, message: "Cita cancelada correctamente" };
                             } else {
-                                result = { success: false, message: "Error interno: ID de cita no encontrado para cancelar." };
+                                result = { success: false, message: "Error interno: ID de cita no encontrado." };
                             }
                         }
                         else if (fc.name === "getServiceDetails") {
@@ -418,11 +422,10 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                                     found: true, 
                                     name: service.name, 
                                     price: service.price, 
-                                    duration: service.duration, 
-                                    description: `El servicio ${service.name} tiene un costo de ${service.price} y dura aproximadamente ${service.duration} minutos.`
+                                    duration: service.duration
                                 };
                             } else {
-                                result = { found: false, message: "Servicio no encontrado en la base de datos." };
+                                result = { found: false, message: "Servicio no encontrado." };
                             }
                         }
                     } catch (e) {
