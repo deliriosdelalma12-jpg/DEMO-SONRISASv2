@@ -9,8 +9,78 @@ interface VoiceAssistantProps {
   appointments: Appointment[];
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>;
   doctors: Doctor[];
-  branches?: Branch[]; // NEW PROP
+  branches?: Branch[];
 }
+
+// --- HERRAMIENTAS (TOOLS) PARA EL MODELO ---
+const declarationCheckAvailability: FunctionDeclaration = {
+  name: "checkAvailability",
+  description: "Verifica si una fecha y hora específica está libre para citas.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      date: { type: Type.STRING, description: "Fecha en formato YYYY-MM-DD" },
+      time: { type: Type.STRING, description: "Hora en formato HH:MM" }
+    },
+    required: ["date", "time"]
+  }
+};
+
+const declarationCreateAppointment: FunctionDeclaration = {
+  name: "createAppointment",
+  description: "Agenda una nueva cita médica en el sistema.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      patientName: { type: Type.STRING, description: "Nombre del paciente" },
+      date: { type: Type.STRING, description: "Fecha en formato YYYY-MM-DD" },
+      time: { type: Type.STRING, description: "Hora en formato HH:MM" },
+      treatment: { type: Type.STRING, description: "Nombre del tratamiento o servicio" },
+      doctorName: { type: Type.STRING, description: "Nombre del doctor preferido (opcional)" }
+    },
+    required: ["patientName", "date", "time", "treatment"]
+  }
+};
+
+const declarationRescheduleAppointment: FunctionDeclaration = {
+  name: "rescheduleAppointment",
+  description: "Cambia la fecha u hora de una cita existente.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      patientName: { type: Type.STRING, description: "Nombre del paciente para buscar la cita" },
+      oldDate: { type: Type.STRING, description: "Fecha actual de la cita (YYYY-MM-DD)" },
+      newDate: { type: Type.STRING, description: "Nueva fecha deseada (YYYY-MM-DD)" },
+      newTime: { type: Type.STRING, description: "Nueva hora deseada (HH:MM)" }
+    },
+    required: ["patientName", "newDate", "newTime"]
+  }
+};
+
+const declarationCancelAppointment: FunctionDeclaration = {
+  name: "cancelAppointment",
+  description: "Cancela una cita existente.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      patientName: { type: Type.STRING, description: "Nombre del paciente" },
+      date: { type: Type.STRING, description: "Fecha de la cita a cancelar (YYYY-MM-DD)" }
+    },
+    required: ["patientName", "date"]
+  }
+};
+
+const declarationGetServiceDetails: FunctionDeclaration = {
+  name: "getServiceDetails",
+  description: "Consulta la base de datos para obtener detalles técnicos, precio y duración de un examen o servicio.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      serviceName: { type: Type.STRING, description: "Nombre del servicio o síntoma relacionado" }
+    },
+    required: ["serviceName"]
+  }
+};
 
 const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appointments, setAppointments, doctors, branches = [] }) => {
   const [isActive, setIsActive] = useState(false);
@@ -23,6 +93,16 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
   const streamRef = useRef<MediaStream | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+
+  // Refs for state access inside callbacks
+  const appointmentsRef = useRef(appointments);
+  const doctorsRef = useRef(doctors);
+  const servicesRef = useRef(settings.services);
+
+  // Sync refs with props
+  useEffect(() => { appointmentsRef.current = appointments; }, [appointments]);
+  useEffect(() => { doctorsRef.current = doctors; }, [doctors]);
+  useEffect(() => { servicesRef.current = settings.services; }, [settings.services]);
 
   const decode = (base64: string) => {
     const binaryString = atob(base64);
@@ -59,29 +139,40 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // Construct dynamic prompt with branch info
+      // Construct dynamic prompt
       const activeBranches = branches.filter(b => b.status === 'Active');
       const branchContext = activeBranches.length > 0 
         ? `\n# SUCURSALES ACTIVAS:\n${activeBranches.map(b => `- ${b.name}: ${b.address}, ${b.city}. Horario: ${b.openingHours}`).join('\n')}`
         : '\n# SUCURSAL: Única sede central.';
 
+      const serviceList = settings.services.map(s => `- ${s.name}: ${s.price}${settings.currency} (${s.duration} min)`).join('\n');
+
       const fullPrompt = `
         ${settings.aiPhoneSettings.systemPrompt}
         
-        # INDICACIONES OPERATIVAS:
-        ${settings.aiPhoneSettings.instructions}
+        # TU ROL: SECRETARIA PROFESIONAL
+        1. Eres la secretaria de ${settings.name}. Tu trabajo es gestionar la agenda y orientar al paciente.
+        2. NO ERES MÉDICO. Si el paciente pregunta por síntomas graves o pide diagnóstico, responde: "Como asistente administrativa no puedo dar diagnósticos médicos, pero puedo agendarle una consulta con el especialista para que lo evalúe".
+        3. Eres extremadamente eficiente. Usa las herramientas (tools) para verificar disponibilidad y agendar en tiempo real.
+        4. Tienes acceso total a la "Base de Datos" de la empresa (lista de servicios y precios). Úsala para responder dudas sobre en qué consiste un examen o cuánto cuesta.
+
+        # TUS FUNCIONES PRINCIPALES (USA TOOLS):
+        1. AGENDAR: Usa 'createAppointment'. Pide nombre, fecha y hora. Verifica disponibilidad primero.
+        2. REPROGRAMAR: Usa 'rescheduleAppointment'.
+        3. CANCELAR: Usa 'cancelAppointment'.
+        4. CONSULTAR/ORIENTAR: Usa 'getServiceDetails' si te preguntan detalles específicos de un servicio. Usa tu conocimiento del contexto para responder sobre ubicaciones.
+
+        # DATOS DE LA EMPRESA (BASE DE DATOS EN MEMORIA):
+        Servicios:
+        ${serviceList}
         
-        # CONTEXTO DE NEGOCIO:
-        Nombre de la clínica: ${settings.name}
-        Servicios disponibles (con duración estimada):
-        ${settings.services.map(s => `- ${s.name}: ${s.price}${settings.currency} (${s.duration} min)`).join('\n')}
+        Sucursales:
         ${branchContext}
         
-        # SALUDO INICIAL OBLIGATORIO:
+        # SALUDO INICIAL:
         "${settings.aiPhoneSettings.initialGreeting}"
         
-        Debes sonar natural, con acento ${settings.aiPhoneSettings.accent} y hablar a una velocidad de ${settings.aiPhoneSettings.voiceSpeed}x.
-        Si el paciente pregunta por ubicaciones, usa la lista de sucursales activas.
+        Habla natural, con acento ${settings.aiPhoneSettings.accent}.
       `;
 
       const sessionPromise = ai.live.connect({
@@ -104,7 +195,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
             scriptProcessor.connect(audioContextRef.current!.destination);
           },
           onmessage: async (m: LiveServerMessage) => {
-            if (m.serverContent?.inputTranscription) setTranscription(t => t + ' ' + m.serverContent?.inputTranscription?.text);
+            // 1. Handle Audio
             const base64 = m.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
             if (base64 && outputAudioContextRef.current) {
               const ctx = outputAudioContextRef.current;
@@ -118,6 +209,96 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
               source.start(nextStartTimeRef.current);
               nextStartTimeRef.current += buffer.duration;
               sourcesRef.add(source);
+            }
+
+            // 2. Handle Transcription
+            if (m.serverContent?.inputTranscription) {
+               setTranscription(t => t + ' ' + m.serverContent?.inputTranscription?.text);
+            }
+
+            // 3. Handle Tool Calls (The Core Logic)
+            if (m.toolCall) {
+                console.log("Tool call received:", m.toolCall);
+                const functionResponses = m.toolCall.functionCalls.map(fc => {
+                    let result: any = { error: "Unknown function" };
+                    const args = fc.args as any;
+
+                    try {
+                        if (fc.name === "checkAvailability") {
+                            // Logic: Check if any ACTIVE appointment exists at that time
+                            const busy = appointmentsRef.current.find(a => 
+                                a.date === args.date && 
+                                a.time.startsWith(args.time.substring(0,2)) && 
+                                a.status !== 'Cancelled' && a.status !== 'Completed'
+                            );
+                            result = { available: !busy, message: busy ? "Horario ocupado" : "Horario disponible" };
+                        } 
+                        else if (fc.name === "createAppointment") {
+                            const newApt: Appointment = {
+                                id: Math.random().toString(36).substr(2, 9),
+                                patientId: 'P-GUEST', // Guest ID for phone booking
+                                patientName: args.patientName,
+                                date: args.date,
+                                time: args.time,
+                                treatment: args.treatment,
+                                doctorName: args.doctorName || doctorsRef.current[0]?.name || "Dr. Asignado",
+                                doctorId: doctorsRef.current[0]?.id || "D1",
+                                status: 'Confirmed'
+                            };
+                            setAppointments(prev => [...prev, newApt]);
+                            result = { success: true, id: newApt.id, message: "Cita creada exitosamente" };
+                        }
+                        else if (fc.name === "rescheduleAppointment") {
+                            const target = appointmentsRef.current.find(a => 
+                                a.patientName.toLowerCase().includes(args.patientName.toLowerCase()) || 
+                                a.date === args.oldDate
+                            );
+                            if (target) {
+                                setAppointments(prev => prev.map(a => a.id === target.id ? { ...a, date: args.newDate, time: args.newTime, status: 'Rescheduled' } : a));
+                                result = { success: true, message: `Cita reprogramada al ${args.newDate} a las ${args.newTime}` };
+                            } else {
+                                result = { success: false, message: "No encontré la cita original" };
+                            }
+                        }
+                        else if (fc.name === "cancelAppointment") {
+                            const target = appointmentsRef.current.find(a => 
+                                a.patientName.toLowerCase().includes(args.patientName.toLowerCase())
+                            );
+                            if (target) {
+                                setAppointments(prev => prev.map(a => a.id === target.id ? { ...a, status: 'Cancelled' } : a));
+                                result = { success: true, message: "Cita cancelada correctamente" };
+                            } else {
+                                result = { success: false, message: "No encontré la cita para cancelar" };
+                            }
+                        }
+                        else if (fc.name === "getServiceDetails") {
+                            const service = servicesRef.current.find(s => s.name.toLowerCase().includes(args.serviceName.toLowerCase()));
+                            if (service) {
+                                result = { 
+                                    found: true, 
+                                    name: service.name, 
+                                    price: service.price, 
+                                    duration: service.duration, 
+                                    description: `El servicio ${service.name} tiene un costo de ${service.price} y dura aproximadamente ${service.duration} minutos.`
+                                };
+                            } else {
+                                result = { found: false, message: "Servicio no encontrado en la base de datos." };
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error executing tool:", e);
+                        result = { error: "Failed to execute operation" };
+                    }
+
+                    return {
+                        id: fc.id,
+                        name: fc.name,
+                        response: { result }
+                    };
+                });
+
+                // Send response back to model
+                sessionPromise.then(s => s.sendToolResponse({ functionResponses }));
             }
           },
           onclose: () => { setIsActive(false); setIsConnecting(false); },
@@ -133,7 +314,16 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
           systemInstruction: fullPrompt,
           generationConfig: {
               temperature: settings.aiPhoneSettings.temperature,
-          }
+          },
+          tools: [{ 
+              functionDeclarations: [
+                  declarationCheckAvailability, 
+                  declarationCreateAppointment, 
+                  declarationRescheduleAppointment,
+                  declarationCancelAppointment,
+                  declarationGetServiceDetails
+              ] 
+          }]
         }
       });
       sessionRef.current = await sessionPromise;
@@ -176,7 +366,10 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
              <h2 className="text-white text-4xl font-display font-black tracking-tight uppercase">
                {isActive ? 'Llamada en curso' : isConnecting ? 'Conectando...' : `${settings.aiPhoneSettings.assistantName}`}
              </h2>
-             <p className="text-primary font-black uppercase tracking-[0.3em] text-[10px]">{settings.name}</p>
+             <div className="flex flex-col gap-1">
+                <p className="text-primary font-black uppercase tracking-[0.3em] text-[10px]">{settings.name}</p>
+                <p className="text-slate-400 text-xs font-medium">Asistente Administrativo Inteligente</p>
+             </div>
           </div>
         </div>
 
@@ -184,6 +377,14 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
           <button onClick={startSession} className="bg-primary text-white px-16 py-6 rounded-[2.5rem] font-black text-xl hover:bg-primary-dark transition-all shadow-2xl shadow-primary/40 hover:scale-105 flex items-center gap-4 uppercase tracking-tighter">
              <span className="material-symbols-outlined text-3xl">call</span> Iniciar Atención AI
           </button>
+        )}
+        
+        {isActive && (
+            <div className="bg-slate-800/50 px-6 py-3 rounded-2xl border border-slate-700 max-w-lg">
+                <p className="text-xs text-slate-400 font-mono">
+                    {transcription || "Escuchando..."}
+                </p>
+            </div>
         )}
       </div>
     </div>

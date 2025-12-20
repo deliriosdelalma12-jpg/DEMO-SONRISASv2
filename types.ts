@@ -192,9 +192,6 @@ export interface LaborSettings {
 
 export interface ClinicSettings {
   name: string;
-  sector?: string; // NEW
-  taxId?: string; // NEW (CIF/NIF)
-  website?: string; // NEW
   logo: string;
   phone: string;
   email: string;
