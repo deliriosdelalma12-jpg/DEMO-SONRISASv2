@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Appointment, AppointmentStatus, Patient, Doctor, DaySchedule, ClinicSettings } from '../types';
 import AppointmentDetailModal from '../components/AppointmentDetailModal';
 
@@ -9,7 +9,7 @@ interface AgendaProps {
   patients: Patient[];
   doctors: Doctor[];
   globalSchedule: Record<string, DaySchedule>;
-  settings: ClinicSettings; // To access appointment policy
+  settings: ClinicSettings; // To access appointment policy & branchCount
 }
 
 const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients, doctors, globalSchedule, settings }) => {
@@ -18,6 +18,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
   const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
   const [draggedAptId, setDraggedAptId] = useState<string | null>(null);
   
+  // NEW: Branch Filter State
+  const [branchFilter, setBranchFilter] = useState<string>('ALL');
+  
   const [isCreating, setIsCreating] = useState(false);
   const [newAptData, setNewAptData] = useState({
     patientName: '',
@@ -25,13 +28,28 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
     date: new Date().toISOString().split('T')[0],
     time: '09:00',
     doctorId: doctors[0]?.id || '',
-    doctorName: doctors[0]?.name || ''
+    doctorName: doctors[0]?.name || '',
+    branch: doctors[0]?.branch || 'Centro' // Default branch
   });
 
   const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
   const days = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
   const hours = Array.from({ length: 14 }, (_, i) => `${(i + 8).toString().padStart(2, '0')}:00`);
   const years = Array.from({ length: 10 }, (_, i) => 2020 + i);
+
+  // --- FILTERED APPOINTMENTS ---
+  const filteredAppointments = useMemo(() => {
+    if (branchFilter === 'ALL' || settings.branchCount <= 1) {
+        return appointments;
+    }
+    return appointments.filter(a => a.branch === branchFilter);
+  }, [appointments, branchFilter, settings.branchCount]);
+
+  // --- BRANCH OPTIONS ---
+  const uniqueBranches = useMemo(() => {
+      const branches = new Set(doctors.map(d => d.branch));
+      return Array.from(branches);
+  }, [doctors]);
 
   const getStatusColor = (status: AppointmentStatus) => {
     switch (status) {
@@ -122,6 +140,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         }
     }
 
+    // Auto-assign branch if only 1 exists, otherwise take form value
+    const finalBranch = settings.branchCount > 1 ? newAptData.branch : (doctors.find(d => d.id === newAptData.doctorId)?.branch || 'Centro');
+
     const newApt: Appointment = {
       id: Math.random().toString(36).substr(2, 9),
       patientId: 'P' + Math.floor(Math.random() * 1000),
@@ -131,6 +152,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
       treatment: newAptData.treatment,
       date: newAptData.date,
       time: newAptData.time,
+      branch: finalBranch, // Use resolved branch
       status: initialStatus
     };
     
@@ -148,7 +170,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
       date: new Date().toISOString().split('T')[0], 
       time: '09:00',
       doctorId: doctors[0]?.id || '',
-      doctorName: doctors[0]?.name || ''
+      doctorName: doctors[0]?.name || '',
+      branch: doctors[0]?.branch || 'Centro'
     });
   };
 
@@ -183,7 +206,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         date: original.date,
         time: original.time,
         doctorId: original.doctorId,
-        doctorName: original.doctorName
+        doctorName: original.doctorName,
+        branch: original.branch || 'Centro'
       });
       setIsCreating(true);
     } else if (replacement) {
@@ -196,6 +220,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         date: original.date,
         time: original.time,
         treatment: 'Consulta General',
+        branch: original.branch || 'Centro',
         status: 'Confirmed' // Replacement assumes immediate confirmation
       };
       setAppointments(prev => [...prev, newApt]);
@@ -236,7 +261,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
   };
 
   const getSlotAppointment = (dateStr: string, timeHour: string) => {
-    const slotApps = appointments.filter(a => a.date === dateStr && a.time.startsWith(timeHour.substring(0, 2)));
+    const slotApps = filteredAppointments.filter(a => a.date === dateStr && a.time.startsWith(timeHour.substring(0, 2)));
     if (slotApps.length === 0) return null;
     
     const activeApp = slotApps.find(a => ['Confirmed', 'Rescheduled', 'Pending'].includes(a.status));
@@ -265,7 +290,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         <div className="grid grid-cols-7 flex-1 divide-x divide-y divide-border-light dark:border-border-dark">
           {calendarDays.map((date, i) => {
             const dateStr = date.toISOString().split('T')[0];
-            const dayAppointments = appointments.filter(a => a.date === dateStr);
+            const dayAppointments = filteredAppointments.filter(a => a.date === dateStr);
             const isToday = date.toDateString() === new Date().toDateString();
             const isCurrentMonth = date.getMonth() === currentDate.getMonth();
             const isPast = isPastDate(dateStr);
@@ -274,9 +299,11 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
               <div 
                 key={i} 
                 onDragOver={(e) => !isPast && e.preventDefault()}
-                onDrop={() => isCurrentMonth && !isPast && onDrop(dateStr, "09:00")}
+                // ALLOW DROP even if not isCurrentMonth, as long as it's not past.
+                onDrop={() => !isPast && onDrop(dateStr, "09:00")}
                 onClick={() => {
-                  if (isCurrentMonth && !isPast) {
+                  if (!isPast) {
+                    // Click allows creating on "preview" days too
                     setNewAptData({ ...newAptData, date: dateStr });
                     setIsCreating(true);
                   } else if (isPast) {
@@ -289,7 +316,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                   <span className={`flex items-center justify-center size-8 rounded-xl text-sm font-black transition-all ${isToday ? 'bg-primary text-white shadow-lg' : 'text-slate-900 dark:text-white group-hover:text-primary'}`}>
                     {date.getDate()}
                   </span>
-                  {isCurrentMonth && !isPast && (
+                  {!isPast && (
                     <div className="size-8 rounded-xl bg-primary text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg scale-75 group-hover:scale-100">
                       <span className="material-symbols-outlined text-lg font-bold">add</span>
                     </div>
@@ -306,9 +333,12 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                         setDraggedAptId(apt.id); 
                       }}
                       onClick={(e) => { e.stopPropagation(); setSelectedApt(apt); }}
-                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold shadow-sm border border-white/10 truncate transition-transform hover:scale-105 ${getStatusColor(apt.status)}`}
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold shadow-sm border border-white/10 truncate transition-transform hover:scale-105 flex flex-col gap-0.5 ${getStatusColor(apt.status)}`}
                     >
-                      {apt.time} - {apt.patientName} ({apt.treatment})
+                      <span className="truncate">{apt.time} - {apt.patientName}</span>
+                      {settings.branchCount > 1 && (
+                        <span className="text-[8px] opacity-75 truncate uppercase tracking-tight block border-t border-white/20 pt-0.5 mt-0.5">{apt.branch}</span>
+                      )}
                     </div>
                   ))}
                   {dayAppointments.length > 3 && (
@@ -393,6 +423,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                       >
                         <div className="truncate mb-1">{apt.time} - {apt.patientName}</div>
                         <div className="opacity-80 uppercase tracking-tighter text-[8px]">{apt.treatment}</div>
+                        {settings.branchCount > 1 && (
+                            <div className="opacity-70 font-black uppercase text-[8px] mt-1 pt-1 border-t border-white/20 truncate">{apt.branch}</div>
+                        )}
                       </div>
                     ) : (
                       !isPast && open && (
@@ -413,7 +446,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
 
   const renderDayView = () => {
     const dateStr = currentDate.toISOString().split('T')[0];
-    const dayAppointments = appointments.filter(a => a.date === dateStr);
+    const dayAppointments = filteredAppointments.filter(a => a.date === dateStr);
     const isPast = isPastDate(dateStr);
     
     return (
@@ -474,6 +507,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                         <div>
                           <p className="text-xl font-bold">{apt.time} - {apt.patientName}</p>
                           <p className="text-xs opacity-90 uppercase font-black tracking-widest mt-1">{apt.treatment} (Médico: {apt.doctorName})</p>
+                          {settings.branchCount > 1 && (
+                             <p className="text-[10px] font-bold bg-white/20 w-fit px-2 py-0.5 rounded mt-2 uppercase tracking-wider">{apt.branch}</p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -570,6 +606,21 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
             </button>
           </div>
         </div>
+
+        {/* BRANCH FILTER (Only if > 1 branch) */}
+        {settings.branchCount > 1 && (
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-bg-dark p-1.5 rounded-[1.25rem] shadow-inner">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-3">Filtrar:</span>
+                <select 
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                    className="bg-transparent border-none text-xs font-bold text-slate-800 dark:text-white focus:ring-0 cursor-pointer py-2 pl-1 pr-8"
+                >
+                    <option value="ALL">Todas las Sucursales</option>
+                    {uniqueBranches.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+            </div>
+        )}
         
         <div className="flex items-center gap-6">
           <button 
@@ -609,6 +660,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
           onClose={() => setSelectedApt(null)}
           patients={patients}
           doctors={doctors}
+          settings={settings}
           onUpdateStatus={handleUpdateStatus}
           onCancelWithReplacement={handleCancelWithReplacement}
         />
@@ -635,6 +687,21 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                   className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white focus:ring-4 focus:ring-primary/10 transition-all"
                 />
               </div>
+              
+              {/* BRANCH SELECTION (CONDITIONAL) */}
+              {settings.branchCount > 1 && (
+                  <div>
+                    <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">Sucursal</label>
+                    <select 
+                      value={newAptData.branch}
+                      onChange={e => setNewAptData({...newAptData, branch: e.target.value})}
+                      className="w-full bg-[#f1f5f9]/80 dark:bg-bg-dark border border-slate-200 dark:border-slate-700 rounded-[1.75rem] px-8 py-5 text-base font-medium text-black dark:text-white appearance-none transition-all"
+                    >
+                      {uniqueBranches.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+              )}
+
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="text-[11px] font-black uppercase text-[#94a3b8] tracking-widest block mb-3 ml-2">

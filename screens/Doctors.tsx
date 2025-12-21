@@ -19,6 +19,7 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors, br
   const [selectedDoctorForAgenda, setSelectedDoctorForAgenda] = useState<Doctor | null>(null);
   const [selectedDoctorForProfile, setSelectedDoctorForProfile] = useState<Doctor | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search State
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const branchOptions = useMemo(() => branches.length > 0 ? branches.map(b => ({ value: b.name, label: b.name })) : [{ value: 'Centro', label: 'Centro' }], [branches]);
@@ -33,6 +34,18 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors, br
       }
     }
   }, [doctors, searchParams]);
+
+  // NEW: Filter Logic
+  const filteredDoctors = useMemo(() => {
+    if (!searchQuery.trim()) return doctors;
+    const q = searchQuery.toLowerCase();
+    return doctors.filter(d => 
+        d.name.toLowerCase().includes(q) ||
+        d.specialty.toLowerCase().includes(q) ||
+        d.branch.toLowerCase().includes(q) ||
+        d.role.toLowerCase().includes(q)
+    );
+  }, [doctors, searchQuery]);
 
   const getInitialSchedule = (): Record<string, DaySchedule> => DAYS.reduce((acc, day) => ({
     ...acc, [day]: { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } }
@@ -74,33 +87,60 @@ const Doctors: React.FC<DoctorsProps> = ({ doctors, appointments, setDoctors, br
     <div className="w-full flex flex-col p-6 gap-6 animate-in fade-in duration-500">
       
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
             <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">Cuerpo Médico</h1>
             <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm font-medium italic">Gestión operativa, RRHH y analítica estratégica.</p>
         </div>
-        <button onClick={() => setIsCreating(true)} className="h-10 px-6 bg-primary text-white rounded-md font-bold hover:bg-primary-dark transition-all flex items-center gap-2"><span className="material-symbols-outlined text-xl">person_add</span><span className="text-xs uppercase tracking-tight">Registrar Médico</span></button>
+        <button onClick={() => setIsCreating(true)} className="h-12 px-6 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark transition-all flex items-center gap-2 shadow-lg shadow-primary/20 shrink-0"><span className="material-symbols-outlined text-xl">person_add</span><span className="text-xs uppercase tracking-tight">Registrar Médico</span></button>
+      </div>
+
+      {/* SEARCH BAR */}
+      <div className="relative w-full">
+        <span className="material-symbols-outlined absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">search</span>
+        <input 
+            type="text" 
+            placeholder="Buscar por nombre, especialidad o sede..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white dark:bg-surface-dark border-none rounded-[1.5rem] py-4 pl-14 pr-6 text-sm font-bold shadow-sm focus:ring-4 focus:ring-primary/10 transition-all outline-none"
+        />
+        {searchQuery && (
+            <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+            >
+                <span className="material-symbols-outlined text-xl">close</span>
+            </button>
+        )}
       </div>
 
       {/* Grid Content */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {doctors.map((doc) => (
-        <div key={doc.id} className="bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg p-6 hover:border-primary transition-all relative overflow-hidden group shadow-sm">
-            <div className={`absolute top-6 right-6 text-[9px] font-black uppercase tracking-[0.2em] ${doc.status === 'Active' ? 'text-success' : 'text-warning'}`}><span className="flex items-center gap-2"><span className={`size-2 rounded-full ${doc.status === 'Active' ? 'bg-success' : 'bg-warning'} animate-pulse`}></span> {doc.status === 'Active' ? 'En Servicio' : 'Ausente'}</span></div>
-            <div className="flex items-center gap-5 mb-6">
-            <div className="size-20 rounded-lg bg-cover bg-center border border-slate-200 dark:border-slate-700 shadow-sm" style={{ backgroundImage: `url("${doc.img}")` }}></div>
-            <div><h3 className="text-xl font-display font-black text-slate-900 dark:text-white group-hover:text-primary transition-colors leading-tight">{doc.name}</h3><p className="text-[10px] font-black uppercase text-primary tracking-[0.2em] mt-1">{doc.specialty}</p></div>
+        {filteredDoctors.length > 0 ? (
+            filteredDoctors.map((doc) => (
+            <div key={doc.id} className="bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg p-6 hover:border-primary transition-all relative overflow-hidden group shadow-sm">
+                <div className={`absolute top-6 right-6 text-[9px] font-black uppercase tracking-[0.2em] ${doc.status === 'Active' ? 'text-success' : 'text-warning'}`}><span className="flex items-center gap-2"><span className={`size-2 rounded-full ${doc.status === 'Active' ? 'bg-success' : 'bg-warning'} animate-pulse`}></span> {doc.status === 'Active' ? 'En Servicio' : 'Ausente'}</span></div>
+                <div className="flex items-center gap-5 mb-6">
+                <div className="size-20 rounded-lg bg-cover bg-center border border-slate-200 dark:border-slate-700 shadow-sm" style={{ backgroundImage: `url("${doc.img}")` }}></div>
+                <div><h3 className="text-xl font-display font-black text-slate-900 dark:text-white group-hover:text-primary transition-colors leading-tight">{doc.name}</h3><p className="text-[10px] font-black uppercase text-primary tracking-[0.2em] mt-1">{doc.specialty}</p></div>
+                </div>
+                <div className="space-y-2 pt-4 border-t border-border-light dark:border-border-dark">
+                <div className="flex justify-between items-center bg-slate-50 dark:bg-bg-dark px-3 py-2 rounded-md"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sucursal</span><span className="text-[10px] font-black text-slate-900 dark:text-white uppercase">{doc.branch}</span></div>
+                <div className="flex justify-between items-center px-3"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Email</span><span className="text-[10px] font-black text-slate-600 dark:text-slate-400 italic truncate max-w-[150px]">{doc.corporateEmail}</span></div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-6">
+                <button onClick={() => setSelectedDoctorForAgenda(doc)} className="py-2.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[9px] font-black uppercase text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1.5"><span className="material-symbols-outlined text-base">event_note</span><span>Agenda</span></button>
+                <button onClick={() => setSelectedDoctorForProfile(doc)} className="py-2.5 bg-primary/10 text-primary rounded-md text-[9px] font-black uppercase hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-1.5"><span className="material-symbols-outlined text-base">contact_page</span><span>Ficha</span></button>
+                </div>
             </div>
-            <div className="space-y-2 pt-4 border-t border-border-light dark:border-border-dark">
-            <div className="flex justify-between items-center bg-slate-50 dark:bg-bg-dark px-3 py-2 rounded-md"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sucursal</span><span className="text-[10px] font-black text-slate-900 dark:text-white uppercase">{doc.branch}</span></div>
-            <div className="flex justify-between items-center px-3"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Email</span><span className="text-[10px] font-black text-slate-600 dark:text-slate-400 italic truncate max-w-[150px]">{doc.corporateEmail}</span></div>
+            ))
+        ) : (
+            <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-400 opacity-60">
+                <span className="material-symbols-outlined text-6xl mb-4">search_off</span>
+                <p className="text-sm font-bold uppercase tracking-widest">No se encontraron médicos</p>
             </div>
-            <div className="grid grid-cols-2 gap-2 mt-6">
-            <button onClick={() => setSelectedDoctorForAgenda(doc)} className="py-2.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[9px] font-black uppercase text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1.5"><span className="material-symbols-outlined text-base">event_note</span><span>Agenda</span></button>
-            <button onClick={() => setSelectedDoctorForProfile(doc)} className="py-2.5 bg-primary/10 text-primary rounded-md text-[9px] font-black uppercase hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-1.5"><span className="material-symbols-outlined text-base">contact_page</span><span>Ficha</span></button>
-            </div>
-        </div>
-        ))}
+        )}
       </div>
 
       {isCreating && (

@@ -84,8 +84,6 @@ const createDefaultGlobalSchedule = (): Record<string, DaySchedule> => {
   return schedule;
 };
 
-// --- DATOS MOCK INICIALES (Doctors, Patients, etc...) ---
-// (Keeping original mock data for brevity, assuming it exists in same structure)
 const INITIAL_DOCTORS: Doctor[] = [
   {
     id: 'D1', name: 'Dra. Ana Torres', role: 'doctor_role', specialty: 'Ortodoncia', status: 'Active',
@@ -132,136 +130,117 @@ const INITIAL_DOCTORS: Doctor[] = [
   }
 ];
 
-const INITIAL_PATIENTS: Patient[] = [
-  {
-    id: 'P1001', name: 'Laura Martínez', birthDate: '1990-05-15', gender: 'Femenino',
-    identityDocument: '12345678A', phone: '699 000 111', email: 'laura.m@gmail.com', address: 'Calle Mayor 1',
-    img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Laura&backgroundColor=e2e8f0',
-    medicalHistory: 'Alergia a la penicilina. Ortodoncia previa en 2010.',
-    weight: '62', height: '165', bloodType: 'A+', allergies: ['Penicilina'],
-    associatedDoctorId: 'D1', associatedDoctorName: 'Dra. Ana Torres',
-    attachments: [
-      { id: 'f1', name: 'Radiografía Panorámica', type: 'image/jpeg', size: '2.4 MB', date: '2023-09-10', url: 'https://prod-images-static.radiopaedia.org/images/52694668/0b26f5546059530595360936555309_jumbo.jpeg' }
-    ]
-  },
-  {
-    id: 'P1002', name: 'Pedro Gomez', birthDate: '1985-11-20', gender: 'Masculino',
-    identityDocument: '87654321B', phone: '699 222 333', email: 'pedro.g@hotmail.com', address: 'Av. Libertad 45',
-    img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Pedro&backgroundColor=e2e8f0',
-    medicalHistory: 'Hipertensión controlada. Implante en pieza 24.',
-    weight: '85', height: '180', bloodType: 'O+', allergies: [],
-    associatedDoctorId: 'D2', associatedDoctorName: 'Dr. Carlos Ruiz'
-  },
-  {
-    id: 'P1003', name: 'María Rodríguez', birthDate: '2015-03-10', gender: 'Femenino',
-    identityDocument: 'Sin DNI', phone: '699 444 555 (Madre)', email: 'madre.maria@gmail.com', address: 'Plaza España 2',
-    img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Maria&backgroundColor=e2e8f0',
-    medicalHistory: 'Ninguna patología previa. Revisión rutinaria.',
-    weight: '32', height: '135', bloodType: 'B+', allergies: ['Nueces'],
-    associatedDoctorId: 'D3', associatedDoctorName: 'Dra. Sofia Mendez'
-  },
-  {
-    id: 'P1004', name: 'Roberto Fernandez', birthDate: '1978-02-14', gender: 'Masculino',
-    identityDocument: '33445566C', phone: '699 777 888', email: 'roberto.f@gmail.com', address: 'Calle Pez 22',
-    img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Roberto&backgroundColor=e2e8f0',
-    medicalHistory: 'Diabetes tipo 2. Control periódico.',
-    weight: '90', height: '178', bloodType: 'AB+', allergies: [],
-    associatedDoctorId: 'D1', associatedDoctorName: 'Dra. Ana Torres'
-  },
-  {
-    id: 'P1005', name: 'Elena White', birthDate: '1995-07-22', gender: 'Femenino',
-    identityDocument: 'X1234567Z', phone: '699 999 000', email: 'elena.w@yahoo.com', address: 'Gran Vía 10',
-    img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Elena&backgroundColor=e2e8f0',
-    medicalHistory: 'Limpieza anual. Sin antecedentes relevantes.',
-    weight: '58', height: '170', bloodType: 'O-', allergies: [],
-    associatedDoctorId: 'D2', associatedDoctorName: 'Dr. Carlos Ruiz'
-  }
-];
-
-// --- GENERADOR DE CITAS DEMO DINÁMICO ---
-// Esta función se ejecuta al cargar la App y genera 30 citas para el MES ACTUAL
-// Asegurando que la data base siempre esté "viva" y actualizada.
-const generateDemoAppointments = (): Appointment[] => {
+// --- GENERADOR DE DATOS DINÁMICOS (PACIENTES Y CITAS ÚNICAS) ---
+const generateSyntheticData = () => {
+  const firstNames = ["Hugo", "Mateo", "Martín", "Lucas", "Leo", "Daniel", "Alejandro", "Manuel", "Pablo", "Álvaro", "Lucía", "Sofía", "Martina", "María", "Julia", "Paula", "Valeria", "Emma", "Daniela", "Carla", "Diego", "Adrián", "David", "Mario", "Enzo", "Oliver", "Claudia", "Valentina", "Alma", "Chloe"];
+  const lastNames = ["García", "Rodríguez", "González", "Fernández", "López", "Martínez", "Sánchez", "Pérez", "Gómez", "Martin", "Jiménez", "Ruiz", "Hernández", "Díaz", "Moreno", "Muñoz", "Álvarez", "Romero", "Alonso", "Gutiérrez", "Navarro", "Torres", "Domínguez", "Vázquez", "Ramos", "Gil", "Ramírez", "Serrano", "Blanco", "Molina"];
+  
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-11
-  const daysInMonth = new Date(year, month + 1, 0).getDate(); // Días reales del mes actual
+  const currentYear = now.getFullYear();
 
+  // Treatments align with Metric prices
   const treatments = [
-    'Limpieza Dental', 'Consulta General', 'Ortodoncia', 'Implante Titanio', 
+    'Limpieza Dental Profunda', 'Consulta General', 'Ortodoncia', 'Implante Titanio', 
     'Revisión Periódica', 'Blanqueamiento', 'Urgencia', 'Cirugía Maxilofacial'
   ];
-  const statuses: AppointmentStatus[] = ['Confirmed', 'Confirmed', 'Confirmed', 'Completed', 'Completed', 'Pending', 'Cancelled', 'Rescheduled'];
   const times = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'];
+  
+  const generatedPatients: Patient[] = [];
+  const generatedAppointments: Appointment[] = [];
 
-  const demoAppointments: Appointment[] = [];
+  // 1. Generar 30 Pacientes Únicos, cada uno asignado a un médico principal
+  for (let i = 0; i < 30; i++) {
+    const name = firstNames[i % firstNames.length];
+    const surname = lastNames[i % lastNames.length];
+    const secondSurname = lastNames[(i + 5) % lastNames.length]; 
+    const fullName = `${name} ${surname} ${secondSurname}`;
+    
+    // Assign a primary doctor to this patient
+    const assignedDoctor = INITIAL_DOCTORS[i % INITIAL_DOCTORS.length];
 
-  // 1. GENERATE SPECIFIC APPOINTMENTS FOR TODAY AND TOMORROW (Visual Assurance)
-  const todayStr = new Date().toISOString().split('T')[0];
-  const tomorrowObj = new Date();
-  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
-  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+    const patientId = `P_GEN_${i + 1000}`;
+    const newPatient: Patient = {
+        id: patientId,
+        name: fullName,
+        birthDate: `${1970 + (i % 40)}-${String((i % 12) + 1).padStart(2, '0')}-15`,
+        gender: i % 2 === 0 ? 'Femenino' : 'Masculino',
+        identityDocument: `${10000000 + i}X`,
+        phone: `600${String(i).padStart(6, '0')}`,
+        email: `${name.toLowerCase()}.${surname.toLowerCase()}@email.com`,
+        address: `Calle ${i}, Madrid`,
+        medicalHistory: i % 3 === 0 ? 'Alergia al polen.' : 'Sin antecedentes.',
+        img: `https://api.dicebear.com/7.x/notionists-neutral/svg?seed=${name + i}&backgroundColor=e2e8f0`,
+        associatedDoctorId: assignedDoctor.id,
+        associatedDoctorName: assignedDoctor.name,
+        history: [{ date: new Date().toISOString().split('T')[0], action: 'Alta Automática', description: 'Generado por sistema demo.' }]
+    };
+    generatedPatients.push(newPatient);
+  }
 
-  const createForDay = (dateStr: string, count: number) => {
-      for (let i = 0; i < count; i++) {
-        const doctor = INITIAL_DOCTORS[i % INITIAL_DOCTORS.length];
-        const patient = INITIAL_PATIENTS[i % INITIAL_PATIENTS.length];
-        demoAppointments.push({
-            id: `FIXED_${dateStr}_${i}`,
+  // 2. Generar citas para TODO EL AÑO (Enero a Diciembre)
+  // Cada paciente tiene exactamente 1 cita por mes.
+  for (let month = 0; month < 12; month++) {
+    generatedPatients.forEach((patient, i) => {
+        // En un 80% de los casos, la cita es con su médico asignado. El 20% es con otro (urgencias, etc.)
+        let doctor = INITIAL_DOCTORS.find(d => d.id === patient.associatedDoctorId) || INITIAL_DOCTORS[0];
+        if (Math.random() > 0.8) {
+             doctor = INITIAL_DOCTORS[(i + month) % INITIAL_DOCTORS.length];
+        }
+
+        const treatment = treatments[(i + month) % treatments.length]; 
+        
+        // Distribuir días
+        let day = ((i * 3 + month) % 27) + 1; // 1-28
+        
+        const dateObj = new Date(currentYear, month, day);
+        if (dateObj.getDay() === 0) day = day === 1 ? 2 : day - 1; // Domingo -> Lunes o Sabado
+        
+        const time = times[(i + month) % times.length];
+        const dateStr = `${currentYear}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        
+        const aptDateTime = new Date(dateStr + 'T' + time + ':00');
+        
+        let status: AppointmentStatus = 'Confirmed';
+        
+        if (aptDateTime < now) {
+            // Citas pasadas
+            const rand = Math.random();
+            if (rand > 0.85) status = 'Cancelled';
+            else if (rand > 0.95) status = 'Rescheduled';
+            else status = 'Completed';
+        } else {
+            // Citas futuras
+            const rand = Math.random();
+            if (rand > 0.9) status = 'Cancelled';
+            else if (rand > 0.8) status = 'Pending';
+            else status = 'Confirmed';
+        }
+
+        generatedAppointments.push({
+            id: `APT_${month}_${i}`,
             patientId: patient.id,
             patientName: patient.name,
-            doctorId: doctor.id,
-            doctorName: doctor.name,
+            doctorId: doctor.id,      // Ensure strict linking
+            doctorName: doctor.name,  // Ensure strict linking
             branch: doctor.branch,
             date: dateStr,
-            time: times[i % times.length], // Distribute times
-            treatment: treatments[i % treatments.length],
-            status: 'Confirmed'
+            time: time,
+            treatment: treatment,
+            status: status
         });
-      }
-  };
-
-  createForDay(todayStr, 4); // 4 Appointments today
-  createForDay(tomorrowStr, 3); // 3 Appointments tomorrow
-
-  // 2. GENERATE RANDOM APPOINTMENTS FOR THE REST OF THE MONTH
-  for (let i = 0; i < 25; i++) {
-    const doctor = INITIAL_DOCTORS[Math.floor(Math.random() * INITIAL_DOCTORS.length)];
-    const patient = INITIAL_PATIENTS[Math.floor(Math.random() * INITIAL_PATIENTS.length)];
-    const treatment = treatments[Math.floor(Math.random() * treatments.length)];
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-    
-    const day = Math.floor(Math.random() * daysInMonth) + 1;
-    const time = times[Math.floor(Math.random() * times.length)];
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-    let finalStatus = status;
-    const aptDateObj = new Date(year, month, day);
-    const todayObj = new Date();
-    todayObj.setHours(0,0,0,0);
-
-    if (aptDateObj > todayObj && status === 'Completed') {
-        finalStatus = 'Confirmed';
-    }
-
-    demoAppointments.push({
-      id: `DEMO_APT_${i}`,
-      patientId: patient.id,
-      patientName: patient.name,
-      doctorId: doctor.id,
-      doctorName: doctor.name,
-      branch: doctor.branch,
-      date: dateStr,
-      time: time,
-      treatment: treatment,
-      status: finalStatus
     });
   }
 
-  return demoAppointments.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  return { generatedPatients, generatedAppointments };
 };
 
-const INITIAL_DEMO_APPOINTMENTS = generateDemoAppointments();
+// Generate data once
+const { generatedPatients, generatedAppointments } = generateSyntheticData();
+
+// Combine with any static/hardcoded patients if needed, but for "30 unique appointments = 30 unique patients", 
+// the generated list is the source of truth for the demo.
+const INITIAL_PATIENTS_FULL = generatedPatients;
+const INITIAL_APPOINTMENTS_FULL = generatedAppointments.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
 
 const INITIAL_TASKS: Task[] = [
   { 
@@ -288,7 +267,7 @@ const INITIAL_TASKS: Task[] = [
     id: 'T3', 
     title: 'Revisar informe de Laura M.', 
     description: 'Evaluar evolución brackets.', 
-    content: 'La paciente Laura Martínez (ID: P1001) reportó molestias en la zona molar derecha tras el último ajuste. Revisar radiografías recientes y planificar ajuste de tensión en la próxima visita.',
+    content: 'La paciente reportó molestias en la zona molar derecha tras el último ajuste. Revisar radiografías recientes y planificar ajuste de tensión en la próxima visita.',
     completed: false, 
     priority: 'Low', 
     sub: 'Dra. Torres',
@@ -310,13 +289,10 @@ const App: React.FC = () => {
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   
   // --- STATE MANAGEMENT ---
-  // Utilizamos los datos generados dinámicamente como estado inicial.
-  // Al refrescar la página, este componente se desmonta y monta de nuevo,
-  // regenerando los datos base y eliminando lo creado por el usuario.
-  const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
+  const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS_FULL);
   const [doctors, setDoctors] = useState<Doctor[]>(INITIAL_DOCTORS);
   const [branches, setBranches] = useState<Branch[]>(INITIAL_BRANCHES);
-  const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_DEMO_APPOINTMENTS);
+  const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS_FULL);
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
 
   // --- GLOBAL MODAL STATE ---
@@ -326,6 +302,7 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<ClinicSettings>({
     name: "MediClinic Premium",
     sector: "Clínica Dental",
+    region: "ES", // Default Region
     branchCount: 3, // NEW DEFAULT
     scheduleType: 'split', // NEW DEFAULT (Partido)
     logo: "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/hospital.svg",
@@ -459,7 +436,7 @@ const App: React.FC = () => {
 
   const handleSaveGlobalDoctor = (updatedDoc: Doctor) => {
     setDoctors(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
-    setViewingDoctor(updatedDoc); // Keep modal open with fresh data or close? User said "close window -> maintain window I was viewing". This updates the data.
+    setViewingDoctor(updatedDoc); 
   };
 
   const handleSaveGlobalPatient = (updatedPat: Patient) => {
@@ -497,7 +474,7 @@ const App: React.FC = () => {
                 setSystemUsers={setSystemUsers} 
                 doctors={doctors} 
                 setDoctors={setDoctors} 
-                onOpenDoctor={handleOpenDoctor} // Pass handler
+                onOpenDoctor={handleOpenDoctor} 
               />
             } 
           />
@@ -522,6 +499,7 @@ const App: React.FC = () => {
           onClose={() => setViewingPatient(null)}
           onSave={handleSaveGlobalPatient}
           onOpenDoctor={handleOpenDoctor}
+          appointments={appointments} // Pass updated appointments for history
         />
       )}
 

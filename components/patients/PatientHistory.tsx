@@ -220,7 +220,11 @@ export const PatientHistory: React.FC<PatientHistoryProps> = ({ patient, appoint
                             </div>
                             <div>
                                 <p className="font-bold text-slate-900 dark:text-white text-sm">{apt.treatment}</p>
-                                <p className="text-xs text-slate-500 font-medium">{apt.time} • {apt.doctorName}</p>
+                                <p className="text-xs text-slate-500 font-medium flex items-center gap-2">
+                                    <span>{apt.time}</span>
+                                    <span className="size-1 rounded-full bg-slate-300"></span>
+                                    <span className="text-primary font-bold">{apt.doctorName}</span>
+                                </p>
                             </div>
                         </div>
                         <div className="text-right">

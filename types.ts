@@ -163,6 +163,7 @@ export interface AiPhoneSettings {
 }
 
 export type AppLanguage = 'es-ES' | 'es-LATAM' | 'en-GB' | 'en-US';
+export type CountryRegion = 'ES' | 'MX' | 'US' | 'CO' | 'AR' | 'BZ' | 'CR' | 'SV' | 'GT' | 'HN' | 'NI' | 'PA'; // Added Central America
 
 export interface AppLabels {
   [key: string]: string;
@@ -200,6 +201,7 @@ export interface AppointmentPolicy {
 export interface ClinicSettings {
   name: string;
   sector: string; // NEW: Clinic Sector
+  region: CountryRegion; // NEW: Country/Region for validation
   branchCount: number; // NEW: Total branches
   scheduleType: 'continuous' | 'split'; // NEW: Horario Corrido vs Partido
   logo: string;

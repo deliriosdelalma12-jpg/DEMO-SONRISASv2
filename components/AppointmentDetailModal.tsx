@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Appointment, AppointmentStatus, Patient, Doctor } from '../types';
+import { Appointment, AppointmentStatus, Patient, Doctor, ClinicSettings } from '../types';
 import { useNavigate } from 'react-router-dom';
 
 interface AppointmentDetailModalProps {
@@ -10,6 +10,7 @@ interface AppointmentDetailModalProps {
   onCancelWithReplacement?: (id: string, replacement?: Patient | 'NEW') => void;
   patients: Patient[];
   doctors: Doctor[];
+  settings?: ClinicSettings; // Optional to handle legacy
 }
 
 const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({ 
@@ -18,7 +19,8 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
   onUpdateStatus,
   onCancelWithReplacement,
   patients,
-  doctors
+  doctors,
+  settings
 }) => {
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -242,6 +244,14 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
             </div>
           </div>
           
+          {/* BRANCH INFO (CONDITIONAL) */}
+          {settings && settings.branchCount > 1 && (
+              <div className="bg-slate-50 dark:bg-bg-dark p-3 rounded-xl border border-border-light dark:border-border-dark flex items-center justify-between">
+                  <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest">Sucursal</p>
+                  <p className="text-[11px] font-bold text-slate-900 dark:text-white uppercase">{appointment.branch}</p>
+              </div>
+          )}
+
           <div className="bg-slate-50 dark:bg-bg-dark p-3 rounded-xl border border-border-light dark:border-border-dark">
             <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest mb-1">Médico Tratante</p>
             {isLocked ? (

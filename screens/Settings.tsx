@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ClinicSettings, User, Doctor } from '../types';
 import SettingsCompany from './settings/SettingsCompany';
 import SettingsLabor from './settings/SettingsLabor';
@@ -21,8 +21,20 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleTheme, darkMode, systemUsers, setSystemUsers, doctors, setDoctors, onOpenDoctor }) => {
   const [activeTab, setActiveTab] = useState<'company' | 'labor' | 'visual' | 'assistant'>('company');
   const [showSuccessMsg, setShowSuccessMsg] = useState(false);
+  
+  // BUFFER STATE: Copia local de la configuración.
+  // Los cambios en los inputs actualizan ESTO, no la app global.
+  const [localSettings, setLocalSettings] = useState<ClinicSettings>(settings);
+
+  // Sincronizar buffer si la configuración global cambia externamente (raro, pero buena práctica)
+  useEffect(() => {
+    setLocalSettings(settings);
+  }, [settings]);
 
   const handleGlobalSave = () => {
+    // COMMIT: Aquí es donde finalmente guardamos los cambios en la App.
+    setSettings(localSettings);
+    
     setShowSuccessMsg(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => setShowSuccessMsg(false), 3000);
@@ -56,11 +68,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, setSettings, onToggleThem
         </div>
       </header>
 
+      {/* IMPORTANTE: Pasamos localSettings y setLocalSettings a los hijos. */}
       <div className="border border-border-light dark:border-border-dark rounded-xl bg-white dark:bg-surface-dark overflow-hidden">
-        {activeTab === 'company' && <SettingsCompany settings={settings} setSettings={setSettings} systemUsers={systemUsers} setSystemUsers={setSystemUsers} doctors={doctors} setDoctors={setDoctors} />}
-        {activeTab === 'labor' && <SettingsLabor settings={settings} setSettings={setSettings} doctors={doctors || []} setDoctors={setDoctors || (() => {})} />}
-        {activeTab === 'visual' && <SettingsVisual settings={settings} setSettings={setSettings} onToggleTheme={onToggleTheme} darkMode={darkMode} />}
-        {activeTab === 'assistant' && <SettingsAssistant settings={settings} setSettings={setSettings} />}
+        {activeTab === 'company' && <SettingsCompany settings={localSettings} setSettings={setLocalSettings} systemUsers={systemUsers} setSystemUsers={setSystemUsers} doctors={doctors} setDoctors={setDoctors} />}
+        {activeTab === 'labor' && <SettingsLabor settings={localSettings} setSettings={setLocalSettings} doctors={doctors || []} setDoctors={setDoctors || (() => {})} />}
+        {activeTab === 'visual' && <SettingsVisual settings={localSettings} setSettings={setLocalSettings} onToggleTheme={onToggleTheme} darkMode={darkMode} />}
+        {activeTab === 'assistant' && <SettingsAssistant settings={localSettings} setSettings={setLocalSettings} />}
       </div>
 
       <footer className="flex justify-end pt-8">

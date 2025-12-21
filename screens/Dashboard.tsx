@@ -262,6 +262,12 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
                                     </div>
                                     <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-1 truncate">{apt.patientName}</p>
                                     <p className="text-[9px] text-slate-400 truncate">{apt.treatment}</p>
+                                    <div className="flex items-center gap-1 mt-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wide truncate max-w-full">
+                                            Dr: {apt.doctorName.split(' ')[1] || apt.doctorName}
+                                        </span>
+                                        {settings.branchCount > 1 && <span className="text-[8px] font-black text-slate-300">• {apt.branch}</span>}
+                                    </div>
                                 </div>
                             )) : (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2 opacity-60">
@@ -287,6 +293,12 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
                                     </div>
                                     <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-1 truncate">{apt.patientName}</p>
                                     <p className="text-[9px] text-slate-400 truncate">{apt.treatment}</p>
+                                    <div className="flex items-center gap-1 mt-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wide truncate max-w-full">
+                                            Dr: {apt.doctorName.split(' ')[1] || apt.doctorName}
+                                        </span>
+                                        {settings.branchCount > 1 && <span className="text-[8px] font-black text-slate-300">• {apt.branch}</span>}
+                                    </div>
                                 </div>
                             )) : (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2 opacity-60">
@@ -355,7 +367,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
 
       {/* APPOINTMENT MODAL */}
       {selectedApt && (
-        <AppointmentDetailModal appointment={selectedApt} onClose={() => setSelectedApt(null)} onUpdateStatus={(id, s) => setAppointments(prev => prev.map(a => a.id === id ? {...a, status: s} : a))} patients={patients} doctors={doctors} />
+        <AppointmentDetailModal settings={settings} appointment={selectedApt} onClose={() => setSelectedApt(null)} onUpdateStatus={(id, s) => setAppointments(prev => prev.map(a => a.id === id ? {...a, status: s} : a))} patients={patients} doctors={doctors} />
       )}
 
       {/* TASK EDIT/CREATE MODAL */}
