@@ -42,11 +42,12 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
       <aside className="w-[260px] border-r border-border-light dark:border-border-dark flex flex-col hidden lg:flex shrink-0 bg-white dark:bg-surface-dark transition-colors h-screen sticky top-0 z-50">
         <div className="p-6 h-20 flex items-center shrink-0">
           <Link to="/" className={`flex items-center gap-3 ${!settings.name ? 'justify-center' : ''} w-full`}>
-            <div className={`${settings.name ? 'size-8' : 'w-full h-12'} text-primary transition-all duration-300`}>
+            {/* SI EL NOMBRE ESTÁ VACÍO, EL LOGO OCUPA EL ANCHO COMPLETO */}
+            <div className={`${settings.name ? 'size-8' : 'w-full h-12 flex justify-center'} text-primary transition-all duration-300`}>
               <img 
                 src={settings.logo} 
                 alt="Logo" 
-                className={`w-full h-full object-contain ${!settings.name ? 'object-left' : ''}`} 
+                className={`w-full h-full object-contain ${!settings.name ? 'scale-125' : ''}`} 
               />
             </div>
             {settings.name && (
@@ -83,7 +84,12 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
         {/* HEADER - STICKY */}
         <header className="h-20 border-b border-border-light dark:border-border-dark flex items-center justify-between px-8 bg-white/90 dark:bg-surface-dark/90 backdrop-blur-xl shrink-0 z-40 transition-all no-print sticky top-0">
           
-          <div className="flex-1"></div>
+          <div className="flex-1 flex items-center">
+            {/* RAZÓN SOCIAL EN LA PARTE SUPERIOR */}
+            <h1 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] truncate max-w-xs">
+              {settings.businessName}
+            </h1>
+          </div>
 
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
             <button 

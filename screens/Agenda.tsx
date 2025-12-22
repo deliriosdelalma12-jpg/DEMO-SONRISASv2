@@ -54,7 +54,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
   const getStatusColor = (status: AppointmentStatus) => {
     switch (status) {
       case 'Confirmed': return 'bg-success text-white';
-      case 'Rescheduled': return 'bg-warning text-white';
+      // Fix: Changed 'Rescheduled' to 'Reprogramada' to match AppointmentStatus type
+      case 'Reprogramada': return 'bg-warning text-white';
       case 'Cancelled': return 'bg-danger text-white';
       case 'Pending': return 'bg-slate-400 text-white';
       case 'Completed': return 'bg-primary text-white';
@@ -251,7 +252,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         return;
     }
     
-    handleUpdateStatus(draggedAptId, 'Rescheduled', dateStr, timeStr);
+    // Fix: Changed 'Rescheduled' to 'Reprogramada' to match AppointmentStatus type
+    handleUpdateStatus(draggedAptId, 'Reprogramada', dateStr, timeStr);
     setDraggedAptId(null);
   };
 
@@ -264,7 +266,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
     const slotApps = filteredAppointments.filter(a => a.date === dateStr && a.time.startsWith(timeHour.substring(0, 2)));
     if (slotApps.length === 0) return null;
     
-    const activeApp = slotApps.find(a => ['Confirmed', 'Rescheduled', 'Pending'].includes(a.status));
+    // Fix: Changed 'Rescheduled' to 'Reprogramada' to match AppointmentStatus type in the active status list
+    const activeApp = slotApps.find(a => ['Confirmed', 'Reprogramada', 'Pending'].includes(a.status));
     if (activeApp) return activeApp;
     
     const completedApp = slotApps.find(a => a.status === 'Completed');

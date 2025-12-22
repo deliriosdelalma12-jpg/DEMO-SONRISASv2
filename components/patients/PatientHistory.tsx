@@ -68,7 +68,8 @@ export const PatientHistory: React.FC<PatientHistoryProps> = ({ patient, appoint
       case 'Confirmed': return 'bg-emerald-500/10 text-emerald-600 border-emerald-200';
       case 'Completed': return 'bg-violet-500/10 text-violet-600 border-violet-200';
       case 'Cancelled': return 'bg-red-500/10 text-red-600 border-red-200';
-      case 'Rescheduled': return 'bg-amber-500/10 text-amber-600 border-amber-200';
+      // Fix: Changed 'Rescheduled' to 'Reprogramada' to match AppointmentStatus type
+      case 'Reprogramada': return 'bg-amber-500/10 text-amber-600 border-amber-200';
       default: return 'bg-slate-100 text-slate-500 border-slate-200';
     }
   };
@@ -96,7 +97,8 @@ export const PatientHistory: React.FC<PatientHistoryProps> = ({ patient, appoint
             ? 'bg-red-500 text-white border-red-500 shadow-md shadow-red-500/20' 
             : 'bg-red-50 text-red-600 border-transparent hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400';
     }
-    if (status === 'Rescheduled') {
+    // Fix: Changed 'Rescheduled' to 'Reprogramada' to match AppointmentStatus type
+    if (status === 'Reprogramada') {
         return active 
             ? 'bg-amber-400 text-white border-amber-400 shadow-md shadow-amber-400/20' 
             : 'bg-amber-50 text-amber-600 border-transparent hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400';
@@ -109,7 +111,8 @@ export const PatientHistory: React.FC<PatientHistoryProps> = ({ patient, appoint
       if (s === 'Confirmed') return 'Confirmada';
       if (s === 'Completed') return 'Completada';
       if (s === 'Cancelled') return 'Cancelada';
-      if (s === 'Rescheduled') return 'Reconfirmada';
+      // Fix: Changed 'Rescheduled' to 'Reprogramada' for internal mapping
+      if (s === 'Reprogramada') return 'Reconfirmada';
       return s;
   }
 
@@ -196,7 +199,8 @@ export const PatientHistory: React.FC<PatientHistoryProps> = ({ patient, appoint
                 <span className="material-symbols-outlined text-sm">list_alt</span> Historial Detallado
             </h4>
             <div className="flex flex-wrap justify-center gap-2">
-                {['ALL', 'Confirmed', 'Completed', 'Cancelled', 'Rescheduled'].map(status => (
+                {/* Fix: Changed 'Rescheduled' to 'Reprogramada' in the filter list */}
+                {['ALL', 'Confirmed', 'Completed', 'Cancelled', 'Reprogramada'].map(status => (
                     <button 
                         key={status} 
                         onClick={() => setFilterStatus(status)}

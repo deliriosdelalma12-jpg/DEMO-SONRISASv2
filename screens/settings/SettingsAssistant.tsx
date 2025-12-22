@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ClinicSettings, VoiceAccent, FileAttachment } from '../../types';
 import { generatePersonalityPrompt, speakText } from '../../services/gemini';
 
@@ -14,6 +14,8 @@ const PERSONALITY_TAGS = {
   relacion: ['Formal (Usted)', 'Cercana (Tú)', 'Protectora', 'Vendedora'],
   enfoque: ['Venta Consultiva', 'Triaje Clínico', 'Fidelización VIP', 'Resolución Técnica', 'Gestión de Quejas', 'Cierre Agresivo']
 };
+
+const DEFAULT_TEST_PARAGRAPH = "Hola, soy {name}. Es un placer saludarte. Estoy aquí para gestionar tus citas en {clinic} y resolver cualquier duda sobre nuestros tratamientos de forma inmediata. Mi compromiso es ofrecerte una atención personalizada, cercana y profesional en cada contacto. ¿En qué puedo ayudarte hoy?";
 
 const GREETING_PILLS = [
   "Hola, soy {name} de {clinic}. ¿En qué puedo ayudarte hoy?",
@@ -43,6 +45,15 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
   const [isTestingVoice, setIsTestingVoice] = useState(false);
   const knowledgeFileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!settings.aiPhoneSettings.testSpeechText || settings.aiPhoneSettings.testSpeechText === "Prueba.") {
+        const initialTest = DEFAULT_TEST_PARAGRAPH
+            .replace('{name}', settings.aiPhoneSettings.assistantName)
+            .replace('{clinic}', settings.aiPhoneSettings.aiCompanyName);
+        setSettings(prev => ({ ...prev, aiPhoneSettings: { ...prev.aiPhoneSettings, testSpeechText: initialTest } }));
+    }
+  }, []);
+
   const toggleTag = (tag: string) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   };
@@ -51,38 +62,75 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
     const text = settings.aiPhoneSettings.testSpeechText || settings.aiPhoneSettings.initialGreeting;
     setIsTestingVoice(true);
     try {
-      // Pasamos el acento actual para que el motor de TTS sepa cómo hablar
-      const base64 = await speakText(text, settings.aiPhoneSettings.voiceName, settings.aiPhoneSettings.accent);
+      // LLAMADA ULTRA-RÁPIDA
+      const base64 = await speakText(
+        text, 
+        settings.aiPhoneSettings.voiceName, 
+        settings.aiPhoneSettings.accent
+      );
+      
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       const binaryString = atob(base64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+      
       const dataInt16 = new Int16Array(bytes.buffer);
       const buffer = audioContext.createBuffer(1, dataInt16.length, 24000);
       const channelData = buffer.getChannelData(0);
       for (let i = 0; i < dataInt16.length; i++) channelData[i] = dataInt16[i] / 32768.0;
+      
       const source = audioContext.createBufferSource();
       source.buffer = buffer;
       source.connect(audioContext.destination);
       source.start();
-    } catch (e) { alert("Error al probar voz."); } finally { setIsTestingVoice(false); }
+    } catch (e) { 
+        alert("Error de simulación: El motor TTS de Gemini está saturado o el texto es inválido."); 
+    } finally { 
+        setIsTestingVoice(false); 
+    }
   };
 
-  const handleAssistantNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newName = e.target.value;
-    const oldName = settings.aiPhoneSettings.assistantName;
-    if (!oldName) { setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, assistantName: newName}}); return; }
-    const updatedPrompt = settings.aiPhoneSettings.systemPrompt.replaceAll(oldName, newName);
-    const updatedGreeting = settings.aiPhoneSettings.initialGreeting.replaceAll(oldName, newName);
-    setSettings(prev => ({ ...prev, aiPhoneSettings: { ...prev.aiPhoneSettings, assistantName: newName, systemPrompt: updatedPrompt, initialGreeting: updatedGreeting } }));
+  /**
+   * SINCRONIZACIÓN SEGURA DE TEXTOS AI
+   * Implementa lógica para evitar que el borrado parcial destruya los textos de prompt y saludo.
+   */
+  const syncAiTexts = (newName: string, type: 'assistant' | 'company') => {
+    const field = type === 'assistant' ? 'assistantName' : 'aiCompanyName';
+    const oldName = settings.aiPhoneSettings[field];
+    
+    // Si no ha cambiado nada, abortamos
+    if (oldName === newName) return;
+
+    let updatedPrompt = settings.aiPhoneSettings.systemPrompt;
+    let updatedGreeting = settings.aiPhoneSettings.initialGreeting;
+    let updatedTest = settings.aiPhoneSettings.testSpeechText;
+
+    // Solo realizamos la sincronización si el nombre anterior era consistente (>1 letra)
+    // y el nuevo nombre también lo es. Esto evita la "destrucción" al borrar con backspace.
+    if (oldName && oldName.length > 1 && newName.length > 1) {
+        updatedPrompt = updatedPrompt.split(oldName).join(newName);
+        updatedGreeting = updatedGreeting.split(oldName).join(newName);
+        updatedTest = updatedTest.split(oldName).join(newName);
+    }
+
+    setSettings(prev => ({ 
+        ...prev, 
+        aiPhoneSettings: { 
+            ...prev.aiPhoneSettings, 
+            [field]: newName, 
+            systemPrompt: updatedPrompt, 
+            initialGreeting: updatedGreeting,
+            testSpeechText: updatedTest
+        } 
+    }));
   };
 
   const handleGeneratePersonality = async () => {
     if (selectedTags.length === 0) { alert("Selecciona al menos una etiqueta de personalidad."); return; }
     setIsGeneratingPersonality(true);
     try {
-      const newPrompt = await generatePersonalityPrompt(selectedTags, settings.aiPhoneSettings.assistantName, settings.name);
+      const newPrompt = await generatePersonalityPrompt(selectedTags, settings.aiPhoneSettings.assistantName, settings.aiPhoneSettings.aiCompanyName);
       setSettings(prev => ({ ...prev, aiPhoneSettings: { ...prev.aiPhoneSettings, systemPrompt: newPrompt } }));
     } catch (e) { alert("Error al generar personalidad."); } finally { setIsGeneratingPersonality(false); }
   };
@@ -106,7 +154,7 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
   const useGreetingPill = (template: string) => {
     const greeting = template
       .replace('{name}', settings.aiPhoneSettings.assistantName)
-      .replace('{clinic}', settings.name);
+      .replace('{clinic}', settings.aiPhoneSettings.aiCompanyName);
     
     setSettings(prev => ({
       ...prev,
@@ -125,11 +173,16 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
             <div className="size-12 rounded-xl bg-indigo-500 text-white flex items-center justify-center"><span className="material-symbols-outlined">badge</span></div>
             <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Identidad del Asistente</h3>
             </div>
-            <div className="p-10">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre del Asistente</label>
-                <div className="flex gap-4 items-center mt-2">
-                    <input type="text" value={settings.aiPhoneSettings.assistantName} onChange={handleAssistantNameChange} className="flex-1 bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-lg font-black text-primary focus:ring-4 focus:ring-primary/10 transition-all" placeholder="Ej: Sara" />
-                    <div className="text-xs font-medium text-slate-400 max-w-xs italic flex items-start gap-2"><span className="material-symbols-outlined text-sm mt-0.5">info</span> Al cambiar el nombre, se actualizará automáticamente en el Prompt y el Saludo inicial.</div>
+            <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre del Asistente</label>
+                    <input type="text" value={settings.aiPhoneSettings.assistantName} onChange={(e) => syncAiTexts(e.target.value, 'assistant')} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-lg font-black text-primary focus:ring-4 focus:ring-primary/10 transition-all" placeholder="Ej: Sara" />
+                    <p className="text-[9px] text-slate-400 italic px-1 mt-1">Nombre que la IA usará para identificarse ante el paciente.</p>
+                </div>
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre de Empresa (IA)</label>
+                    <input type="text" value={settings.aiPhoneSettings.aiCompanyName} onChange={(e) => syncAiTexts(e.target.value, 'company')} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-lg font-black text-slate-900 dark:text-white focus:ring-4 focus:ring-primary/10 transition-all" placeholder="Ej: MediClinic Premium" />
+                    <p className="text-[9px] text-slate-400 italic px-1 mt-1">Este campo se sincroniza automáticamente con el nombre comercial de la empresa.</p>
                 </div>
             </div>
         </section>
@@ -142,7 +195,7 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
           <div className="p-10 space-y-10">
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acento y Región (Persistente)</label>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acento y Región</label>
                    <div className="grid grid-cols-1 gap-3">
                       {ACCENT_OPTIONS.map(opt => (
                         <button key={opt.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, accent: opt.id}})} className={`flex items-center justify-between px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.accent === opt.id ? 'bg-primary/10 border-primary text-primary shadow-lg scale-[1.02]' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
@@ -164,14 +217,26 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
                    </div>
                 </div>
              </div>
-             <div className="p-8 bg-primary/5 rounded-[2.5rem] border border-primary/20 space-y-6">
+             <div className="p-10 bg-primary/5 rounded-[3rem] border border-primary/20 space-y-8">
                 <div className="flex items-center justify-between">
-                   <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em]">Laboratorio de Pruebas ({settings.aiPhoneSettings.accent})</h4>
-                   <button onClick={handleTestVoice} disabled={isTestingVoice} className="px-6 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:scale-105 transition-all">
-                      {isTestingVoice ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">play_circle</span>} Escuchar con Acento
+                   <div>
+                       <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em]">Laboratorio de Pruebas (Simulación Real)</h4>
+                       <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Evaluando acento: {settings.aiPhoneSettings.accent}</p>
+                   </div>
+                   <button onClick={handleTestVoice} disabled={isTestingVoice} className="px-10 py-4 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center gap-3 shadow-xl hover:scale-105 transition-all">
+                      {isTestingVoice ? <span className="material-symbols-outlined animate-spin text-lg">sync</span> : <span className="material-symbols-outlined text-lg">play_circle</span>} Escuchar Simulación Inmediata
                    </button>
                 </div>
-                <textarea value={settings.aiPhoneSettings.testSpeechText} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, testSpeechText: e.target.value}})} className="w-full bg-white dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-medium h-24 shadow-inner resize-none" placeholder="Escribe lo que quieres que el asistente diga para probar su voz..." />
+                <textarea 
+                    value={settings.aiPhoneSettings.testSpeechText} 
+                    onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, testSpeechText: e.target.value}})} 
+                    className="w-full bg-white dark:bg-bg-dark border-none rounded-[2rem] px-8 py-8 text-sm font-medium h-40 shadow-inner resize-none leading-relaxed focus:ring-4 focus:ring-primary/10 transition-all outline-none" 
+                    placeholder="Escribe un párrafo detallado para evaluar cómo el asistente proyecta su personalidad..." 
+                />
+                <div className="flex items-center gap-3 bg-white/50 dark:bg-black/20 p-4 rounded-2xl border border-primary/10">
+                    <span className="material-symbols-outlined text-primary">bolt</span>
+                    <p className="text-[10px] text-slate-500 font-medium italic">Optimizado: La respuesta de voz ahora es cuasi-inmediata al pulsar el botón.</p>
+                </div>
              </div>
           </div>
        </section>
@@ -216,7 +281,7 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
                       ))}
                    </div>
                 </div>
-                <textarea value={settings.aiPhoneSettings.initialGreeting} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, initialGreeting: e.target.value}})} className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold h-24 shadow-inner resize-none" />
+                <textarea value={settings.aiPhoneSettings.initialGreeting} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, initialGreeting: e.target.value}})} className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold h-24 shadow-inner resize-none focus:ring-4 focus:ring-primary/10 transition-all outline-none" />
              </div>
           </div>
        </section>

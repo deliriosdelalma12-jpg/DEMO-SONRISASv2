@@ -10,7 +10,7 @@ interface AppointmentDetailModalProps {
   onCancelWithReplacement?: (id: string, replacement?: Patient | 'NEW') => void;
   patients: Patient[];
   doctors: Doctor[];
-  settings?: ClinicSettings; // Optional to handle legacy
+  settings?: ClinicSettings; 
 }
 
 const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({ 
@@ -31,10 +31,21 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
   const [selectedDoctorId, setSelectedDoctorId] = useState(appointment.doctorId);
   const navigate = useNavigate();
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'Confirmed': return 'Confirmada';
+      case 'Reprogramada': return 'Reprogramada';
+      case 'Cancelled': return 'Cancelada';
+      case 'Pending': return 'Pendiente';
+      case 'Completed': return 'Atendida';
+      default: return status;
+    }
+  };
+
   const getStatusColor = (status: AppointmentStatus) => {
     switch (status) {
       case 'Confirmed': return 'bg-success text-white';
-      case 'Rescheduled': return 'bg-warning text-white';
+      case 'Reprogramada': return 'bg-warning text-white';
       case 'Cancelled': return 'bg-danger text-white';
       case 'Pending': return 'bg-slate-400 text-white';
       case 'Completed': return 'bg-primary text-white';
@@ -43,7 +54,7 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
   };
 
   const handleRescheduleSubmit = () => {
-    onUpdateStatus(appointment.id, 'Rescheduled', newDate, newTime);
+    onUpdateStatus(appointment.id, 'Reprogramada', newDate, newTime);
     setIsRescheduling(false);
   };
 
@@ -55,7 +66,6 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
   };
 
   const handlePatientClick = () => {
-      // Navigate to patient profile
       navigate(`/patients?openId=${appointment.patientId}`);
       onClose();
   };
@@ -65,13 +75,11 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
     p.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const isCancelled = appointment.status === 'Cancelled';
-  const isCompleted = appointment.status === 'Completed';
-  const isLocked = isCancelled || isCompleted;
+  const isLocked = appointment.status === 'Cancelled' || appointment.status === 'Completed';
 
   if (isRescheduling) {
     return (
-      <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 modal-backdrop">
+      <div className="fixed inset-0 z-[220] flex items-center justify-center p-6 bg-slate-900/60 modal-backdrop">
         <div className="bg-white dark:bg-surface-dark w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-200 border border-border-light dark:border-border-dark">
           <div className="p-8 pb-4 flex justify-between items-center">
             <h3 className="text-xl font-display font-bold text-slate-900 dark:text-white">Reprogramar Cita</h3>
@@ -114,7 +122,7 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
 
   if (isCancelling) {
     return (
-      <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 modal-backdrop">
+      <div className="fixed inset-0 z-[220] flex items-center justify-center p-6 bg-slate-900/60 modal-backdrop">
         <div className="bg-white dark:bg-surface-dark w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden border border-border-light dark:border-border-dark animate-in zoom-in duration-200">
           
           {replacementView === 'confirm' && (
@@ -212,7 +220,7 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 modal-backdrop overflow-y-auto">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 modal-backdrop overflow-y-auto">
       <div className="bg-white dark:bg-surface-dark w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden border border-border-light dark:border-border-dark animate-in fade-in zoom-in duration-200 my-auto">
         <div className="p-6 border-b border-border-light dark:border-border-dark flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
           <h3 className="text-sm font-display font-bold text-slate-900 dark:text-white uppercase tracking-wider">Ficha de la Cita</h3>
@@ -239,21 +247,13 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
             <div className="bg-slate-50 dark:bg-bg-dark p-3 rounded-xl border border-border-light dark:border-border-dark">
               <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest mb-1">Estado</p>
               <span className={`inline-block px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${getStatusColor(appointment.status)}`}>
-                {appointment.status === 'Completed' ? 'Atendido' : appointment.status}
+                {getStatusLabel(appointment.status)}
               </span>
             </div>
           </div>
           
-          {/* BRANCH INFO (CONDITIONAL) */}
-          {settings && settings.branchCount > 1 && (
-              <div className="bg-slate-50 dark:bg-bg-dark p-3 rounded-xl border border-border-light dark:border-border-dark flex items-center justify-between">
-                  <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest">Sucursal</p>
-                  <p className="text-[11px] font-bold text-slate-900 dark:text-white uppercase">{appointment.branch}</p>
-              </div>
-          )}
-
           <div className="bg-slate-50 dark:bg-bg-dark p-3 rounded-xl border border-border-light dark:border-border-dark">
-            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest mb-1">Médico Tratante</p>
+            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest mb-1">Médico Responsable</p>
             {isLocked ? (
               <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{appointment.doctorName}</p>
             ) : (
@@ -275,46 +275,39 @@ const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
           </div>
 
           <div className="space-y-2 pt-1">
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Acciones</p>
             <div className="flex flex-col gap-2">
               {!isLocked && (
                 <button 
                   onClick={() => onUpdateStatus(appointment.id, 'Completed')} 
-                  className="w-full py-2.5 rounded-xl bg-primary text-white font-bold hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-sm text-xs"
+                  className="w-full py-2.5 rounded-xl bg-primary text-white font-bold hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-sm text-xs uppercase tracking-widest"
                 >
                   <span className="material-symbols-outlined text-base">task_alt</span> 
-                  Finalizar / Marcar Atendido
+                  Finalizar Consulta
                 </button>
               )}
-              <button 
-                onClick={() => onUpdateStatus(appointment.id, 'Confirmed')} 
-                disabled={isLocked}
-                className="w-full py-2.5 rounded-xl bg-success text-white font-bold hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-sm text-xs"
-              >
-                <span className="material-symbols-outlined text-base">check_circle</span> 
-                Confirmar Cita
-              </button>
-              <button 
-                onClick={() => setIsRescheduling(true)} 
-                disabled={isLocked}
-                className="w-full py-2.5 rounded-xl bg-warning text-white font-bold hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-sm text-xs"
-              >
-                <span className="material-symbols-outlined text-base">event_repeat</span> 
-                Reprogramar
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button 
+                    onClick={() => onUpdateStatus(appointment.id, 'Confirmed')} 
+                    disabled={isLocked}
+                    className="py-2.5 rounded-xl bg-success text-white font-bold hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-sm text-[10px] uppercase tracking-widest"
+                >
+                    Confirmar
+                </button>
+                <button 
+                    onClick={() => setIsRescheduling(true)} 
+                    disabled={isLocked}
+                    className="py-2.5 rounded-xl bg-warning text-white font-bold hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-sm text-[10px] uppercase tracking-widest"
+                >
+                    Reprogramar
+                </button>
+              </div>
               <button 
                 onClick={() => setIsCancelling(true)} 
                 disabled={isLocked}
-                className="w-full py-2.5 rounded-xl bg-danger text-white font-bold hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-sm text-xs"
+                className="w-full py-2.5 rounded-xl bg-rose-500 text-white font-bold hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-sm text-[10px] uppercase tracking-widest"
               >
-                <span className="material-symbols-outlined text-base">cancel</span> 
                 Cancelar Cita
               </button>
-              {(isCancelled || isCompleted) && (
-                <p className="text-[8px] text-center text-slate-500 font-bold uppercase tracking-widest bg-slate-100 dark:bg-white/5 py-1.5 rounded-lg mt-1 italic">
-                  {isCancelled ? 'Cita cancelada: solo lectura' : 'Cita atendida: expediente cerrado'}
-                </p>
-              )}
             </div>
           </div>
         </div>

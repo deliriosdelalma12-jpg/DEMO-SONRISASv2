@@ -1,5 +1,5 @@
 
-export type AppointmentStatus = 'Confirmed' | 'Rescheduled' | 'Cancelled' | 'Pending' | 'Completed';
+export type AppointmentStatus = 'Confirmed' | 'Reprogramada' | 'Cancelled' | 'Pending' | 'Completed';
 
 export interface FileAttachment {
   id: string;
@@ -29,10 +29,9 @@ export interface ClinicService {
   id: string;
   name: string;
   price: number;
-  duration: number; // Duración en minutos para optimizar agenda
+  duration: number; 
 }
 
-// --- NEW BRANCH INTERFACE ---
 export interface Branch {
   id: string;
   name: string;
@@ -52,58 +51,53 @@ export interface Branch {
   description?: string;
 }
 
-// --- SECURITY & ROLES ---
 export type PermissionId = 
   | 'view_dashboard' 
   | 'view_agenda' 
   | 'view_patients' 
   | 'view_doctors'
-  | 'view_branches' // NEW PERMISSION
+  | 'view_branches' 
   | 'view_hr' 
   | 'view_metrics' 
   | 'view_settings' 
-  | 'view_all_data' // Allows seeing data from other doctors
-  | 'can_edit';     // Global write permission
+  | 'view_all_data' 
+  | 'can_edit';     
 
 export interface RoleDefinition {
   id: string;
   name: string;
   permissions: PermissionId[];
-  isSystem?: boolean; // Admin cannot be deleted
+  isSystem?: boolean; 
 }
 
 export interface User {
   id: string;
   username: string;
   name: string;
-  role: string; // Now maps to RoleDefinition.id
+  role: string; 
   img?: string;
 }
 
-// Added Shift interface for granular schedule control
 export interface Shift {
   start: string;
   end: string;
   active: boolean;
 }
 
-// Added DaySchedule interface for doctor availability tracking
 export interface DaySchedule {
   morning: Shift;
   afternoon: Shift;
 }
 
-// Added AttendanceRecord for HR and operations management
 export interface AttendanceRecord {
   id: string;
   date: string;
-  type: 'Retraso' | 'Ausencia' | 'Baja Médica' | 'Permiso' | string; // Allow dynamic types
+  type: 'Retraso' | 'Ausencia' | 'Baja Médica' | 'Permiso' | string; 
   duration?: string;
   status: 'Pendiente' | 'Justificado' | 'No Justificado';
   notes?: string;
 }
 
-// Added VacationRequest for HR management
 export interface VacationRequest {
   id: string;
   start: string;
@@ -116,7 +110,7 @@ export interface VacationRequest {
 export interface Doctor {
   id: string;
   name: string;
-  role: string; // Maps to RoleDefinition.id
+  role: string; 
   specialty: string;
   status: 'Active' | 'Inactive' | 'Vacation' | 'Medical Leave';
   img: string;
@@ -148,9 +142,10 @@ export type VoiceAccent = 'es-ES-Madrid' | 'es-ES-Canarias' | 'es-LATAM' | 'en-G
 export interface AiPhoneSettings {
   phoneNumber: string;
   assistantName: string;
+  aiCompanyName: string; // Nuevo campo dedicado
   initialGreeting: string;
   systemPrompt: string;
-  instructions: string; // Instrucciones operativas adicionales
+  instructions: string; 
   testSpeechText: string;
   voiceName: string;
   voicePitch: number;
@@ -163,7 +158,7 @@ export interface AiPhoneSettings {
 }
 
 export type AppLanguage = 'es-ES' | 'es-LATAM' | 'en-GB' | 'en-US';
-export type CountryRegion = 'ES' | 'MX' | 'US' | 'CO' | 'AR' | 'BZ' | 'CR' | 'SV' | 'GT' | 'HN' | 'NI' | 'PA'; // Added Central America
+export type CountryRegion = 'ES' | 'MX' | 'US' | 'CO' | 'AR' | 'BZ' | 'CR' | 'SV' | 'GT' | 'HN' | 'NI' | 'PA'; 
 
 export interface AppLabels {
   [key: string]: string;
@@ -174,36 +169,35 @@ export interface VisualSettings {
   bodyFontSize: number;
 }
 
-// --- NEW TYPES FOR LABOR CONFIGURATION ---
 export interface LaborIncidentType {
   id: string;
   name: string;
   requiresJustification: boolean;
   isPaid: boolean;
-  color: string; // Hex code or Tailwind class
+  color: string; 
 }
 
 export interface LaborSettings {
   vacationDaysPerYear: number;
-  allowCarryOver: boolean; // Permitir acumular días al año siguiente
-  businessDaysOnly: boolean; // Contar solo días hábiles
+  allowCarryOver: boolean; 
+  businessDaysOnly: boolean; 
   defaultContractType: string;
   incidentTypes: LaborIncidentType[];
 }
 
-// --- NEW TYPE FOR APPOINTMENT RULES ---
 export interface AppointmentPolicy {
-  confirmationWindow: 24 | 48; // Hours before appt to require confirmation
-  leadTimeThreshold: number; // Days. If booked > X days in advance, status is Pending.
-  autoConfirmShortNotice: boolean; // If true, appointments booked < threshold are auto-confirmed.
+  confirmationWindow: 24 | 48; 
+  leadTimeThreshold: number; 
+  autoConfirmShortNotice: boolean; 
 }
 
 export interface ClinicSettings {
   name: string;
-  sector: string; // NEW: Clinic Sector
-  region: CountryRegion; // NEW: Country/Region for validation
-  branchCount: number; // NEW: Total branches
-  scheduleType: 'continuous' | 'split'; // NEW: Horario Corrido vs Partido
+  businessName: string;
+  sector: string; 
+  region: CountryRegion; 
+  branchCount: number; 
+  scheduleType: 'continuous' | 'split'; 
   logo: string;
   phone: string;
   email: string;
@@ -217,22 +211,20 @@ export interface ClinicSettings {
   labels: AppLabels;
   visuals: VisualSettings;
   laborSettings: LaborSettings;
-  appointmentPolicy: AppointmentPolicy; // NEW: Appointment Rules
+  appointmentPolicy: AppointmentPolicy; 
   roles: RoleDefinition[];
-  globalSchedule: Record<string, DaySchedule>; // NEW: Global opening hours
+  globalSchedule: Record<string, DaySchedule>; 
 }
-
-export type UserRole = 'Admin' | 'Doctor' | 'Recepción' | 'Enfermería';
 
 export interface Task {
   id: string;
   title: string;
-  description?: string; // Short description for list view
-  content?: string; // Long description for modal view
+  description?: string; 
+  content?: string; 
   completed: boolean;
   priority: 'High' | 'Medium' | 'Low';
   sub?: string;
-  assignedToId?: string; // ID of the doctor/user assigned to this task
+  assignedToId?: string; 
 }
 
 export interface Appointment {
@@ -241,7 +233,7 @@ export interface Appointment {
   patientName: string;
   doctorName: string;
   doctorId: string;
-  branch?: string; // NEW: Branch where appointment is held
+  branch?: string; 
   treatment: string;
   date: string;
   time: string;
@@ -257,19 +249,23 @@ export interface Patient {
   phone: string;
   email: string;
   address: string;
-  medicalHistory: string;
   img: string;
   associatedDoctorId?: string;
   associatedDoctorName?: string;
   weight?: string;
   height?: string;
   bloodType?: string;
-  allergies?: string[];
+  
+  // ESTRUCTURA GRANULAR POR PÍLDORAS
+  allergies: string[];
+  pathologies: string[]; 
+  surgeries: string[];    
+  medications: string[]; 
+  habits: string[];      
+  familyHistory: string[]; 
+  
+  medicalHistory: string; 
   attachments?: FileAttachment[];
   savedReports?: MedicalReport[];
-  pathologies?: string;
-  diseases?: string;
-  surgeries?: string;
-  medications?: string;
   history?: { date: string; action: string; description: string; }[];
 }

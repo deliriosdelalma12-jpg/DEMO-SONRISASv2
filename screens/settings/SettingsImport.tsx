@@ -71,7 +71,7 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image', // Excelente para OCR de documentos
+        model: 'gemini-2.5-flash-image', 
         contents: {
           parts: [
             { inlineData: { data: base64Data, mimeType: file.type } },
@@ -145,7 +145,6 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
   const commitImport = () => {
     if (!importPreview) return;
 
-    // Actualizar Pacientes
     if (importPreview.patients.length > 0) {
       const newPatients: Patient[] = importPreview.patients.map(p => ({
         ...p,
@@ -156,7 +155,6 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
       setPatients(prev => [...prev, ...newPatients]);
     }
 
-    // Actualizar Médicos
     if (importPreview.doctors.length > 0) {
       const newDoctors: Doctor[] = importPreview.doctors.map(d => ({
         ...d,
@@ -172,7 +170,6 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
       setDoctors(prev => [...prev, ...newDoctors]);
     }
 
-    // Actualizar Sucursales
     if (importPreview.branches.length > 0) {
       const newBranches: Branch[] = importPreview.branches.map(b => ({
         ...b,
@@ -196,16 +193,32 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
           <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center shadow-lg"><span className="material-symbols-outlined">cloud_upload</span></div>
           <div>
             <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Importación Inteligente</h3>
-            <p className="text-[10px] font-black text-primary uppercase tracking-widest">Sube archivos de tu ERP (PDF, Excel, Imágenes)</p>
+            <p className="text-[10px] font-black text-primary uppercase tracking-widest">Gestión de datos masiva mediante IA</p>
           </div>
         </div>
 
-        <div className="p-10 space-y-8">
+        <div className="p-10 space-y-10">
+          {/* BLOQUE EXPLICATIVO */}
+          <div className="bg-slate-50 dark:bg-bg-dark border border-slate-100 dark:border-slate-800 p-8 rounded-[2rem] flex items-start gap-6">
+            <div className="size-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-1">
+              <span className="material-symbols-outlined text-xl">info</span>
+            </div>
+            <div className="space-y-2">
+              <h4 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-tight">Sobre este módulo de gestión</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                Esta sección permite la administración centralizada de su base de datos. Está diseñada para realizar <strong>altas y actualizaciones masivas</strong> de pacientes, facultativos y sucursales. 
+                <br/><br/>
+                Mediante el uso de Inteligencia Artificial (Gemini Vision), el sistema es capaz de leer y procesar documentos en formatos <strong>Excel, PDF o capturas de imagen</strong>. La IA identificará automáticamente los campos y le permitirá realizar una previsualización antes de confirmar la integración definitiva de los datos en su red clínica.
+              </p>
+            </div>
+          </div>
+
+          {/* ÁREA DE CARGA */}
           <div className="flex flex-col items-center justify-center border-4 border-dashed border-slate-100 dark:border-slate-800 rounded-[3rem] p-16 transition-all hover:border-primary/50 bg-slate-50/50 dark:bg-bg-dark/50">
             <span className="material-symbols-outlined text-7xl text-slate-300 dark:text-slate-700 mb-6">description</span>
             <div className="text-center space-y-2">
-              <p className="text-lg font-black text-slate-900 dark:text-white uppercase">Arrastra tu archivo aquí</p>
-              <p className="text-sm text-slate-500 font-medium italic">Gemini extraerá automáticamente los campos.</p>
+              <p className="text-lg font-black text-slate-900 dark:text-white uppercase">Arrastra el documento fuente aquí</p>
+              <p className="text-sm text-slate-500 font-medium italic">Sube tu listado de personal o pacientes para procesar.</p>
             </div>
             <button 
               onClick={() => fileInputRef.current?.click()}
@@ -226,12 +239,12 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
               {isProcessing ? (
                 <>
                   <span className="material-symbols-outlined animate-spin">sync</span>
-                  <span>Analizando con IA...</span>
+                  <span>Procesando datos con IA...</span>
                 </>
               ) : (
                 <>
                   <span className="material-symbols-outlined">auto_awesome</span>
-                  <span>Previsualizar Importación</span>
+                  <span>Analizar y Previsualizar</span>
                 </>
               )}
             </button>
@@ -242,19 +255,19 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
       {importPreview && (
         <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl animate-in fade-in slide-in-from-bottom-8">
           <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-between">
-            <h3 className="text-xl font-display font-black text-indigo-900 dark:text-indigo-200 uppercase tracking-tight">Resumen del Análisis IA</h3>
+            <h3 className="text-xl font-display font-black text-indigo-900 dark:text-indigo-200 uppercase tracking-tight">Análisis de Integración Resultante</h3>
             <button 
               onClick={commitImport}
               className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"
             >
-              <span className="material-symbols-outlined text-sm">done_all</span> Confirmar y Guardar Todo
+              <span className="material-symbols-outlined text-sm">done_all</span> Confirmar Carga Masiva
             </button>
           </div>
 
           <div className="p-10 grid grid-cols-1 md:grid-cols-3 gap-10">
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b-2 border-slate-100 dark:border-slate-800 pb-2">
-                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Pacientes Detectados</span>
+                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Pacientes</span>
                 <span className="px-2 py-0.5 bg-blue-100 text-blue-600 rounded-md font-black text-xs">{importPreview.patients.length}</span>
               </div>
               <div className="max-h-[300px] overflow-y-auto custom-scrollbar space-y-2">
@@ -268,7 +281,7 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
 
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b-2 border-slate-100 dark:border-slate-800 pb-2">
-                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Médicos Detectados</span>
+                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Médicos</span>
                 <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded-md font-black text-xs">{importPreview.doctors.length}</span>
               </div>
               <div className="max-h-[300px] overflow-y-auto custom-scrollbar space-y-2">
@@ -282,7 +295,7 @@ const SettingsImport: React.FC<SettingsImportProps> = ({
 
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b-2 border-slate-100 dark:border-slate-800 pb-2">
-                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Sucursales Detectadas</span>
+                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Sucursales</span>
                 <span className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md font-black text-xs">{importPreview.branches.length}</span>
               </div>
               <div className="max-h-[300px] overflow-y-auto custom-scrollbar space-y-2">

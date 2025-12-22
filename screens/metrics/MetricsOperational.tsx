@@ -110,7 +110,8 @@ const MetricsOperational: React.FC<MetricsOperationalProps> = ({ appointments, d
         { name: 'Completadas', value: statusMap['Completed'] || 0, color: '#10b981' }, 
         { name: 'Pendientes', value: statusMap['Pending'] || 0, color: '#3b82f6' }, 
         { name: 'Canceladas', value: statusMap['Cancelled'] || 0, color: '#ef4444' }, 
-        { name: 'Agendadas', value: (statusMap['Confirmed'] || 0) + (statusMap['Rescheduled'] || 0), color: '#6366f1' }
+        // Fix: Changed 'Rescheduled' to 'Reprogramada' in statusMap lookup
+        { name: 'Agendadas', value: (statusMap['Confirmed'] || 0) + (statusMap['Reprogramada'] || 0), color: '#6366f1' }
     ].filter(d => d.value > 0);
 
     // 2. Doctor Performance

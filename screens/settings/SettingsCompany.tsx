@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { ClinicSettings, User, ClinicService, RoleDefinition, PermissionId, Doctor, DaySchedule, CountryRegion } from '../../types';
 
@@ -92,6 +93,44 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  /**
+   * MANEJADOR SEGURO DE NOMBRE COMERCIAL
+   * Evita la corrupción de texto (efecto "destrucción") al borrar o editar.
+   */
+  const handleCompanyNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newName = e.target.value;
+    const oldName = settings.name;
+    const aiNameMaster = settings.aiPhoneSettings.aiCompanyName; // Variable de control para la IA
+
+    // 1. Actualizamos el nombre comercial (base para el sidebar/logo)
+    // 2. Solo sincronizamos los textos de la IA si el nombre anterior NO estaba vacío
+    //    y si el aiNameMaster coincide con el oldName (para asegurar coherencia).
+    
+    let updatedPrompt = settings.aiPhoneSettings.systemPrompt;
+    let updatedGreeting = settings.aiPhoneSettings.initialGreeting;
+    let updatedTest = settings.aiPhoneSettings.testSpeechText;
+
+    // Solo realizamos reemplazo si hay un punto de referencia sólido (mínimo 2 caracteres)
+    // Esto evita que al borrar el nombre, el replaceAll() inserte el nuevo nombre entre cada letra
+    if (aiNameMaster && aiNameMaster.length > 1 && newName.length > 1) {
+        updatedPrompt = updatedPrompt.split(aiNameMaster).join(newName);
+        updatedGreeting = updatedGreeting.split(aiNameMaster).join(newName);
+        updatedTest = updatedTest.split(aiNameMaster).join(newName);
+    }
+
+    setSettings(prev => ({ 
+        ...prev, 
+        name: newName, 
+        aiPhoneSettings: { 
+            ...prev.aiPhoneSettings, 
+            aiCompanyName: newName, // La variable de la IA se autorregula aquí
+            systemPrompt: updatedPrompt, 
+            initialGreeting: updatedGreeting,
+            testSpeechText: updatedTest
+        } 
+    }));
   };
 
   const resetLogo = () => {
@@ -211,7 +250,7 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
     setSystemUsers(prev => [...prev, newUser]);
     if (isDoctorRoleSelected && setDoctors) {
       const newDoctor: Doctor = {
-        id: `D${Math.floor(Math.random() * 10000)}`, name: fullName, role: roleId, specialty, status: 'Active',
+        id: newId, name: fullName, role: roleId, specialty, status: 'Active',
         img: avatar, branch: 'Centro', phone, corporateEmail: email, docs: [],
         schedule: { 'Lunes': { morning: {start:'09:00',end:'14:00',active:true}, afternoon:{start:'16:00',end:'20:00',active:true} } } as any,
         vacationDaysTotal: 30, vacationDaysTaken: 0, vacationHistory: [], attendanceHistory: []
@@ -271,32 +310,53 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
       <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
         <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
           <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">info</span></div>
-          <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Datos de Marca e Identidad</h3>
+          <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Identidad y Marca Corporativa</h3>
         </div>
-        <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
-           <div className="space-y-6">
+        <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-12">
+           <div className="space-y-8">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial</label>
-                <input type="text" value={settings.name} onChange={e => setSettings({...settings, name: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" />
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Razón Social (Contexto Legal y Cabecera)</label>
+                <input 
+                  type="text" 
+                  value={settings.businessName} 
+                  onChange={e => setSettings({...settings, businessName: e.target.value})} 
+                  placeholder="Ej: Clínica Dental Solutions S.L."
+                  className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-primary/20" 
+                />
               </div>
+
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Divisa</label>
-                <select value={settings.currency} onChange={e => setSettings({...settings, currency: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold">
-                  <option value="€">Euro (€)</option>
-                  <option value="$">Dólar ($)</option>
-                </select>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial (Logo y Sidebar)</label>
+                <input 
+                  type="text" 
+                  value={settings.name} 
+                  onChange={handleCompanyNameChange} 
+                  placeholder="Ej: MediClinic"
+                  className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-primary/20" 
+                />
+                <p className="text-[9px] text-slate-400 italic px-1">Este nombre aparece junto al logo. Si se deja vacío, el logo ocupará todo el ancho disponible. <b>Nota:</b> Se sincroniza automáticamente con el asistente IA.</p>
               </div>
-              <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Región / País</label>
-                  <select 
-                      value={settings.region || 'ES'} 
-                      onChange={e => setSettings({...settings, region: e.target.value as CountryRegion})} 
-                      className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
-                  >
-                      {REGIONS.map(r => (
-                          <option key={r.code} value={r.code}>{r.label}</option>
-                      ))}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Divisa</label>
+                  <select value={settings.currency} onChange={e => setSettings({...settings, currency: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold">
+                    <option value="€">Euro (€)</option>
+                    <option value="$">Dólar ($)</option>
                   </select>
+                </div>
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Región / País</label>
+                    <select 
+                        value={settings.region || 'ES'} 
+                        onChange={e => setSettings({...settings, region: e.target.value as CountryRegion})} 
+                        className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
+                    >
+                        {REGIONS.map(r => (
+                            <option key={r.code} value={r.code}>{r.label}</option>
+                        ))}
+                    </select>
+                </div>
               </div>
            </div>
 
@@ -340,6 +400,179 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                   />
               </div>
            </div>
+        </div>
+      </section>
+
+      {/* GESTIÓN DE ROLES Y PERMISOS */}
+      <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
+        <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
+          <div className="size-12 rounded-xl bg-purple-500 text-white flex items-center justify-center"><span className="material-symbols-outlined">security</span></div>
+          <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Gestión de Roles y Permisos</h3>
+        </div>
+        <div className="p-10 space-y-10">
+          <div className="flex gap-4 items-end bg-slate-50 dark:bg-bg-dark p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800">
+            <div className="flex-1 space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nuevo Nombre de Rol</label>
+              <input type="text" value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="Ej: Recepcionista Senior" className="w-full bg-white dark:bg-surface-dark border-none rounded-2xl px-6 py-4 text-sm font-bold shadow-inner" />
+            </div>
+            <button onClick={handleCreateRole} className="h-14 px-8 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-all">Crear Rol</button>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
+            <div className="space-y-4">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Roles Configurados</label>
+              <div className="space-y-3">
+                {settings.roles.map(role => (
+                  <div key={role.id} onClick={() => setEditingRole(role)} className={`group p-6 rounded-[2rem] border-2 transition-all cursor-pointer flex items-center justify-between ${editingRole?.id === role.id ? 'border-primary bg-primary/5 shadow-lg' : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-bg-dark hover:border-slate-200'}`}>
+                    <div className="flex items-center gap-4">
+                      <div className={`size-10 rounded-xl flex items-center justify-center ${role.isSystem ? 'bg-amber-100 text-amber-600' : 'bg-primary/10 text-primary'}`}><span className="material-symbols-outlined">{role.isSystem ? 'verified' : 'person'}</span></div>
+                      <div>
+                        <p className="font-black text-sm uppercase tracking-tight text-slate-800 dark:text-white">{role.name}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase">{role.permissions.length} Permisos asignados</p>
+                      </div>
+                    </div>
+                    {!role.isSystem && (
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteRole(role.id); }} className="size-8 rounded-lg bg-red-50 text-red-400 opacity-0 group-hover:opacity-100 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center"><span className="material-symbols-outlined text-sm">delete</span></button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {editingRole && (
+              <div className="bg-slate-50 dark:bg-bg-dark rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 space-y-6 animate-in slide-in-from-right-4">
+                <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-4">
+                  <div>
+                    <h4 className="font-black text-lg uppercase tracking-tight text-slate-800 dark:text-white">Permisos para: {editingRole.name}</h4>
+                    {editingRole.isSystem && <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md uppercase">Rol de Sistema (Protegido)</span>}
+                  </div>
+                  <button onClick={() => setEditingRole(null)} className="text-slate-400 hover:text-slate-600"><span className="material-symbols-outlined">close</span></button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                  {AVAILABLE_PERMISSIONS.map(perm => (
+                    <button key={perm.id} disabled={editingRole.isSystem} onClick={() => togglePermission(perm.id)} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left ${editingRole.permissions.includes(perm.id) ? 'bg-white dark:bg-surface-dark border-primary text-primary shadow-sm' : 'bg-transparent border-slate-100 dark:border-slate-800 text-slate-400 opacity-60'}`}>
+                      <span className="material-symbols-outlined text-sm">{editingRole.permissions.includes(perm.id) ? 'check_box' : 'check_box_outline_blank'}</span>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-tight leading-none">{perm.label}</p>
+                        <p className="text-[8px] font-bold opacity-60 mt-1 uppercase">{perm.group}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* GESTIÓN DE USUARIOS Y ACCESOS */}
+      <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
+        <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
+          <div className="size-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center"><span className="material-symbols-outlined">group</span></div>
+          <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Usuarios y Accesos</h3>
+        </div>
+        <div className="p-10 space-y-10">
+          <div className="bg-slate-50 dark:bg-bg-dark rounded-[2.5rem] p-10 border border-slate-100 dark:border-slate-800 space-y-10">
+            <div className="flex items-center gap-4">
+              <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center"><span className="material-symbols-outlined">person_add</span></div>
+              <h4 className="font-black text-lg uppercase tracking-tight text-slate-800 dark:text-white">Alta de Nuevo Empleado / Usuario</h4>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+              <div className="md:col-span-1 flex flex-col items-center gap-4">
+                 <div className="relative group cursor-pointer" onClick={() => employeeAvatarRef.current?.click()}>
+                    <div className="size-32 rounded-full bg-cover bg-center border-4 border-white dark:border-slate-700 shadow-xl" style={{backgroundImage: `url('${newEmployee.avatar}')`}}></div>
+                    <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="material-symbols-outlined text-white text-3xl">photo_camera</span></div>
+                    <input type="file" ref={employeeAvatarRef} className="hidden" accept="image/*" onChange={handleEmployeeAvatarChange} />
+                 </div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Foto de Perfil</p>
+              </div>
+
+              <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre</label>
+                  <input type="text" value={newEmployee.name} onChange={e => setNewEmployee({...newEmployee, name: e.target.value})} className={`w-full bg-white dark:bg-surface-dark border-2 rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-primary/10 transition-all outline-none ${formErrors.name ? 'border-red-400' : 'border-slate-100 dark:border-slate-800'}`} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Apellidos</label>
+                  <input type="text" value={newEmployee.surname} onChange={e => setNewEmployee({...newEmployee, surname: e.target.value})} className={`w-full bg-white dark:bg-surface-dark border-2 rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-primary/10 transition-all outline-none ${formErrors.surname ? 'border-red-400' : 'border-slate-100 dark:border-slate-800'}`} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">DNI / Documento</label>
+                  <input type="text" value={newEmployee.dni} onChange={e => setNewEmployee({...newEmployee, dni: e.target.value})} className={`w-full bg-white dark:bg-surface-dark border-2 rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-primary/10 transition-all outline-none ${formErrors.dni ? 'border-red-400' : 'border-slate-100 dark:border-slate-800'}`} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email Profesional</label>
+                  <input type="email" value={newEmployee.email} onChange={e => setNewEmployee({...newEmployee, email: e.target.value})} className={`w-full bg-white dark:bg-surface-dark border-2 rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-primary/10 transition-all outline-none ${formErrors.email ? 'border-red-400' : 'border-slate-100 dark:border-slate-800'}`} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Rol de Acceso</label>
+                  <select value={newEmployee.roleId} onChange={e => setNewEmployee({...newEmployee, roleId: e.target.value})} className={`w-full bg-white dark:bg-surface-dark border-2 rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none transition-all ${formErrors.roleId ? 'border-red-400' : 'border-slate-100 dark:border-slate-800'}`}>
+                    <option value="">Seleccionar rol...</option>
+                    {settings.roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                </div>
+                {isDoctorRoleSelected && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                    <label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Especialidad Médica</label>
+                    <select value={newEmployee.specialty} onChange={e => setNewEmployee({...newEmployee, specialty: e.target.value})} className={`w-full bg-white dark:bg-surface-dark border-2 rounded-2xl px-5 py-3 text-sm font-bold text-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none ${formErrors.specialty ? 'border-red-400' : 'border-primary/20'}`}>
+                      <option value="">Seleccionar especialidad...</option>
+                      {MEDICAL_SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Usuario de Login</label>
+                  <input type="text" value={newEmployee.username} onChange={e => setNewEmployee({...newEmployee, username: e.target.value})} className={`w-full bg-white dark:bg-surface-dark border-2 rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-primary/10 transition-all outline-none ${formErrors.username ? 'border-red-400' : 'border-slate-100 dark:border-slate-800'}`} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña Inicial</label>
+                  <input type="password" value={newEmployee.password} onChange={e => setNewEmployee({...newEmployee, password: e.target.value})} className={`w-full bg-white dark:bg-surface-dark border-2 rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-primary/10 transition-all outline-none ${formErrors.password ? 'border-red-400' : 'border-slate-100 dark:border-slate-800'}`} />
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-end pt-6 border-t border-slate-200 dark:border-slate-700">
+               <button onClick={handleCreateEmployee} className="h-16 px-20 bg-emerald-500 text-white rounded-[2rem] font-black uppercase text-sm tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-105 transition-all">Registrar y Crear Acceso</button>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <h4 className="font-black text-lg uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-3"><span className="material-symbols-outlined">badge</span> Auditoría de Usuarios Activos</h4>
+            <div className="bg-white dark:bg-surface-dark border border-slate-100 dark:border-slate-800 rounded-[2.5rem] overflow-hidden shadow-sm">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800">
+                  <tr>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Empleado</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Usuario</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Rol Asignado</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Gestión</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {systemUsers.map(user => (
+                    <tr key={user.id} className="group hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-4">
+                          <div className="size-10 rounded-full bg-cover bg-center border-2 border-white shadow-sm" style={{backgroundImage: `url('${user.img}')`}}></div>
+                          <p className="font-black text-xs uppercase text-slate-700 dark:text-white">{user.name}</p>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 text-xs font-bold text-slate-500 dark:text-slate-400">@{user.username}</td>
+                      <td className="px-8 py-5">
+                        <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-md text-[9px] font-black uppercase text-slate-500">
+                          {settings.roles.find(r => r.id === user.role)?.name || 'Sin Rol'}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                         <button onClick={() => handleOpenEditUser(user)} className="size-10 rounded-xl bg-slate-50 dark:bg-bg-dark border border-slate-100 dark:border-slate-800 text-slate-400 hover:text-primary hover:border-primary transition-all shadow-sm"><span className="material-symbols-outlined text-sm">edit</span></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -2,7 +2,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Patient, ClinicSettings } from '../../types';
 import { GoogleGenAI } from "@google/genai";
-import { jsPDF } from "jspdf";
 
 interface PatientAIProps {
   editData: Patient;
@@ -23,20 +22,28 @@ export const PatientAI: React.FC<PatientAIProps> = ({ editData, clinicSettings }
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `
-        INFORME CLÍNICO ESTRATÉGICO
+        ANALISTA CLÍNICO AVANZADO - INFORME ESTRATÉGICO
         Paciente: ${editData.name}
-        Biometría: ${editData.weight}kg, ${editData.height}cm
-        Antecedentes: ${editData.medicalHistory || 'No informados'}
         
-        Analiza este paciente basándote en los protocolos de la clínica ${clinicSettings.name}.
-        Genera un informe detallado que incluya:
-        1. Análisis de riesgos.
-        2. Recomendaciones preventivas.
+        HISTORIAL ESTRUCTURADO (PÍLDORAS):
+        - Alergias: ${editData.allergies?.join(', ') || 'Ninguna'}
+        - Patologías: ${editData.pathologies?.join(', ') || 'Ninguna'}
+        - Cirugías: ${editData.surgeries?.join(', ') || 'Ninguna'}
+        - Medicación: ${editData.medications?.join(', ') || 'Ninguna'}
+        - Hábitos: ${editData.habits?.join(', ') || 'Ninguna'}
+        
+        NOTAS ADICIONALES:
+        ${editData.medicalHistory || 'Sin notas.'}
+        
+        INSTRUCCIONES:
+        1. Analiza posibles interacciones o riesgos basados en el historial estructurado.
+        2. Proporciona recomendaciones específicas para el equipo médico de ${clinicSettings.name}.
+        3. Genera un resumen ejecutivo de salud.
       `;
       const response = await ai.models.generateContent({ 
         model: 'gemini-3-flash-preview', 
         contents: prompt,
-        config: { systemInstruction: "Eres un consultor clínico senior." }
+        config: { systemInstruction: "Eres un consultor clínico senior experto en triaje y seguridad del paciente." }
       });
       setAiReport(response.text || '');
     } catch (e) { setAiReport('Error al generar análisis.'); } finally { setIsAnalyzing(false); }
@@ -49,10 +56,17 @@ export const PatientAI: React.FC<PatientAIProps> = ({ editData, clinicSettings }
     setChatInput('');
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `
+        Contexto del Paciente ${editData.name}:
+        Alergias: ${editData.allergies?.join(', ')}
+        Meds: ${editData.medications?.join(', ')}
+        
+        Pregunta del Doctor: ${msg}
+      `;
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Consulta sobre el paciente ${editData.name}: ${msg}`,
-        config: { systemInstruction: `Eres el consultor IA de ${clinicSettings.name}.` }
+        contents: prompt,
+        config: { systemInstruction: `Eres el consultor médico de apoyo de ${clinicSettings.name}. Tienes acceso total al expediente granular del paciente.` }
       });
       setAiChat(prev => [...prev, { role: 'model', text: response.text || '' }]);
     } catch (e) { setAiChat(prev => [...prev, { role: 'model', text: 'Error.' }]); }
@@ -63,13 +77,13 @@ export const PatientAI: React.FC<PatientAIProps> = ({ editData, clinicSettings }
         <div className="bg-white dark:bg-surface-dark rounded-[3.5rem] border-2 border-primary/10 shadow-2xl overflow-hidden flex flex-col shrink-0">
             <header className="px-10 py-8 bg-primary/5 border-b border-primary/10 flex justify-between items-center">
                 <div className="flex items-center gap-4">
-                    <div className="size-14 rounded-2xl bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/30"><span className="material-symbols-outlined text-3xl">psychology</span></div>
-                    <div><h4 className="font-display font-black text-2xl uppercase tracking-tight leading-none">Consultoría Clínica IA</h4></div>
+                    <div className="size-14 rounded-2xl bg-primary text-white flex items-center justify-center shadow-lg"><span className="material-symbols-outlined text-3xl">psychology</span></div>
+                    <div><h4 className="font-display font-black text-2xl uppercase tracking-tight leading-none">Consultoría Clínica IA</h4><p className="text-[9px] font-black text-primary uppercase mt-1">Procesando píldoras de historial médico...</p></div>
                 </div>
                 <button disabled={isAnalyzing} onClick={generateClinicalReport} className="px-10 py-4 bg-primary text-white rounded-2xl font-black shadow-xl uppercase text-[10px] tracking-widest hover:scale-105 transition-all flex items-center gap-2 disabled:opacity-50">{isAnalyzing ? 'Analizando...' : 'Generar Informe IA'}</button>
             </header>
             <div className="p-10 min-h-[300px] flex flex-col relative bg-slate-50/50 dark:bg-bg-dark/20">
-                <div className="w-full whitespace-pre-wrap text-sm font-medium text-slate-700 dark:text-slate-300 leading-loose italic max-h-[400px] overflow-y-auto pr-6 custom-scrollbar pb-16">{aiReport || 'Sin informe generado.'}</div>
+                <div className="w-full whitespace-pre-wrap text-sm font-medium text-slate-700 dark:text-slate-300 leading-loose italic max-h-[400px] overflow-y-auto pr-6 custom-scrollbar pb-16">{aiReport || 'Sin informe generado. Pulsa en Generar para que la IA analice las píldoras del historial médico.'}</div>
             </div>
         </div>
         <div className="flex-1 min-h-[500px] bg-white dark:bg-surface-dark rounded-[3.5rem] border-2 border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col">
@@ -83,7 +97,7 @@ export const PatientAI: React.FC<PatientAIProps> = ({ editData, clinicSettings }
             </div>
             <div className="p-8 bg-white dark:bg-surface-dark border-t border-slate-100 dark:border-slate-800">
                 <div className="relative">
-                    <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendQuestionToAi()} placeholder={`Preguntar sobre el historial de ${editData.name.split(' ')[0]}...`} className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-[2rem] py-5 pl-8 pr-20 text-sm font-bold focus:ring-4 focus:ring-primary/10 shadow-inner transition-all" />
+                    <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendQuestionToAi()} placeholder={`Preguntar sobre las contraindicaciones de ${editData.name.split(' ')[0]}...`} className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-[2rem] py-5 pl-8 pr-20 text-sm font-bold focus:ring-4 focus:ring-primary/10 shadow-inner transition-all" />
                     <button onClick={sendQuestionToAi} className="absolute right-3 top-1/2 -translate-y-1/2 size-12 bg-primary text-white rounded-2xl flex items-center justify-center hover:scale-110 transition-all shadow-xl shadow-primary/20"><span className="material-symbols-outlined text-2xl">send</span></button>
                 </div>
             </div>

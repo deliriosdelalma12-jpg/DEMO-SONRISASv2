@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Patient, Appointment, ClinicSettings, User, Doctor } from '../types';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import PatientDetailModal from '../components/PatientDetailModal';
@@ -22,7 +22,7 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [initialModalTab, setInitialModalTab] = useState<'info' | 'medical' | 'history'>('info');
   const [isCreating, setIsCreating] = useState(false);
-  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search State
+  const [searchQuery, setSearchQuery] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   
@@ -44,7 +44,6 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
     }
   }, [patients, searchParams]);
 
-  // NEW: Filter Logic
   const filteredPatients = useMemo(() => {
     if (!searchQuery.trim()) return patients;
     const q = searchQuery.toLowerCase();
@@ -86,20 +85,8 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
     setNewPatient(initialNewPatient);
   };
 
-  const handleGenderChange = (gender: any) => {
-    const avatar = gender === 'Masculino' ? FLAT_ICON_MALE : gender === 'Femenino' ? FLAT_ICON_FEMALE : FLAT_ICON_OTHER;
-    setNewPatient({ ...newPatient, gender, img: avatar });
-  };
-
-  const handleOpenPatient = (patient: Patient, tab: 'info' | 'medical' | 'history') => {
-    setInitialModalTab(tab);
-    setSelectedPatient(patient);
-  };
-
   return (
     <div className="w-full flex flex-col p-6 gap-6 animate-in fade-in duration-500">
-      
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">Expedientes Clínicos</h1>
@@ -111,7 +98,6 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
         </button>
       </div>
 
-      {/* SEARCH BAR */}
       <div className="relative w-full">
         <span className="material-symbols-outlined absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">search</span>
         <input 
@@ -121,17 +107,8 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white dark:bg-surface-dark border-none rounded-[1.5rem] py-4 pl-14 pr-6 text-sm font-bold shadow-sm focus:ring-4 focus:ring-primary/10 transition-all outline-none"
         />
-        {searchQuery && (
-            <button 
-                onClick={() => setSearchQuery('')}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
-            >
-                <span className="material-symbols-outlined text-xl">close</span>
-            </button>
-        )}
       </div>
 
-      {/* Grid Content */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {filteredPatients.length > 0 ? (
             filteredPatients.map((p) => (
@@ -145,13 +122,12 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
                     <h3 className="text-lg font-display font-black text-slate-900 dark:text-white group-hover:text-primary transition-colors uppercase tracking-tight leading-none">{p.name}</h3>
                     <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">ID: {p.id} • {calculateAge(p.birthDate)} años</p>
                 </div>
-                
                 <div className="grid grid-cols-2 gap-2 mt-auto w-full pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button onClick={() => handleOpenPatient(p, 'history')} className="py-2.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[9px] font-black uppercase text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1.5">
+                <button onClick={() => { setInitialModalTab('history'); setSelectedPatient(p); }} className="py-2.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[9px] font-black uppercase text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1.5">
                     <span className="material-symbols-outlined text-base">history</span>
                     <span>Historial</span>
                 </button>
-                <button onClick={() => handleOpenPatient(p, 'info')} className="py-2.5 bg-primary/10 text-primary rounded-md text-[9px] font-black uppercase hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-1.5">
+                <button onClick={() => { setInitialModalTab('info'); setSelectedPatient(p); }} className="py-2.5 bg-primary/10 text-primary rounded-md text-[9px] font-black uppercase hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-1.5">
                     <span className="material-symbols-outlined text-base">contact_page</span>
                     <span>Ficha</span>
                 </button>
@@ -182,7 +158,6 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
         />
       )}
 
-      {/* MODAL CREAR PACIENTE */}
       {isCreating && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in zoom-in duration-300">
           <div className="bg-[#f1f5f9] dark:bg-bg-dark w-full max-w-4xl rounded-xl shadow-2xl overflow-hidden flex flex-col border border-border-light dark:border-border-dark h-auto max-h-[90vh] my-auto">
@@ -199,21 +174,11 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
                 </button>
             </header>
             <form onSubmit={handleCreatePatient} className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar bg-transparent">
-                <div className="flex flex-col md:flex-row gap-10">
-                    <div className="flex flex-col items-center gap-4 shrink-0">
-                        <div className="size-40 rounded-lg overflow-hidden border border-white dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex items-center justify-center relative group">
-                            <img src={newPatient.img} alt="Preview" className="w-full h-full object-contain" />
-                        </div>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Avatar Automático</p>
-                    </div>
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <DataField required label="Nombre y Apellidos" value={newPatient.name} editing={true} onChange={(e: any) => setNewPatient({...newPatient, name: e.target.value})} />
-                        <DataField required label="Identificación (DNI)" value={newPatient.identityDocument} editing={true} onChange={(e: any) => setNewPatient({...newPatient, identityDocument: e.target.value})} />
-                        <DataField required label="Género" value={newPatient.gender} editing={true} type="select" selectOptions={['Masculino', 'Femenino', 'Otro']} onChange={(e: any) => handleGenderChange(e.target.value)} />
-                        <DataField required label="Fecha de Nacimiento" value={newPatient.birthDate} editing={true} type="date" onChange={(e: any) => setNewPatient({...newPatient, birthDate: e.target.value})} />
-                        <DataField label="Teléfono" value={newPatient.phone} editing={true} onChange={(e: any) => setNewPatient({...newPatient, phone: e.target.value})} />
-                        <DataField label="Médico Asignado" value={newPatient.associatedDoctorId} editing={true} type="select" selectOptions={team.map(d => ({ value: d.id, label: d.name }))} onChange={(e: any) => setNewPatient({...newPatient, associatedDoctorId: e.target.value})} />
-                    </div>
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <DataField required label="Nombre y Apellidos" value={newPatient.name} editing={true} onChange={(e: any) => setNewPatient({...newPatient, name: e.target.value})} />
+                    <DataField required label="DNI" value={newPatient.identityDocument} editing={true} onChange={(e: any) => setNewPatient({...newPatient, identityDocument: e.target.value})} />
+                    <DataField label="Teléfono" value={newPatient.phone} editing={true} onChange={(e: any) => setNewPatient({...newPatient, phone: e.target.value})} />
+                    <DataField label="Médico Asignado" value={newPatient.associatedDoctorId} editing={true} type="select" selectOptions={team.map(d => ({ value: d.id, label: d.name }))} onChange={(e: any) => setNewPatient({...newPatient, associatedDoctorId: e.target.value})} />
                 </div>
                 <div className="pt-6 flex justify-center border-t border-slate-200 dark:border-slate-800">
                     <button type="submit" className="h-14 w-full md:w-auto md:px-16 bg-primary text-white rounded-md font-black uppercase text-sm tracking-widest hover:bg-primary-dark transition-all">Finalizar Registro</button>
