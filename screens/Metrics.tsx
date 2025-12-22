@@ -40,7 +40,14 @@ const Metrics: React.FC<MetricsProps> = (props) => {
             {activeTab === 'operational' ? (
                 <MetricsOperational {...props} />
             ) : (
-                <MetricsFinancial settings={props.settings} />
+                <MetricsFinancial 
+                  settings={props.settings} 
+                  branches={props.branches} 
+                  // Pasamos los datos operativos para el informe PDF completo
+                  appointments={props.appointments}
+                  doctors={props.doctors}
+                  patients={props.patients}
+                />
             )}
         </div>
     </div>

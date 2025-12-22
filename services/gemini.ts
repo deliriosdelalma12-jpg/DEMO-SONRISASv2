@@ -1,11 +1,7 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
-// Removed module-level ai to comply with guidelines of creating it right before API calls
-// const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export const generateChatResponse = async (message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[] = []) => {
-  // Fix: Create a new GoogleGenAI instance right before making an API call
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const chat = ai.chats.create({
     model: 'gemini-3-pro-preview',
@@ -15,12 +11,10 @@ export const generateChatResponse = async (message: string, history: { role: 'us
   });
 
   const response: GenerateContentResponse = await chat.sendMessage({ message });
-  // Fix: Directly use .text property
   return response.text || '';
 };
 
 export const streamChatResponse = async function* (message: string) {
-  // Fix: Create a new GoogleGenAI instance right before making an API call
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const chat = ai.chats.create({
     model: 'gemini-3-pro-preview',
@@ -32,14 +26,10 @@ export const streamChatResponse = async function* (message: string) {
   const response = await chat.sendMessageStream({ message });
   for await (const chunk of response) {
     const c = chunk as GenerateContentResponse;
-    // Fix: Directly use .text property
     yield c.text || '';
   }
 };
 
-/**
- * Función para generar un System Prompt de personalidad basado en etiquetas
- */
 export const generatePersonalityPrompt = async (tags: string[], assistantName: string, clinicName: string) => {
   const prompt = `
     Como experto en ingeniería de prompts para IA de voz conversacional de alto nivel (Gemini Live API), genera un "System Instruction" extremadamente robusto y humano.
@@ -70,7 +60,6 @@ export const generatePersonalityPrompt = async (tags: string[], assistantName: s
   `;
 
   try {
-    // Fix: Create a new GoogleGenAI instance right before making an API call
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -84,15 +73,28 @@ export const generatePersonalityPrompt = async (tags: string[], assistantName: s
 };
 
 /**
- * Función para generar habla (TTS) para pruebas de configuración
+ * Función para generar habla (TTS) para pruebas de configuración.
+ * Forzamos el acento mediante el contenido del prompt.
  */
-export const speakText = async (text: string, voiceName: string) => {
+export const speakText = async (text: string, voiceName: string, accent: string = 'es-ES-Madrid') => {
   try {
-    // Fix: Create a new GoogleGenAI instance right before making an API call
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    // Mapeo de acentos a instrucciones verbales para el modelo de audio
+    const accentInstructions: Record<string, string> = {
+        'es-ES-Madrid': 'Habla en español de España con acento de Madrid:',
+        'es-ES-Canarias': 'Habla en español de España con un marcado acento canario, suave y melódico:',
+        'es-LATAM': 'Habla en español latinoamericano neutro pero cálido:',
+        'en-GB': 'Speak in British English with a professional Received Pronunciation accent:',
+        'en-US': 'Speak in clear General American English accent:'
+    };
+
+    const instruction = accentInstructions[accent] || accentInstructions['es-ES-Madrid'];
+    const fullText = `${instruction} "${text}"`;
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text }] }],
+      contents: [{ parts: [{ text: fullText }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {

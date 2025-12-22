@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { ClinicSettings, User, ClinicService, RoleDefinition, PermissionId, Doctor, DaySchedule, CountryRegion } from '../../types';
 
@@ -52,6 +51,8 @@ const REGIONS: { code: CountryRegion, label: string }[] = [
     { code: 'PA', label: 'Panamá' }
 ];
 
+const DEFAULT_LOGO = "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/hospital.svg";
+
 const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings, systemUsers, setSystemUsers, doctors, setDoctors }) => {
   const [newServiceName, setNewServiceName] = useState('');
   const [newServicePrice, setNewServicePrice] = useState<string>('');
@@ -59,14 +60,11 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
   const [editingRole, setEditingRole] = useState<RoleDefinition | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
   
-  // NEW: State for Security Conflict Modal (User assigned)
   const [deleteConflict, setDeleteConflict] = useState<{ roleName: string; users: User[] } | null>(null);
-  // NEW: State for Confirmation Modal (Fixes sandbox 'confirm' error)
   const [confirmDeleteRole, setConfirmDeleteRole] = useState<RoleDefinition | null>(null);
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   
-  // User Registration State
   const initialEmployeeState = {
     name: '', surname: '', dni: '', email: '', phone: '', address: '', city: '', zip: '', province: '',
     roleId: '', jobTitle: '', specialty: '', username: '', password: '', avatar: 'https://i.pravatar.cc/150?u=new_user'
@@ -76,8 +74,7 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
   const [isDoctorRoleSelected, setIsDoctorRoleSelected] = useState(false);
   const employeeAvatarRef = useRef<HTMLInputElement>(null);
 
-  // --- EDIT USER STATE ---
-  const [editingUser, setEditingUser] = useState<any | null>(null); // Holds the combined User + Doctor data
+  const [editingUser, setEditingUser] = useState<any | null>(null);
   const editAvatarRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -85,6 +82,21 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
     const isDoc = role ? (role.name.toLowerCase().includes('médico') || role.name.toLowerCase().includes('facultativo') || role.id.includes('doctor')) : false;
     setIsDoctorRoleSelected(isDoc);
   }, [newEmployee.roleId, settings.roles]);
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSettings(prev => ({ ...prev, logo: event.target?.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const resetLogo = () => {
+    setSettings(prev => ({ ...prev, logo: DEFAULT_LOGO }));
+  };
 
   const addService = () => {
     if (!newServiceName.trim() || !newServicePrice) return;
@@ -118,24 +130,12 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
   const handleDeleteRole = (id: string) => {
     const roleToDelete = settings.roles.find(r => r.id === id);
     if (!roleToDelete) return;
-    
-    if (roleToDelete.isSystem) { 
-        return; // System roles cannot be deleted, UI hides button anyway
-    }
-
-    // SECURITY CHECK: Check if any user is using this role
+    if (roleToDelete.isSystem) return;
     const usersWithRole = systemUsers.filter(u => u.role === id);
-    
     if (usersWithRole.length > 0) {
-        // Trigger Safety Modal (Users Assigned)
-        setDeleteConflict({
-            roleName: roleToDelete.name,
-            users: usersWithRole
-        });
+        setDeleteConflict({ roleName: roleToDelete.name, users: usersWithRole });
         return;
     }
-
-    // Trigger Custom Confirmation Modal (Replaces window.confirm)
     setConfirmDeleteRole(roleToDelete);
   };
 
@@ -162,7 +162,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
         morning: { start: '09:00', end: '14:00', active: true }, 
         afternoon: { start: '16:00', end: '20:00', active: true } 
     };
-
     const newDaySchedule = {
         ...daySchedule,
         [shift]: {
@@ -170,7 +169,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
             [field]: value
         }
     };
-
     setSettings(prev => ({
         ...prev,
         globalSchedule: {
@@ -209,10 +207,8 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
     const { name, surname, email, roleId, username, specialty, avatar, phone } = newEmployee;
     const fullName = `${name} ${surname}`;
     const newId = `U${Math.floor(Math.random() * 10000)}`;
-
     const newUser: User = { id: newId, username, name: fullName, role: roleId, img: avatar };
     setSystemUsers(prev => [...prev, newUser]);
-
     if (isDoctorRoleSelected && setDoctors) {
       const newDoctor: Doctor = {
         id: `D${Math.floor(Math.random() * 10000)}`, name: fullName, role: roleId, specialty, status: 'Active',
@@ -227,19 +223,10 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
     alert(`Usuario ${username} creado con éxito.`);
   };
 
-  const updateUserRole = (userId: string, newRoleId: string) => {
-    setSystemUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRoleId } : u));
-    if (setDoctors) setDoctors(prev => prev.map(d => d.id === userId ? { ...d, role: newRoleId } : d));
-  };
-
-  // --- EDIT USER LOGIC ---
   const handleOpenEditUser = (user: User) => {
-    // Check if linked to a doctor
     const linkedDoctor = doctors?.find(d => d.id === user.id); 
-    
     setEditingUser({
         ...user,
-        // If doctor exists, merge doctor data, otherwise default or empty
         email: linkedDoctor?.corporateEmail || '',
         phone: linkedDoctor?.phone || '',
         specialty: linkedDoctor?.specialty || '',
@@ -258,8 +245,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
 
   const handleSaveEditedUser = () => {
     if (!editingUser) return;
-
-    // 1. Update System User
     setSystemUsers(prev => prev.map(u => u.id === editingUser.id ? {
         ...u,
         name: editingUser.name,
@@ -267,8 +252,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
         role: editingUser.role,
         img: editingUser.img
     } : u));
-
-    // 2. Update Doctor Record if it exists
     if (editingUser.isLinkedDoctor && setDoctors) {
         setDoctors(prev => prev.map(d => d.id === editingUser.id ? {
             ...d,
@@ -280,7 +263,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
             specialty: editingUser.specialty
         } : d));
     }
-
     setEditingUser(null);
   };
 
@@ -292,27 +274,71 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
           <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Datos de Marca e Identidad</h3>
         </div>
         <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
-           <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial</label><input type="text" value={settings.name} onChange={e => setSettings({...settings, name: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" /></div>
-           <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Divisa</label><select value={settings.currency} onChange={e => setSettings({...settings, currency: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"><option value="€">Euro (€)</option><option value="$">Dólar ($)</option></select></div>
-           
-           <div className="space-y-2">
-               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Región / País</label>
-               <select 
-                   value={settings.region || 'ES'} 
-                   onChange={e => setSettings({...settings, region: e.target.value as CountryRegion})} 
-                   className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
-               >
-                   {REGIONS.map(r => (
-                       <option key={r.code} value={r.code}>{r.label}</option>
-                   ))}
-               </select>
+           <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial</label>
+                <input type="text" value={settings.name} onChange={e => setSettings({...settings, name: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Divisa</label>
+                <select value={settings.currency} onChange={e => setSettings({...settings, currency: e.target.value})} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold">
+                  <option value="€">Euro (€)</option>
+                  <option value="$">Dólar ($)</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Región / País</label>
+                  <select 
+                      value={settings.region || 'ES'} 
+                      onChange={e => setSettings({...settings, region: e.target.value as CountryRegion})} 
+                      className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
+                  >
+                      {REGIONS.map(r => (
+                          <option key={r.code} value={r.code}>{r.label}</option>
+                      ))}
+                  </select>
+              </div>
            </div>
 
-           <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-bg-dark rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 group relative overflow-hidden">
-              {settings.logo ? <img src={settings.logo} className="h-12 w-auto object-contain mb-2" /> : <span className="material-symbols-outlined text-4xl text-slate-300">image</span>}
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Logo Institucional</p>
-              <button onClick={() => logoInputRef.current?.click()} className="absolute inset-0 bg-primary/80 text-white opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center font-bold text-xs">Cambiar Logo</button>
-              <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={e => {const f = e.target.files?.[0]; if(f) {const r = new FileReader(); r.onload = (re) => setSettings({...settings, logo: re.target?.result as string}); r.readAsDataURL(f);}}} />
+           <div className="space-y-4">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Logo Institucional</label>
+              <div className="relative group bg-slate-50 dark:bg-bg-dark rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center justify-center gap-4 transition-all hover:border-primary/50">
+                  <div className="size-32 flex items-center justify-center bg-white dark:bg-surface-dark rounded-2xl shadow-sm overflow-hidden p-4">
+                      {settings.logo ? (
+                        <img src={settings.logo} className="max-h-full max-w-full object-contain" alt="Preview Logo" />
+                      ) : (
+                        <span className="material-symbols-outlined text-5xl text-slate-200">add_photo_alternate</span>
+                      )}
+                  </div>
+                  
+                  <div className="flex flex-col items-center gap-2">
+                      <p className="text-[10px] text-slate-500 font-bold uppercase text-center max-w-[200px]">Recomendado: PNG o SVG con fondo transparente.</p>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => logoInputRef.current?.click()}
+                          className="px-5 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-lg"
+                        >
+                          Cargar Imagen
+                        </button>
+                        {settings.logo !== DEFAULT_LOGO && (
+                          <button 
+                            onClick={resetLogo}
+                            className="px-5 py-2 bg-white dark:bg-slate-800 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-widest border border-slate-200 dark:border-slate-700 hover:text-danger hover:border-danger transition-all"
+                          >
+                            Restablecer
+                          </button>
+                        )}
+                      </div>
+                  </div>
+                  
+                  <input 
+                    type="file" 
+                    ref={logoInputRef} 
+                    className="hidden" 
+                    accept="image/*" 
+                    onChange={handleLogoChange} 
+                  />
+              </div>
            </div>
         </div>
       </section>
@@ -324,7 +350,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
           <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Configuración Operativa y Sector</h3>
         </div>
         <div className="p-10 space-y-10">
-            {/* SECTOR & BRANCHES SELECTOR */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Sector de Actividad</label>
@@ -345,7 +370,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                         value={settings.branchCount} 
                         onChange={e => {
                             const val = e.target.value;
-                            // Permitimos cadena vacía para poder borrar el campo completamente
                             setSettings({...settings, branchCount: val === '' ? ('' as any) : parseInt(val)})
                         }} 
                         className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold"
@@ -353,7 +377,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                 </div>
             </div>
 
-            {/* APPOINTMENT POLICY SECTION (NEW) */}
             <div className="bg-blue-50 dark:bg-blue-900/10 p-8 rounded-[2.5rem] border border-blue-100 dark:border-blue-900">
                 <h4 className="text-sm font-black text-blue-600 dark:text-blue-300 uppercase tracking-tight mb-6 flex items-center gap-2">
                     <span className="material-symbols-outlined">rule_settings</span> Política de Citas y Confirmaciones
@@ -408,7 +431,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                 </div>
             </div>
 
-            {/* GLOBAL SCHEDULE BUILDER */}
             <div className="space-y-6">
                 <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
                     <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Horario Global de Apertura</h4>
@@ -427,11 +449,8 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                         const isClosed = isContinuous ? !sched.morning.active : (!sched.morning.active && !sched.afternoon.active);
 
                         return (
-                            // GRID LAYOUT: [Day Label] [Morning Inputs] [Afternoon Inputs (Optional)] [Status Label]
                             <div key={day} className={`grid grid-cols-1 items-center gap-4 p-4 bg-slate-50 dark:bg-bg-dark rounded-2xl border border-slate-100 dark:border-slate-800 ${isContinuous ? 'xl:grid-cols-[100px_1fr_100px]' : 'xl:grid-cols-[80px_1fr_1fr_100px]'}`}>
                                 <div className="font-bold text-slate-700 dark:text-white truncate">{day}</div>
-                                
-                                {/* Morning / Main Shift */}
                                 <div className={`flex items-center gap-3 transition-opacity ${!sched.morning.active ? 'opacity-40 grayscale' : ''}`}>
                                     <button 
                                         onClick={() => updateGlobalSchedule(day, 'morning', 'active', !sched.morning.active)}
@@ -459,8 +478,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                                     </div>
                                     {isContinuous && <span className="text-[10px] font-black text-slate-400 uppercase ml-2">Horario Continuo</span>}
                                 </div>
-
-                                {/* Afternoon Shift (Hidden if Continuous) */}
                                 {!isContinuous && (
                                     <div className={`flex items-center gap-3 transition-opacity ${!sched.afternoon.active ? 'opacity-40 grayscale' : ''}`}>
                                         <button 
@@ -489,8 +506,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                                         </div>
                                     </div>
                                 )}
-                                
-                                {/* Status Column */}
                                 <div className="flex justify-end">
                                     {isClosed ? (
                                         <span className="text-[10px] font-black text-danger uppercase tracking-widest px-3 py-1 bg-danger/10 rounded-lg border border-danger/20">Cerrado</span>
@@ -506,8 +521,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
         </div>
       </section>
 
-      {/* ... (Rest of file unchanged) ... */}
-      {/* SERVICES */}
       <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
         <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
           <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">medical_services</span></div>
@@ -531,10 +544,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
         </div>
       </section>
 
-      {/* ... (Rest unchanged) ... */}
-      
-      {/* ... (Role/Employee/Modals code remains same) ... */}
-      {/* MODAL DE EDICIÓN DE USUARIO */}
       {editingUser && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in zoom-in duration-300">
             <div className="bg-[#f1f5f9] dark:bg-bg-dark w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden flex flex-col border border-border-light dark:border-border-dark">
@@ -615,9 +624,6 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
                             </div>
                         ))}
                     </div>
-                    <p className="text-xs italic text-slate-400 text-center">
-                        Debes reasignar a estos usuarios a otro rol antes de proceder con la eliminación.
-                    </p>
                 </div>
                 <div className="p-4 bg-slate-50 dark:bg-bg-dark border-t border-slate-100 dark:border-slate-800 flex justify-center">
                     <button 

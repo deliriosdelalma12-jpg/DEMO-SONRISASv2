@@ -51,7 +51,8 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
     const text = settings.aiPhoneSettings.testSpeechText || settings.aiPhoneSettings.initialGreeting;
     setIsTestingVoice(true);
     try {
-      const base64 = await speakText(text, settings.aiPhoneSettings.voiceName);
+      // Pasamos el acento actual para que el motor de TTS sepa cómo hablar
+      const base64 = await speakText(text, settings.aiPhoneSettings.voiceName, settings.aiPhoneSettings.accent);
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       const binaryString = atob(base64);
       const len = binaryString.length;
@@ -119,7 +120,6 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
   return (
     <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-right-4 duration-500">
        
-       {/* 1. ASSISTANT NAME (TOP) */}
        <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
             <div className="size-12 rounded-xl bg-indigo-500 text-white flex items-center justify-center"><span className="material-symbols-outlined">badge</span></div>
@@ -134,7 +134,6 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
             </div>
         </section>
 
-       {/* 2. VOICE & LANGUAGE */}
        <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
           <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
             <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">volume_up</span></div>
@@ -143,11 +142,11 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
           <div className="p-10 space-y-10">
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acento y Región</label>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acento y Región (Persistente)</label>
                    <div className="grid grid-cols-1 gap-3">
                       {ACCENT_OPTIONS.map(opt => (
-                        <button key={opt.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, accent: opt.id}})} className={`flex items-center justify-between px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.accent === opt.id ? 'bg-primary/10 border-primary text-primary' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
-                           <span className="text-sm font-bold">{opt.name}</span>{settings.aiPhoneSettings.accent === opt.id && <span className="material-symbols-outlined text-sm">check_circle</span>}
+                        <button key={opt.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, accent: opt.id}})} className={`flex items-center justify-between px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.accent === opt.id ? 'bg-primary/10 border-primary text-primary shadow-lg scale-[1.02]' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
+                           <span className="text-sm font-bold uppercase tracking-wide">{opt.name}</span>{settings.aiPhoneSettings.accent === opt.id && <span className="material-symbols-outlined text-sm">verified</span>}
                         </button>
                       ))}
                    </div>
@@ -156,7 +155,7 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Voz del Asistente</label>
                    <div className="grid grid-cols-1 gap-3">
                       {VOICE_OPTIONS.map(voice => (
-                        <button key={voice.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, voiceName: voice.id}})} className={`flex items-center gap-4 px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary/10 border-primary text-primary' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
+                        <button key={voice.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, voiceName: voice.id}})} className={`flex items-center gap-4 px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary/10 border-primary text-primary shadow-md scale-[1.02]' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
                            <div className={`size-10 rounded-xl flex items-center justify-center ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary text-white' : 'bg-slate-200 text-slate-400'}`}><span className="material-symbols-outlined">{voice.gender === 'Femenino' ? 'female' : 'male'}</span></div>
                            <div className="text-left flex-1"><p className="text-sm font-bold">{voice.name} <span className="text-[9px] opacity-60 uppercase">({voice.gender})</span></p><p className="text-[10px] italic opacity-60">{voice.desc}</p></div>
                            {settings.aiPhoneSettings.voiceName === voice.id && <span className="material-symbols-outlined text-sm">check_circle</span>}
@@ -167,9 +166,9 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
              </div>
              <div className="p-8 bg-primary/5 rounded-[2.5rem] border border-primary/20 space-y-6">
                 <div className="flex items-center justify-between">
-                   <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em]">Laboratorio de Pruebas</h4>
-                   <button onClick={handleTestVoice} disabled={isTestingVoice} className="px-6 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                      {isTestingVoice ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">play_circle</span>} Escuchar Prueba
+                   <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em]">Laboratorio de Pruebas ({settings.aiPhoneSettings.accent})</h4>
+                   <button onClick={handleTestVoice} disabled={isTestingVoice} className="px-6 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:scale-105 transition-all">
+                      {isTestingVoice ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">play_circle</span>} Escuchar con Acento
                    </button>
                 </div>
                 <textarea value={settings.aiPhoneSettings.testSpeechText} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, testSpeechText: e.target.value}})} className="w-full bg-white dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-medium h-24 shadow-inner resize-none" placeholder="Escribe lo que quieres que el asistente diga para probar su voz..." />
@@ -177,7 +176,6 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
           </div>
        </section>
 
-       {/* 3. PERSONALITY & PROMPT */}
        <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
           <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
             <div className="flex items-center gap-5">
@@ -190,7 +188,6 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
           </div>
           <div className="p-10 space-y-12">
              <div className="space-y-8">
-                {/* DYNAMIC PILL RENDERING */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                     {Object.entries(PERSONALITY_TAGS).map(([category, tags]) => (
                         <div key={category} className="space-y-3">
@@ -224,7 +221,6 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
           </div>
        </section>
 
-       {/* 4. KNOWLEDGE BASE (BOTTOM) */}
        <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
             <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
             <div className="flex items-center gap-5">

@@ -160,18 +160,14 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
   const patientsRef = useRef(patients);
   const doctorsRef = useRef(doctors);
   const branchesRef = useRef(branches);
-  const servicesRef = useRef(settings.services);
   const scheduleRef = useRef(settings.globalSchedule);
-  const policyRef = useRef(settings.appointmentPolicy);
   const regionRef = useRef(settings.region);
 
   useEffect(() => { appointmentsRef.current = appointments; }, [appointments]);
   useEffect(() => { patientsRef.current = patients; }, [patients]);
   useEffect(() => { doctorsRef.current = doctors; }, [doctors]);
   useEffect(() => { branchesRef.current = branches; }, [branches]);
-  useEffect(() => { servicesRef.current = settings.services; }, [settings.services]);
   useEffect(() => { scheduleRef.current = settings.globalSchedule; }, [settings.globalSchedule]);
-  useEffect(() => { policyRef.current = settings.appointmentPolicy; }, [settings.appointmentPolicy]);
   useEffect(() => { regionRef.current = settings.region; }, [settings.region]);
 
   const decode = (base64: string) => {
@@ -238,17 +234,31 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
       }).join('\n');
 
       const branchInfo = branches.map(b => b.name).join(', ') || "Sede Central";
-      const branchLogic = branches.length > 1 
-        ? `Tienes ${branches.length} sucursales: ${branchInfo}. Pregunta cuál prefiere si no lo dice.` 
-        : `Solo hay una sucursal (${branchInfo}). Asúmela por defecto.`;
+      
+      // Mapeo de acentos para instrucción de sistema
+      const accentNames: Record<string, string> = {
+        'es-ES-Madrid': 'Español de España (acento de Madrid)',
+        'es-ES-Canarias': 'Español de España (acento canario suave)',
+        'es-LATAM': 'Español Latinoamericano neutro',
+        'en-GB': 'British English',
+        'en-US': 'American English'
+      };
+      
+      const selectedAccent = accentNames[settings.aiPhoneSettings.accent] || accentNames['es-ES-Madrid'];
 
       const systemInstruction = `
         ${settings.aiPhoneSettings.systemPrompt}
         
-        # DATOS CRÍTICOS:
+        # REGLAS LINGÜÍSTICAS CRÍTICAS:
+        - Tu idioma y acento ES: ${selectedAccent}.
+        - DEBES hablar SIEMPRE con este acento, independientemente de la voz asignada.
+        - Usa giros lingüísticos y modismos propios de esta región para sonar natural.
+        - Nunca cambies de acento durante la llamada.
+
+        # DATOS DE LA CLÍNICA:
         - FECHA HOY: ${new Date().toLocaleDateString('es-ES')}
         - HORA ACTUAL: ${new Date().toLocaleTimeString('es-ES')}
-        - SUCURSALES: ${branchLogic}
+        - SUCURSALES: ${branchInfo}
         - HORARIOS: 
         ${scheduleDesc}
 
@@ -256,11 +266,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
         1. VALIDACIÓN ESTRICTA: Si el usuario quiere una cita fuera de horario, dile que está cerrado y propón un hueco válido.
         2. DATOS PACIENTE: Si es nuevo, PIDE DNI Y TELÉFONO. No inventes datos.
         3. CONFIRMACIÓN: Al agendar, repite claramente: "Cita agendada para [Paciente] el [Día] a las [Hora] en [Sucursal]".
-        4. USO DE TOOLS:
-           - findAppointment: Para buscar.
-           - createAppointment: Para agendar (nuevos o existentes).
-           - rescheduleAppointment: Para mover citas (necesitas ID).
-           - cancelAppointment: Para cancelar (necesitas ID).
+        4. USO DE TOOLS: findAppointment, createAppointment, rescheduleAppointment, cancelAppointment.
       `;
 
       const sessionPromise = ai.live.connect({
@@ -281,11 +287,11 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
             source.connect(processor);
             processor.connect(audioContextRef.current!.destination);
             
-            // Force greeting
-            sessionPromise.then(s => s.sendRealtimeInput([{ text: `SISTEMA: Di tu saludo inicial: "${settings.aiPhoneSettings.initialGreeting}"` }]));
+            // Forzamos el saludo con la instrucción de acento
+            const greetingWithAccent = `SISTEMA: Saluda en ${selectedAccent} diciendo: "${settings.aiPhoneSettings.initialGreeting}"`;
+            sessionPromise.then(s => s.sendRealtimeInput([{ text: greetingWithAccent }]));
           },
           onmessage: async (m: LiveServerMessage) => {
-            // Audio Output
             if (m.serverContent?.modelTurn?.parts[0]?.inlineData?.data) {
               const ctx = outputAudioContextRef.current;
               if (ctx && ctx.state === 'suspended') await ctx.resume();
@@ -302,25 +308,18 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                   sourcesRef.add(source);
               }
             }
-            
-            // Transcription
             if (m.serverContent?.inputTranscription) {
                setTranscription(prev => prev + ' ' + m.serverContent?.inputTranscription?.text);
             }
-
-            // Tools Execution
             if (m.toolCall) {
-                console.log("Tool Call:", m.toolCall);
                 const functionResponses = m.toolCall.functionCalls.map(fc => {
                     const args = fc.args as any;
                     let result: any = { error: "Unknown error" };
-
                     try {
                         if (fc.name === "findAppointment") {
                             const query = args.patientName.toLowerCase();
                             const matches = appointmentsRef.current.filter(a => a.patientName.toLowerCase().includes(query) && a.status !== 'Cancelled');
                             const patient = patientsRef.current.find(p => p.name.toLowerCase().includes(query));
-                            
                             result = {
                                 found: !!patient || matches.length > 0,
                                 patient: patient ? { id: patient.id, name: patient.name, phone: patient.phone, email: patient.email } : null,
@@ -334,85 +333,56 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                             result = { available: isOpen && !isBusy, reason: !isOpen ? "Clínica cerrada" : (isBusy ? "Horario ocupado" : "Libre") };
                         }
                         else if (fc.name === "createAppointment") {
-                            // 1. Validate Date/Time
                             const today = new Date().toISOString().split('T')[0];
                             if (args.date < today) throw new Error("Fecha en el pasado");
                             if (!isClinicOpen(args.date, args.time)) throw new Error("Clínica cerrada en ese horario");
-
-                            // 2. Validate Phone (if provided)
                             if (args.phone) {
                                 const val = validatePhone(args.phone, regionRef.current);
                                 if (!val.valid) throw new Error(val.error || "Teléfono inválido");
                             }
-
-                            // 3. Resolve Patient
                             let patientId = "";
                             const existingP = patientsRef.current.find(p => p.name.toLowerCase().includes(args.patientName.toLowerCase()));
-                            
                             if (existingP) {
                                 patientId = existingP.id;
-                                // Update phone if missing
                                 if (!existingP.phone && args.phone && setPatients) {
                                     setPatients(prev => prev.map(p => p.id === existingP.id ? { ...p, phone: args.phone } : p));
                                 }
                             } else {
-                                // Create New Patient
                                 if (setPatients) {
                                     const newP: Patient = {
                                         id: 'P-' + Date.now(),
                                         name: args.patientName,
                                         identityDocument: args.dni || 'PENDIENTE',
                                         phone: args.phone || '',
-                                        email: '',
-                                        address: '',
-                                        gender: 'Otro',
-                                        birthDate: today,
-                                        medicalHistory: 'Alta vía Voz',
+                                        email: '', address: '', gender: 'Otro',
+                                        birthDate: today, medicalHistory: 'Alta vía Voz',
                                         img: 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=' + args.patientName,
                                         history: []
                                     };
                                     setPatients(prev => [...prev, newP]);
                                     patientId = newP.id;
-                                } else {
-                                    patientId = 'TEMP-' + Date.now();
-                                }
+                                } else { patientId = 'TEMP-' + Date.now(); }
                             }
-
-                            // 4. Resolve Doctor & Branch (Smart Logic)
                             let docId = doctorsRef.current[0]?.id || "D1";
                             let docName = doctorsRef.current[0]?.name || "Dr. Asignado";
                             let branch = args.branchName;
-
-                            // Try finding doctor
                             if (args.doctorName) {
                                 const d = doctorsRef.current.find(doc => doc.name.toLowerCase().includes(args.doctorName.toLowerCase()));
                                 if (d) { docId = d.id; docName = d.name; if (!branch) branch = d.branch; }
                             }
-
-                            // Resolve Branch if missing
-                            if (!branch) {
-                                // Fallback to doctor's branch or first available branch
-                                branch = doctorsRef.current.find(d => d.id === docId)?.branch || branchesRef.current[0]?.name || "Centro";
-                            }
-                            
-                            // Normalize Branch Name
+                            if (!branch) { branch = doctorsRef.current.find(d => d.id === docId)?.branch || branchesRef.current[0]?.name || "Centro"; }
                             const knownBranch = branchesRef.current.find(b => b.name.toLowerCase() === branch?.toLowerCase());
                             if (knownBranch) branch = knownBranch.name;
 
-                            // 5. Create Appointment
                             const newApt: Appointment = {
                                 id: 'APT-' + Date.now(),
-                                patientId,
-                                patientName: args.patientName,
-                                doctorId: docId,
-                                doctorName: docName,
+                                patientId, patientName: args.patientName,
+                                doctorId: docId, doctorName: docName,
                                 branch: branch || "Centro",
-                                date: args.date,
-                                time: args.time,
+                                date: args.date, time: args.time,
                                 treatment: args.treatment || "Consulta General",
-                                status: 'Confirmed' // Default confirmed for voice for smoother UX
+                                status: 'Confirmed'
                             };
-
                             setAppointments(prev => [...prev, newApt]);
                             result = { success: true, appointmentId: newApt.id, message: `Cita confirmada: ${newApt.date} a las ${newApt.time} en ${newApt.branch}.` };
                         }
@@ -420,44 +390,18 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
                             const apt = appointmentsRef.current.find(a => a.id === args.appointmentId);
                             if (!apt) throw new Error("Cita no encontrada");
                             if (!isClinicOpen(args.newDate, args.newTime)) throw new Error("Clínica cerrada en nuevo horario");
-                            
                             setAppointments(prev => prev.map(a => a.id === args.appointmentId ? { ...a, date: args.newDate, time: args.newTime, status: 'Rescheduled' } : a));
                             result = { success: true, message: "Cita reprogramada con éxito." };
                         }
                         else if (fc.name === "cancelAppointment") {
                             const apt = appointmentsRef.current.find(a => a.id === args.appointmentId);
                             if (!apt) throw new Error("Cita no encontrada");
-                            
                             setAppointments(prev => prev.map(a => a.id === args.appointmentId ? { ...a, status: 'Cancelled' } : a));
                             result = { success: true, message: "Cita cancelada." };
                         }
-                        else if (fc.name === "updatePatientData") {
-                            const p = patientsRef.current.find(pt => pt.id === args.patientId);
-                            if (!p) throw new Error("Paciente no encontrado");
-                            
-                            if (args.phone) {
-                                const v = validatePhone(args.phone, regionRef.current);
-                                if (!v.valid) throw new Error(v.error);
-                            }
-                            
-                            if (setPatients) {
-                                setPatients(prev => prev.map(pt => pt.id === args.patientId ? { 
-                                    ...pt, 
-                                    phone: args.phone || pt.phone,
-                                    email: args.email || pt.email,
-                                    identityDocument: args.dni || pt.identityDocument
-                                } : pt));
-                                result = { success: true, message: "Datos actualizados." };
-                            }
-                        }
-                    } catch (e: any) {
-                        console.error("Tool Error:", e);
-                        result = { success: false, error: e.message };
-                    }
-
+                    } catch (e: any) { result = { success: false, error: e.message }; }
                     return { id: fc.id, name: fc.name, response: { result } };
                 });
-                
                 sessionPromise.then(s => s.sendToolResponse({ functionResponses }));
             }
           },
@@ -516,8 +460,8 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
              <div className="flex flex-col gap-1">
                 <p className="text-primary font-black uppercase tracking-[0.3em] text-[10px]">{settings.name}</p>
                 <p className="text-slate-400 text-xs font-medium">Asistente Administrativo Inteligente</p>
-                <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mt-2 bg-white/5 py-1 px-3 rounded-full mx-auto w-fit">
-                    Región: {settings.region === 'ES' ? 'España' : settings.region === 'MX' ? 'México' : settings.region === 'US' ? 'USA' : settings.region}
+                <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mt-2 bg-white/5 py-1 px-3 rounded-full mx-auto w-fit italic">
+                    Configuración: {settings.aiPhoneSettings.accent}
                 </p>
              </div>
           </div>
@@ -531,7 +475,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onClose, settings, appo
         
         {isActive && (
             <div className="bg-slate-800/50 px-6 py-3 rounded-2xl border border-slate-700 max-w-lg">
-                <p className="text-xs text-slate-400 font-mono">
+                <p className="text-xs text-slate-400 font-mono italic">
                     {transcription || "Escuchando..."}
                 </p>
             </div>
