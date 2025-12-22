@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ClinicSettings, VoiceAccent, FileAttachment } from '../../types';
-import { generatePersonalityPrompt, speakText } from '../../services/gemini';
+import { generatePersonalityPrompt, speakText, decodeBase64, decodeAudioDataToBuffer } from '../../services/gemini';
 
 interface SettingsAssistantProps {
   settings: ClinicSettings;
@@ -15,13 +15,7 @@ const PERSONALITY_TAGS = {
   enfoque: ['Venta Consultiva', 'Triaje Clínico', 'Fidelización VIP', 'Resolución Técnica', 'Gestión de Quejas', 'Cierre Agresivo']
 };
 
-const DEFAULT_TEST_PARAGRAPH = "Hola, soy {name}. Es un placer saludarte. Estoy aquí para gestionar tus citas en {clinic} y resolver cualquier duda sobre nuestros tratamientos de forma inmediata. Mi compromiso es ofrecerte una atención personalizada, cercana y profesional en cada contacto. ¿En qué puedo ayudarte hoy?";
-
-const GREETING_PILLS = [
-  "Hola, soy {name} de {clinic}. ¿En qué puedo ayudarte hoy?",
-  "Bienvenido a {clinic}. Mi nombre es {name}, ¿cómo puedo asistirte?",
-  "Hola, gracias por llamar a {clinic}. Soy {name}, tu asistente virtual."
-];
+const DEFAULT_TEST_PARAGRAPH = "Hola, soy {name}. Es un placer saludarte. Estoy aquí para gestionar tus citas en {clinic} y resolver cualquier duda sobre nuestros tratamientos de forma inmediata. ¿En qué puedo ayudarte hoy?";
 
 const VOICE_OPTIONS = [
   { id: 'Zephyr', name: 'Zephyr', gender: 'Femenino', desc: 'Clara y profesional' },
@@ -32,102 +26,127 @@ const VOICE_OPTIONS = [
 ];
 
 const ACCENT_OPTIONS: { id: VoiceAccent; name: string }[] = [
-  { id: 'es-ES-Madrid', name: 'Español (Madrid)' },
-  { id: 'es-ES-Canarias', name: 'Español (Canarias)' },
-  { id: 'es-LATAM', name: 'Español (Latinoamérica)' },
-  { id: 'en-GB', name: 'English (British)' },
-  { id: 'en-US', name: 'English (US)' },
+  { id: 'es-ES-Madrid', name: 'ESPAÑOL (MADRID)' },
+  { id: 'es-ES-Canarias', name: 'ESPAÑOL (CANARIAS)' },
+  { id: 'es-LATAM', name: 'ESPAÑOL (LATINOAMÉRICA)' },
+  { id: 'en-GB', name: 'ENGLISH (BRITISH)' },
+  { id: 'en-US', name: 'ENGLISH (US)' },
 ];
 
 const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSettings }) => {
   const [isGeneratingPersonality, setIsGeneratingPersonality] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
-  const knowledgeFileInputRef = useRef<HTMLInputElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  
+  // Refs blindados para la gestión de audio
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const lastAssistantName = useRef(settings.aiPhoneSettings.assistantName);
+  const lastCompanyName = useRef(settings.aiPhoneSettings.aiCompanyName);
 
   useEffect(() => {
-    if (!settings.aiPhoneSettings.testSpeechText || settings.aiPhoneSettings.testSpeechText === "Prueba.") {
+    // Inicializar texto de prueba si está vacío
+    if (!settings.aiPhoneSettings.testSpeechText || settings.aiPhoneSettings.testSpeechText.length < 10) {
         const initialTest = DEFAULT_TEST_PARAGRAPH
             .replace('{name}', settings.aiPhoneSettings.assistantName)
             .replace('{clinic}', settings.aiPhoneSettings.aiCompanyName);
         setSettings(prev => ({ ...prev, aiPhoneSettings: { ...prev.aiPhoneSettings, testSpeechText: initialTest } }));
     }
+
+    return () => stopAudio();
   }, []);
+
+  const stopAudio = () => {
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.onended = null;
+        currentSourceRef.current.stop();
+      } catch (e) {
+        // Silencioso
+      }
+      currentSourceRef.current = null;
+    }
+    setIsPlaying(false);
+  };
 
   const toggleTag = (tag: string) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   };
 
-  const handleTestVoice = async () => {
-    const text = settings.aiPhoneSettings.testSpeechText || settings.aiPhoneSettings.initialGreeting;
-    setIsTestingVoice(true);
-    try {
-      // LLAMADA ULTRA-RÁPIDA
-      const base64 = await speakText(
-        text, 
-        settings.aiPhoneSettings.voiceName, 
-        settings.aiPhoneSettings.accent
-      );
-      
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      const binaryString = atob(base64);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-      
-      const dataInt16 = new Int16Array(bytes.buffer);
-      const buffer = audioContext.createBuffer(1, dataInt16.length, 24000);
-      const channelData = buffer.getChannelData(0);
-      for (let i = 0; i < dataInt16.length; i++) channelData[i] = dataInt16[i] / 32768.0;
-      
-      const source = audioContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContext.destination);
-      source.start();
-    } catch (e) { 
-        alert("Error de simulación: El motor TTS de Gemini está saturado o el texto es inválido."); 
-    } finally { 
-        setIsTestingVoice(false); 
+  // SINCRONIZACIÓN BLINDADA: Detecta cambios externos y los propaga al prompt
+  useEffect(() => {
+    if (lastCompanyName.current !== settings.aiPhoneSettings.aiCompanyName) {
+        syncText(lastCompanyName.current, settings.aiPhoneSettings.aiCompanyName);
+        lastCompanyName.current = settings.aiPhoneSettings.aiCompanyName;
     }
-  };
-
-  /**
-   * SINCRONIZACIÓN SEGURA DE TEXTOS AI
-   * Implementa lógica para evitar que el borrado parcial destruya los textos de prompt y saludo.
-   */
-  const syncAiTexts = (newName: string, type: 'assistant' | 'company') => {
-    const field = type === 'assistant' ? 'assistantName' : 'aiCompanyName';
-    const oldName = settings.aiPhoneSettings[field];
-    
-    // Si no ha cambiado nada, abortamos
-    if (oldName === newName) return;
-
-    let updatedPrompt = settings.aiPhoneSettings.systemPrompt;
-    let updatedGreeting = settings.aiPhoneSettings.initialGreeting;
-    let updatedTest = settings.aiPhoneSettings.testSpeechText;
-
-    // Solo realizamos la sincronización si el nombre anterior era consistente (>1 letra)
-    // y el nuevo nombre también lo es. Esto evita la "destrucción" al borrar con backspace.
-    if (oldName && oldName.length > 1 && newName.length > 1) {
-        updatedPrompt = updatedPrompt.split(oldName).join(newName);
-        updatedGreeting = updatedGreeting.split(oldName).join(newName);
-        updatedTest = updatedTest.split(oldName).join(newName);
+    if (lastAssistantName.current !== settings.aiPhoneSettings.assistantName) {
+        syncText(lastAssistantName.current, settings.aiPhoneSettings.assistantName);
+        lastAssistantName.current = settings.aiPhoneSettings.assistantName;
     }
+  }, [settings.aiPhoneSettings.aiCompanyName, settings.aiPhoneSettings.assistantName]);
 
-    setSettings(prev => ({ 
-        ...prev, 
-        aiPhoneSettings: { 
-            ...prev.aiPhoneSettings, 
-            [field]: newName, 
-            systemPrompt: updatedPrompt, 
-            initialGreeting: updatedGreeting,
-            testSpeechText: updatedTest
-        } 
+  const syncText = (oldVal: string, newVal: string) => {
+    if (!oldVal || oldVal.length < 3 || oldVal === newVal) return;
+    const regex = new RegExp(oldVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    setSettings(prev => ({
+        ...prev,
+        aiPhoneSettings: {
+            ...prev.aiPhoneSettings,
+            systemPrompt: prev.aiPhoneSettings.systemPrompt.replace(regex, newVal),
+            initialGreeting: prev.aiPhoneSettings.initialGreeting.replace(regex, newVal),
+            testSpeechText: prev.aiPhoneSettings.testSpeechText.replace(regex, newVal)
+        }
     }));
   };
 
+  const handleTestVoice = async () => {
+    if (isPlaying) {
+      stopAudio();
+      return;
+    }
+
+    const text = settings.aiPhoneSettings.testSpeechText || settings.aiPhoneSettings.initialGreeting;
+    if (!text.trim()) return;
+
+    setIsTestingVoice(true);
+    try {
+      const base64 = await speakText(text, settings.aiPhoneSettings.voiceName, {
+        pitch: settings.aiPhoneSettings.voicePitch,
+        speed: settings.aiPhoneSettings.voiceSpeed
+      });
+      
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') await ctx.resume();
+      
+      const rawData = decodeBase64(base64);
+      const audioBuffer = await decodeAudioDataToBuffer(rawData, ctx, 24000, 1);
+      
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+      
+      source.onended = () => {
+        setIsPlaying(false);
+        currentSourceRef.current = null;
+      };
+
+      currentSourceRef.current = source;
+      source.start();
+      setIsPlaying(true);
+      setIsTestingVoice(false);
+    } catch (e) { 
+        alert("El motor de voz está ocupado o no disponible en este momento."); 
+        setIsPlaying(false);
+        setIsTestingVoice(false);
+    }
+  };
+
   const handleGeneratePersonality = async () => {
-    if (selectedTags.length === 0) { alert("Selecciona al menos una etiqueta de personalidad."); return; }
+    if (selectedTags.length === 0) { alert("Selecciona al menos una etiqueta."); return; }
     setIsGeneratingPersonality(true);
     try {
       const newPrompt = await generatePersonalityPrompt(selectedTags, settings.aiPhoneSettings.assistantName, settings.aiPhoneSettings.aiCompanyName);
@@ -135,188 +154,137 @@ const SettingsAssistant: React.FC<SettingsAssistantProps> = ({ settings, setSett
     } catch (e) { alert("Error al generar personalidad."); } finally { setIsGeneratingPersonality(false); }
   };
 
-  const handleKnowledgeFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-        const newFile: FileAttachment = {
-            id: 'KB-' + Date.now(), name: file.name, type: file.type, size: (file.size / 1024 / 1024).toFixed(2) + ' MB', date: new Date().toISOString().split('T')[0], url: URL.createObjectURL(file)
-        };
-        const currentFiles = settings.aiPhoneSettings.knowledgeFiles || [];
-        setSettings({ ...settings, aiPhoneSettings: { ...settings.aiPhoneSettings, knowledgeFiles: [...currentFiles, newFile] } });
-    }
-  };
-
-  const removeKnowledgeFile = (id: string) => {
-    const currentFiles = settings.aiPhoneSettings.knowledgeFiles || [];
-    setSettings({ ...settings, aiPhoneSettings: { ...settings.aiPhoneSettings, knowledgeFiles: currentFiles.filter(f => f.id !== id) } });
-  };
-
-  const useGreetingPill = (template: string) => {
-    const greeting = template
-      .replace('{name}', settings.aiPhoneSettings.assistantName)
-      .replace('{clinic}', settings.aiPhoneSettings.aiCompanyName);
-    
-    setSettings(prev => ({
-      ...prev,
-      aiPhoneSettings: {
-        ...prev.aiPhoneSettings,
-        initialGreeting: greeting
-      }
-    }));
-  };
-
   return (
-    <div className="grid grid-cols-1 gap-12 animate-in fade-in slide-in-from-right-4 duration-500">
+    <div className="grid grid-cols-1 gap-12 animate-in fade-in duration-500 p-10 bg-slate-50 dark:bg-bg-dark">
        
-       <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
-            <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
-            <div className="size-12 rounded-xl bg-indigo-500 text-white flex items-center justify-center"><span className="material-symbols-outlined">badge</span></div>
-            <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Identidad del Asistente</h3>
+       <section className="bg-white dark:bg-surface-dark rounded-xl border border-slate-200 dark:border-border-dark overflow-hidden shadow-sm">
+            <div className="p-6 border-b border-slate-100 dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-4">
+              <span className="material-symbols-outlined text-primary">badge</span>
+              <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest">Identidad y Voz</h3>
             </div>
-            <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre del Asistente</label>
-                    <input type="text" value={settings.aiPhoneSettings.assistantName} onChange={(e) => syncAiTexts(e.target.value, 'assistant')} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-lg font-black text-primary focus:ring-4 focus:ring-primary/10 transition-all" placeholder="Ej: Sara" />
-                    <p className="text-[9px] text-slate-400 italic px-1 mt-1">Nombre que la IA usará para identificarse ante el paciente.</p>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre del Asistente</label>
+                    <input 
+                      type="text" 
+                      value={settings.aiPhoneSettings.assistantName} 
+                      onChange={(e) => setSettings(prev => ({...prev, aiPhoneSettings: {...prev.aiPhoneSettings, assistantName: e.target.value}}))} 
+                      className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-lg px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-primary" 
+                    />
                 </div>
                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre de Empresa (IA)</label>
-                    <input type="text" value={settings.aiPhoneSettings.aiCompanyName} onChange={(e) => syncAiTexts(e.target.value, 'company')} className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-lg font-black text-slate-900 dark:text-white focus:ring-4 focus:ring-primary/10 transition-all" placeholder="Ej: MediClinic Premium" />
-                    <p className="text-[9px] text-slate-400 italic px-1 mt-1">Este campo se sincroniza automáticamente con el nombre comercial de la empresa.</p>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre de Empresa (IA)</label>
+                    <input 
+                      type="text" 
+                      value={settings.aiPhoneSettings.aiCompanyName} 
+                      onChange={(e) => setSettings(prev => ({...prev, aiPhoneSettings: {...prev.aiPhoneSettings, aiCompanyName: e.target.value}}))} 
+                      className="w-full bg-slate-100 dark:bg-bg-dark border-none rounded-lg px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-primary" 
+                    />
+                </div>
+            </div>
+
+            <div className="p-8 border-t border-slate-100 dark:border-slate-800 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                    <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acento y Región</label>
+                        <div className="grid grid-cols-1 gap-2">
+                            {ACCENT_OPTIONS.map(opt => (
+                                <button key={opt.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, accent: opt.id}})} className={`text-left px-4 py-3 rounded-lg border text-xs font-bold transition-all ${settings.aiPhoneSettings.accent === opt.id ? 'bg-primary/5 border-primary text-primary shadow-sm' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
+                                    {opt.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Voz del Asistente</label>
+                        <div className="grid grid-cols-1 gap-2">
+                            {VOICE_OPTIONS.map(voice => (
+                                <button key={voice.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, voiceName: voice.id}})} className={`flex items-center justify-between px-4 py-3 rounded-lg border text-xs font-bold transition-all ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary/5 border-primary text-primary shadow-sm' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
+                                    <span>{voice.name} <span className="opacity-50 text-[10px]">({voice.gender})</span></span>
+                                    {settings.aiPhoneSettings.voiceName === voice.id && <span className="material-symbols-outlined text-sm">check_circle</span>}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10 bg-slate-50 dark:bg-bg-dark p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tono de Voz (Pitch)</label>
+                            <span className="text-[10px] font-bold text-primary">{settings.aiPhoneSettings.voicePitch}x</span>
+                        </div>
+                        <input type="range" min="0.5" max="1.5" step="0.1" value={settings.aiPhoneSettings.voicePitch} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, voicePitch: parseFloat(e.target.value)}})} className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary" />
+                    </div>
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Velocidad (Speed)</label>
+                            <span className="text-[10px] font-bold text-primary">{settings.aiPhoneSettings.voiceSpeed}x</span>
+                        </div>
+                        <input type="range" min="0.5" max="1.5" step="0.1" value={settings.aiPhoneSettings.voiceSpeed} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, voiceSpeed: parseFloat(e.target.value)}})} className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary" />
+                    </div>
                 </div>
             </div>
         </section>
 
-       <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
-          <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center gap-5">
-            <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center"><span className="material-symbols-outlined">volume_up</span></div>
-            <h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Selección de Voz e Idioma</h3>
-          </div>
-          <div className="p-10 space-y-10">
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acento y Región</label>
-                   <div className="grid grid-cols-1 gap-3">
-                      {ACCENT_OPTIONS.map(opt => (
-                        <button key={opt.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, accent: opt.id}})} className={`flex items-center justify-between px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.accent === opt.id ? 'bg-primary/10 border-primary text-primary shadow-lg scale-[1.02]' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
-                           <span className="text-sm font-bold uppercase tracking-wide">{opt.name}</span>{settings.aiPhoneSettings.accent === opt.id && <span className="material-symbols-outlined text-sm">verified</span>}
-                        </button>
-                      ))}
-                   </div>
-                </div>
-                <div className="space-y-4">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Voz del Asistente</label>
-                   <div className="grid grid-cols-1 gap-3">
-                      {VOICE_OPTIONS.map(voice => (
-                        <button key={voice.id} onClick={() => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, voiceName: voice.id}})} className={`flex items-center gap-4 px-6 py-4 rounded-2xl border-2 transition-all ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary/10 border-primary text-primary shadow-md scale-[1.02]' : 'bg-slate-50 dark:bg-bg-dark border-transparent text-slate-500'}`}>
-                           <div className={`size-10 rounded-xl flex items-center justify-center ${settings.aiPhoneSettings.voiceName === voice.id ? 'bg-primary text-white' : 'bg-slate-200 text-slate-400'}`}><span className="material-symbols-outlined">{voice.gender === 'Femenino' ? 'female' : 'male'}</span></div>
-                           <div className="text-left flex-1"><p className="text-sm font-bold">{voice.name} <span className="text-[9px] opacity-60 uppercase">({voice.gender})</span></p><p className="text-[10px] italic opacity-60">{voice.desc}</p></div>
-                           {settings.aiPhoneSettings.voiceName === voice.id && <span className="material-symbols-outlined text-sm">check_circle</span>}
-                        </button>
-                      ))}
-                   </div>
-                </div>
-             </div>
-             <div className="p-10 bg-primary/5 rounded-[3rem] border border-primary/20 space-y-8">
-                <div className="flex items-center justify-between">
-                   <div>
-                       <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.2em]">Laboratorio de Pruebas (Simulación Real)</h4>
-                       <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Evaluando acento: {settings.aiPhoneSettings.accent}</p>
-                   </div>
-                   <button onClick={handleTestVoice} disabled={isTestingVoice} className="px-10 py-4 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center gap-3 shadow-xl hover:scale-105 transition-all">
-                      {isTestingVoice ? <span className="material-symbols-outlined animate-spin text-lg">sync</span> : <span className="material-symbols-outlined text-lg">play_circle</span>} Escuchar Simulación Inmediata
-                   </button>
-                </div>
-                <textarea 
-                    value={settings.aiPhoneSettings.testSpeechText} 
-                    onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, testSpeechText: e.target.value}})} 
-                    className="w-full bg-white dark:bg-bg-dark border-none rounded-[2rem] px-8 py-8 text-sm font-medium h-40 shadow-inner resize-none leading-relaxed focus:ring-4 focus:ring-primary/10 transition-all outline-none" 
-                    placeholder="Escribe un párrafo detallado para evaluar cómo el asistente proyecta su personalidad..." 
-                />
-                <div className="flex items-center gap-3 bg-white/50 dark:bg-black/20 p-4 rounded-2xl border border-primary/10">
-                    <span className="material-symbols-outlined text-primary">bolt</span>
-                    <p className="text-[10px] text-slate-500 font-medium italic">Optimizado: La respuesta de voz ahora es cuasi-inmediata al pulsar el botón.</p>
-                </div>
-             </div>
-          </div>
-       </section>
-
-       <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
-          <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
-            <div className="flex items-center gap-5">
-              <div className="size-12 rounded-xl bg-primary text-white flex items-center justify-center shadow-lg"><span className="material-symbols-outlined">auto_awesome</span></div>
-              <div><h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Cerebro y Personalidad</h3><p className="text-[9px] font-black text-primary uppercase tracking-widest">Genera instrucciones avanzadas con IA</p></div>
+       <section className="bg-white dark:bg-surface-dark rounded-xl border border-slate-200 dark:border-border-dark overflow-hidden shadow-sm">
+          <div className="p-6 border-b border-slate-100 dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="material-symbols-outlined text-primary">play_circle</span>
+              <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest">Laboratorio de Simulación</h3>
             </div>
-            <button onClick={handleGeneratePersonality} disabled={isGeneratingPersonality} className="px-10 py-4 bg-primary text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl hover:scale-105 transition-all flex items-center gap-3">
-              {isGeneratingPersonality ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">magic_button</span>} Generar con Píldoras
+            <button 
+                onClick={handleTestVoice} 
+                disabled={isTestingVoice}
+                className={`px-6 py-3 rounded-lg font-black uppercase text-[10px] tracking-widest flex items-center gap-3 transition-all shadow-md ${
+                    isPlaying 
+                    ? 'bg-danger text-white hover:bg-danger-dark' 
+                    : 'bg-primary text-white hover:bg-primary-dark'
+                }`}
+            >
+                {isTestingVoice ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">{isPlaying ? 'stop_circle' : 'volume_up'}</span>}
+                {isTestingVoice ? 'Cargando...' : isPlaying ? 'Cancelar Simulación' : 'Escuchar Simulación Inmediata'}
             </button>
           </div>
-          <div className="p-10 space-y-12">
-             <div className="space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                    {Object.entries(PERSONALITY_TAGS).map(([category, tags]) => (
-                        <div key={category} className="space-y-3">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 border-b border-slate-200 dark:border-slate-800 pb-1 block">
-                                {category === 'enfoque' ? 'Enfoque Profesional' : category}
-                            </label>
-                            <div className="flex flex-wrap gap-2">
-                                {tags.map(tag => (
-                                <button key={tag} onClick={() => toggleTag(tag)} className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase border transition-all ${selectedTags.includes(tag) ? 'bg-primary border-primary text-white' : 'bg-slate-50 dark:bg-bg-dark border-slate-200 dark:border-slate-700 text-slate-500 hover:border-primary/50'}`}>{tag}</button>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-             </div>
-             <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Instrucciones Maestras (System Prompt)</label>
-                <textarea value={settings.aiPhoneSettings.systemPrompt} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, systemPrompt: e.target.value}})} className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-[2rem] px-8 py-8 text-sm font-medium h-64 shadow-inner leading-relaxed focus:ring-4 focus:ring-primary/10 transition-all outline-none" />
-             </div>
-             <div className="space-y-6 pt-10 border-t">
-                <div className="flex items-center justify-between">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Saludo Inicial</label>
-                   <div className="flex gap-2">
-                      {GREETING_PILLS.map((pill, i) => (
-                        <button key={i} onClick={() => useGreetingPill(pill)} className="px-3 py-1.5 bg-slate-100 dark:bg-bg-dark text-[9px] font-black uppercase rounded-lg border border-transparent hover:border-primary transition-all text-slate-500">Plantilla {i+1}</button>
-                      ))}
-                   </div>
-                </div>
-                <textarea value={settings.aiPhoneSettings.initialGreeting} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, initialGreeting: e.target.value}})} className="w-full bg-slate-50 dark:bg-bg-dark border-none rounded-2xl px-6 py-4 text-sm font-bold h-24 shadow-inner resize-none focus:ring-4 focus:ring-primary/10 transition-all outline-none" />
-             </div>
+          <div className="p-8">
+            <textarea 
+                value={settings.aiPhoneSettings.testSpeechText} 
+                onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, testSpeechText: e.target.value}})} 
+                className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-800 rounded-xl p-6 text-sm font-medium h-32 focus:ring-2 focus:ring-primary outline-none transition-all leading-relaxed" 
+                placeholder="Escribe el texto que quieres probar con la voz actual..." 
+            />
           </div>
        </section>
 
-       <section className="bg-white dark:bg-surface-dark rounded-[3rem] border-2 border-border-light dark:border-border-dark overflow-hidden shadow-xl">
-            <div className="p-8 border-b-2 border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
-            <div className="flex items-center gap-5">
-                <div className="size-12 rounded-xl bg-teal-500 text-white flex items-center justify-center"><span className="material-symbols-outlined">folder_data</span></div>
-                <div><h3 className="text-2xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">Base de Conocimientos</h3><p className="text-[10px] font-black text-primary uppercase tracking-widest">Documentación empresarial para la IA</p></div>
+       <section className="bg-white dark:bg-surface-dark rounded-xl border border-slate-200 dark:border-border-dark overflow-hidden shadow-sm">
+          <div className="p-6 border-b border-slate-100 dark:border-border-dark bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="material-symbols-outlined text-primary">auto_awesome</span>
+              <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest">Personalidad y Prompting</h3>
             </div>
-            <button onClick={() => knowledgeFileInputRef.current?.click()} className="px-8 py-3 bg-teal-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:scale-105 transition-all flex items-center gap-2"><span className="material-symbols-outlined text-lg">upload</span> Subir Archivos</button>
-            <input type="file" ref={knowledgeFileInputRef} onChange={handleKnowledgeFileUpload} className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png" />
-            </div>
-            <div className="p-10">
-                {(settings.aiPhoneSettings.knowledgeFiles?.length || 0) === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-10 opacity-40 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-[2rem]">
-                        <span className="material-symbols-outlined text-6xl mb-2">upload_file</span>
-                        <p className="font-bold text-sm">No hay documentos subidos</p>
-                        <p className="text-xs">Sube PDFs, Excel, Word o Imágenes para entrenar al asistente.</p>
+            <button onClick={handleGeneratePersonality} disabled={isGeneratingPersonality} className="px-6 py-2 bg-primary text-white rounded-lg font-black uppercase text-[10px] tracking-widest shadow-sm flex items-center gap-2 hover:bg-primary-dark transition-all">
+              {isGeneratingPersonality ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">magic_button</span>} Inteligencia Rápida
+            </button>
+          </div>
+          <div className="p-8 space-y-8">
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {Object.entries(PERSONALITY_TAGS).map(([category, tags]) => (
+                    <div key={category} className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">{category}</label>
+                        <div className="flex flex-wrap gap-1.5">
+                            {tags.map(tag => (
+                                <button key={tag} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded text-[9px] font-bold uppercase transition-all ${selectedTags.includes(tag) ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'}`}>{tag}</button>
+                            ))}
+                        </div>
                     </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {settings.aiPhoneSettings.knowledgeFiles?.map(file => (
-                            <div key={file.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-bg-dark rounded-2xl border border-slate-200 dark:border-slate-800">
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                    <div className="size-10 rounded-xl bg-white dark:bg-surface-dark flex items-center justify-center text-teal-500 shadow-sm shrink-0"><span className="material-symbols-outlined">{file.name.endsWith('.pdf') ? 'picture_as_pdf' : 'description'}</span></div>
-                                    <div className="min-w-0"><p className="text-sm font-bold truncate">{file.name}</p><p className="text-[10px] text-slate-400 uppercase font-black">{file.size}</p></div>
-                                </div>
-                                <button onClick={() => removeKnowledgeFile(file.id)} className="size-8 rounded-lg bg-white dark:bg-surface-dark text-slate-400 hover:text-danger flex items-center justify-center transition-colors"><span className="material-symbols-outlined text-sm">close</span></button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </section>
+                ))}
+             </div>
+             <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Prompt (Instrucciones Maestras)</label>
+                <textarea value={settings.aiPhoneSettings.systemPrompt} onChange={e => setSettings({...settings, aiPhoneSettings: {...settings.aiPhoneSettings, systemPrompt: e.target.value}})} className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-800 rounded-xl p-6 text-xs font-mono h-64 focus:ring-2 focus:ring-primary outline-none transition-all leading-relaxed" />
+             </div>
+          </div>
+       </section>
     </div>
   );
 };

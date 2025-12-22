@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { generateChatResponse, streamChatResponse } from '../services/gemini';
+/* Fix: Removed non-existent import generateChatResponse as it is not exported from services/gemini */
+import { streamChatResponse } from '../services/gemini';
 import { ChatMessage } from '../types';
 
 interface ChatBotProps {

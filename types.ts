@@ -37,6 +37,7 @@ export interface Branch {
   name: string;
   address: string;
   city: string;
+  province?: string; // New
   zip: string;
   phone: string;
   email: string;
@@ -195,7 +196,9 @@ export interface ClinicSettings {
   name: string;
   businessName: string;
   sector: string; 
-  region: CountryRegion; 
+  region: CountryRegion;
+  province?: string; // New
+  city?: string; // New
   branchCount: number; 
   scheduleType: 'continuous' | 'split'; 
   logo: string;

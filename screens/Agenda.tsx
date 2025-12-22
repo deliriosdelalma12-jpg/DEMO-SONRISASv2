@@ -18,6 +18,9 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
   const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
   const [draggedAptId, setDraggedAptId] = useState<string | null>(null);
   
+  // NEW: State for the "See More" modal
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  
   // NEW: Branch Filter State
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
   
@@ -293,7 +296,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         <div className="grid grid-cols-7 flex-1 divide-x divide-y divide-border-light dark:border-border-dark">
           {calendarDays.map((date, i) => {
             const dateStr = date.toISOString().split('T')[0];
-            const dayAppointments = filteredAppointments.filter(a => a.date === dateStr);
+            const dayAppointments = filteredAppointments.filter(a => a.date === dateStr).sort((a, b) => a.time.localeCompare(b.time));
             const isToday = date.toDateString() === new Date().toDateString();
             const isCurrentMonth = date.getMonth() === currentDate.getMonth();
             const isPast = isPastDate(dateStr);
@@ -345,7 +348,15 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                     </div>
                   ))}
                   {dayAppointments.length > 3 && (
-                    <div className="text-[10px] font-bold text-slate-400 pl-1">+{dayAppointments.length - 3} más</div>
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedDay(dateStr);
+                      }}
+                      className="text-[10px] font-bold text-slate-500 pl-1 cursor-pointer hover:text-primary hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 transition-colors mt-1"
+                    >
+                      +{dayAppointments.length - 3} más
+                    </div>
                   )}
                 </div>
               </div>
@@ -541,7 +552,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
   };
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto w-full h-full flex flex-col gap-8">
+    <div className="p-8 max-w-[1600px] mx-auto w-full h-full flex flex-col gap-8 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
           <h1 className="text-slate-900 dark:text-white text-5xl font-display font-black tracking-tight">Agenda Médica</h1>
@@ -656,6 +667,63 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         {view === 'week' && renderWeekView()}
         {view === 'day' && renderDayView()}
       </div>
+
+      {/* --- EXPANDED DAY MODAL (SEE MORE) --- */}
+      {expandedDay && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setExpandedDay(null)}>
+          <div 
+            className="bg-white dark:bg-surface-dark w-full max-w-md rounded-[2.5rem] shadow-2xl border border-border-light dark:border-border-dark overflow-hidden flex flex-col max-h-[600px] animate-in zoom-in duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-border-light dark:border-border-dark flex items-center justify-between bg-slate-50 dark:bg-slate-900/50">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                  {new Date(expandedDay).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                  {filteredAppointments.filter(a => a.date === expandedDay).length} Citas Programadas
+                </p>
+              </div>
+              <button 
+                onClick={() => setExpandedDay(null)}
+                className="size-10 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 hover:text-danger transition-all"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-2">
+              {filteredAppointments
+                .filter(a => a.date === expandedDay)
+                .sort((a, b) => a.time.localeCompare(b.time))
+                .map((apt) => (
+                  <div 
+                    key={apt.id}
+                    onClick={() => { setSelectedApt(apt); setExpandedDay(null); }}
+                    className={`p-4 rounded-2xl flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] border border-transparent hover:shadow-md ${
+                      apt.status === 'Cancelled' ? 'bg-slate-50 dark:bg-slate-800/50 opacity-60' : 
+                      'bg-white dark:bg-bg-dark border-slate-100 dark:border-slate-800 shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="text-center w-12">
+                        <p className="text-sm font-black text-slate-700 dark:text-white">{apt.time}</p>
+                      </div>
+                      <div className="w-px h-8 bg-slate-100 dark:bg-slate-700"></div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800 dark:text-white">{apt.patientName}</p>
+                        <p className="text-[10px] text-slate-400 font-medium truncate max-w-[140px]">{apt.treatment}</p>
+                      </div>
+                    </div>
+                    <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${getStatusColor(apt.status)}`}>
+                      {apt.status === 'Confirmed' ? 'CONF' : apt.status === 'Pending' ? 'PEND' : apt.status === 'Completed' ? 'OK' : apt.status === 'Reprogramada' ? 'REPRO' : 'CANC'}
+                    </span>
+                  </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedApt && (
         <AppointmentDetailModal 

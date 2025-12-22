@@ -34,6 +34,7 @@ export const BranchInfo: React.FC<BranchInfoProps> = ({ editBranchData, setEditB
                     </div>
                   )}
                 </div>
+                <DataField label="Provincia / Estado" value={editBranchData.province || ''} onChange={(v: string) => isEditing && setEditBranchData({...editBranchData, province: v})} editing={isEditing} placeholder="Ej: Madrid" />
                 <DataField label="Horario Apertura" value={editBranchData.openingHours} onChange={(v: string) => isEditing && setEditBranchData({...editBranchData, openingHours: v})} editing={isEditing} />
             </div>
         </div>
