@@ -26,14 +26,12 @@ const REGION_RULES: Record<string, { regex: RegExp; error: string; hint: string 
 const EMAIL_REGEX = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
 
 // --- HOLIDAY LOGIC SIMULATION (CORE) ---
-// En producción real, esto consultaría una API. Para Demo, simulamos lógica.
 const getHolidayInfo = (dateStr: string, region: CountryRegion, province?: string, city?: string): string | null => {
     const d = new Date(dateStr);
     const day = d.getDate();
-    const month = d.getMonth() + 1; // 1-12
+    const month = d.getMonth() + 1; 
     const key = `${day}/${month}`;
 
-    // 1. Festivos Nacionales (Ejemplo ES y MX)
     if (region === 'ES') {
         if (key === '1/1') return 'Año Nuevo (Nacional)';
         if (key === '6/1') return 'Reyes (Nacional)';
@@ -46,21 +44,19 @@ const getHolidayInfo = (dateStr: string, region: CountryRegion, province?: strin
         if (key === '20/11') return 'Revolución (Nacional)';
     }
 
-    // 2. Festivos Regionales/Provinciales (Simulados)
     if (province && region === 'ES') {
         const p = province.toLowerCase();
         if (p.includes('madrid') && key === '2/5') return 'Comunidad de Madrid';
         if (p.includes('cataluña') && key === '11/9') return 'Diada';
     }
 
-    // 3. Festivos Locales (Simulados)
     if (city && region === 'ES') {
         const c = city.toLowerCase();
         if (c.includes('madrid') && key === '15/5') return 'San Isidro (Local)';
         if (c.includes('barcelona') && key === '24/9') return 'La Mercè (Local)';
     }
 
-    return null; // No es festivo conocido en la demo
+    return null;
 };
 
 // --- AUDIO UTILS ---
@@ -114,8 +110,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     setIsConnecting(false);
   };
 
-  // --- HERRAMIENTAS (TOOLS) DINÁMICAS ---
-  
   const getTools = () => {
     const hasBranches = settings.branchCount > 1;
 
@@ -178,7 +172,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const declarationCheckAvailability: FunctionDeclaration = {
       name: 'checkAvailability',
-      description: 'PASO 3: Consultar huecos libres. VERIFICA FESTIVOS Y HORARIOS.',
+      description: 'PASO 3: Consultar huecos libres. VERIFICA FESTIVOS Y HORARIOS ESPECÍFICOS DE SUCURSAL.',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -209,8 +203,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     return [declarationCheckPatient, declarationGetPatientAppointments, declarationCancelAppointment, declarationUpdatePatientContact, declarationRegisterPatient, declarationCheckAvailability, declarationBookAppointment];
   };
 
-  // --- LOGICA DE NEGOCIO BLINDADA ---
-
   const validateData = (phone: string, email: string) => {
     const region = settingsRef.current.region || 'ES';
     const rules = REGION_RULES[region] || REGION_RULES['ES'];
@@ -222,30 +214,37 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     return { valid: true, cleanPhone };
   };
 
-  // Lógica Maestra de Apertura (Incluye Festivos y Horarios)
+  // --- LÓGICA MAESTRA DE APERTURA (ACTUALIZADA & ROBUSTA) ---
   const checkOpeningStatus = (dateStr: string, timeStr: string, branchName?: string) => {
-      // 1. Determinar contexto geográfico
+      // 1. Determinar contexto geográfico y horario
       let province = settingsRef.current.province;
       let city = settingsRef.current.city;
+      // Por defecto usamos el horario global
       let scheduleSource = settingsRef.current.globalSchedule;
+      let scheduleType = settingsRef.current.scheduleType;
 
-      // Si hay sucursal específica, usamos SU ubicación y SU horario (si tuviera específico, aquí asumimos globalSchedule pero la ubicación cambia)
+      // 2. Si hay sucursal específica, sobrescribimos
       if (branchName && settingsRef.current.branchCount > 1) {
           const targetBranch = branchesRef.current.find(b => b.name === branchName);
           if (targetBranch) {
               if (targetBranch.province) province = targetBranch.province;
               if (targetBranch.city) city = targetBranch.city;
-              // Si las sucursales tuvieran horario propio en DB, lo cargaríamos aquí.
+              
+              // **NUEVO: Usar horario específico de la sucursal si existe**
+              if (targetBranch.schedule) {
+                  scheduleSource = targetBranch.schedule;
+                  if (targetBranch.scheduleType) scheduleType = targetBranch.scheduleType;
+              }
           }
       }
 
-      // 2. Chequeo de Festivos (Prioridad Máxima)
+      // 3. Chequeo de Festivos (Prioridad Máxima)
       const holidayName = getHolidayInfo(dateStr, settingsRef.current.region, province, city);
       if (holidayName) {
           return { isOpen: false, reason: `Es festivo (${holidayName}) en la ubicación seleccionada.` };
       }
 
-      // 3. Chequeo de Horario Semanal
+      // 4. Chequeo de Horario Semanal (Usando la fuente correcta)
       const date = new Date(dateStr);
       const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
       const dayName = dayNames[date.getDay()];
@@ -254,12 +253,21 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
       if (!schedule) return { isOpen: false, reason: 'No hay horario configurado para este día.' };
 
       const check = (s:string, e:string) => timeStr >= s && timeStr < e;
-      const morningOpen = schedule.morning.active && check(schedule.morning.start, schedule.morning.end);
-      const afternoonOpen = schedule.afternoon.active && check(schedule.afternoon.start, schedule.afternoon.end);
-
-      if (morningOpen || afternoonOpen) return { isOpen: true };
       
-      return { isOpen: false, reason: 'La clínica está cerrada en ese horario.' };
+      // LOGIC: Check Shift based on schedule config
+      // Morning
+      if (schedule.morning.active) {
+          if (check(schedule.morning.start, schedule.morning.end)) return { isOpen: true };
+      }
+      
+      // Afternoon - Logic must consider Shift Type implicitly handled by 'active' flags or logic
+      // In Split shift, afternoon gap is closed. In Continuous, afternoon is typically disabled or set to end late.
+      // We rely on the ACTIVE flags. If afternoon is active, we check it.
+      if (schedule.afternoon.active) {
+          if (check(schedule.afternoon.start, schedule.afternoon.end)) return { isOpen: true };
+      }
+
+      return { isOpen: false, reason: `La sucursal ${branchName || 'central'} está cerrada a las ${timeStr}.` };
   };
 
   const startSession = async () => {
@@ -281,37 +289,25 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
       const hasBranches = settings.branchCount > 1;
       const branchList = branchesRef.current.map(b => `${b.name} (${b.city})`).join(', ');
       
-      let scheduleSummary = "";
-      const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-      days.forEach(d => {
-          const s = settings.globalSchedule?.[d];
-          if(s && (s.morning.active || s.afternoon.active)) {
-              scheduleSummary += `${d}: ${s.morning.active ? s.morning.start+'-'+s.morning.end : ''} ${s.afternoon.active ? s.afternoon.start+'-'+s.afternoon.end : ''}. `;
-          }
-      });
-
       const SYSTEM_PROMPT = `
         # ROL
         Eres ${settings.aiPhoneSettings.assistantName}, recepcionista de ${settings.aiPhoneSettings.aiCompanyName}.
-        Voz: 100% Humana, cálida, profesional y concisa.
         
-        # DATOS DE EMPRESA Y GEOGRAFÍA (CRÍTICO)
-        - Región: ${region}. Provincia: ${settings.province || 'No definida'}. Ciudad: ${settings.city || 'No definida'}.
+        # DATOS
+        - Región: ${region}.
         - Sucursales: ${hasBranches ? branchList : 'Sede Única'}.
-        - Horarios Base: ${scheduleSummary}
         
-        # LÓGICA DE AGENDA (INMUTABLE)
-        1. **FESTIVOS**: Tienes capacidad de detectar festivos nacionales, provinciales y locales. Si un paciente pide cita en un día que podría ser festivo, USA 'checkAvailability' para confirmar. Esa herramienta tiene la base de datos de festivos exacta según la sucursal.
-        2. **SUCURSALES**: Si hay varias, el festivo local depende de dónde esté la sucursal.
-        3. **HORARIOS**: Respeta estrictamente si es continuo o partido.
+        # LÓGICA DE AGENDA (CRÍTICO)
+        1. **HORARIOS POR SUCURSAL**: Cada sucursal puede tener su propio horario. Al usar 'checkAvailability', el sistema verificará automáticamente el horario específico de la sucursal solicitada y los festivos locales.
+        2. **FESTIVOS**: Si el usuario pide cita en un festivo, el sistema te avisará. Ofrece otra fecha.
         
         # REGLAS DE ORO
-        1. **ALTA PACIENTE**: Nombre + 2 Apellidos OBLIGATORIO. Teléfono y Email.
+        1. **ALTA PACIENTE**: Nombre + 2 Apellidos OBLIGATORIO.
         2. **PRIVACIDAD**: NUNCA reveles datos de otros.
-        3. **ERRORES**: Si un dato es inválido, dilo de forma natural ("Ese número no me suena, ¿puedes repetir?").
+        3. **ERRORES**: Sé natural.
 
         # FLUJO
-        Saludo -> Identificar ('checkPatient') -> (Registro si nuevo) -> Gestionar Cita.
+        Saludo -> Identificar -> Gestionar Cita.
       `;
 
       const sessionPromise = ai.live.connect({
@@ -321,7 +317,17 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
             setIsConnecting(false);
             setIsActive(true);
             sessionPromise.then((session) => {
-              if (session) session.sendRealtimeInput([{ mimeType: 'text/plain', data: `INICIO LLAMADA. Saluda: "${settings.aiPhoneSettings.initialGreeting}"` }]);
+              if (session) {
+                const text = `INICIO LLAMADA. Saluda: "${settings.aiPhoneSettings.initialGreeting}"`;
+                // Use robust base64 encoding for UTF-8 text
+                const data = btoa(unescape(encodeURIComponent(text)));
+                session.sendRealtimeInput({ 
+                  media: { 
+                    mimeType: 'text/plain', 
+                    data 
+                  } 
+                });
+              }
             });
             const source = ctxIn.createMediaStreamSource(stream);
             const processor = ctxIn.createScriptProcessor(2048, 1, 1);
@@ -406,7 +412,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                   const { branch, date, time } = fc.args as any;
                   if (settingsRef.current.branchCount > 1 && !branch) res = { status: 'ERROR', msg: '¿En qué sucursal?' };
                   else {
-                      // CORE LOGIC: Check Schedule + Holidays + Branch Location
+                      // CORE LOGIC: Check Specific Branch Schedule + Holidays
                       const status = checkOpeningStatus(date, time, branch);
                       if (!status.isOpen) {
                           res = { status: 'CLOSED', msg: status.reason };

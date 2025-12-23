@@ -48,7 +48,9 @@ export interface Branch {
   };
   img: string;
   manager?: string;
-  openingHours?: string;
+  openingHours?: string; // Texto legible (L-V 09-20)
+  schedule?: Record<string, DaySchedule>; // Horario estructurado específico
+  scheduleType?: 'continuous' | 'split'; // Tipo de jornada específica por sucursal
   description?: string;
 }
 

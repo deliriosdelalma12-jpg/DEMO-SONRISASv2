@@ -75,7 +75,18 @@ const Settings: React.FC<SettingsProps> = ({
       </header>
 
       <div className="border border-border-light dark:border-border-dark rounded-xl bg-white dark:bg-surface-dark overflow-hidden">
-        {activeTab === 'company' && <SettingsCompany settings={localSettings} setSettings={setLocalSettings} systemUsers={systemUsers} setSystemUsers={setSystemUsers} doctors={doctors} setDoctors={setDoctors} />}
+        {activeTab === 'company' && (
+            <SettingsCompany 
+                settings={localSettings} 
+                setSettings={setLocalSettings} 
+                systemUsers={systemUsers} 
+                setSystemUsers={setSystemUsers} 
+                doctors={doctors} 
+                setDoctors={setDoctors} 
+                branches={branches} // Passed
+                setBranches={setBranches} // Passed
+            />
+        )}
         {activeTab === 'labor' && <SettingsLabor settings={localSettings} setSettings={setLocalSettings} doctors={doctors} setDoctors={setDoctors} />}
         {activeTab === 'visual' && <SettingsVisual settings={localSettings} setSettings={setLocalSettings} onToggleTheme={onToggleTheme} darkMode={darkMode} />}
         {activeTab === 'assistant' && <SettingsAssistant settings={localSettings} setSettings={setLocalSettings} />}

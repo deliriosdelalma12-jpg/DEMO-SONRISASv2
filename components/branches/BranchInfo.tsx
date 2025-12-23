@@ -35,7 +35,17 @@ export const BranchInfo: React.FC<BranchInfoProps> = ({ editBranchData, setEditB
                   )}
                 </div>
                 <DataField label="Provincia / Estado" value={editBranchData.province || ''} onChange={(v: string) => isEditing && setEditBranchData({...editBranchData, province: v})} editing={isEditing} placeholder="Ej: Madrid" />
-                <DataField label="Horario Apertura" value={editBranchData.openingHours} onChange={(v: string) => isEditing && setEditBranchData({...editBranchData, openingHours: v})} editing={isEditing} />
+                <div className="flex flex-col gap-1 w-full">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">Horario Apertura</label>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-md px-4 py-2.5 flex items-center justify-between min-h-[42px]">
+                        <span className="text-sm font-bold text-slate-800 dark:text-white leading-none">{editBranchData.openingHours || '---'}</span>
+                        {editBranchData.scheduleType && (
+                            <span className="text-[9px] font-black uppercase tracking-widest bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded text-slate-500">
+                                {editBranchData.scheduleType === 'continuous' ? 'J. Continua' : 'J. Partida'}
+                            </span>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     </div>
