@@ -20,7 +20,6 @@ const REGION_RULES: Record<string, { regex: RegExp; error: string; hint: string 
   'ES': { regex: /^[6789]\d{8}$/, error: 'Formato incorrecto para España.', hint: 'Debe tener 9 dígitos y empezar por 6, 7, 8 o 9.' },
   'MX': { regex: /^\d{10}$/, error: 'Formato incorrecto para México.', hint: 'Debe tener 10 dígitos.' },
   'US': { regex: /^\d{10}$/, error: 'Invalid US format.', hint: 'Must be 10 digits.' },
-  // ... (Rest of regions same as before)
 };
 
 const EMAIL_REGEX = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
@@ -80,6 +79,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [volume, setVolume] = useState(0);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -104,10 +104,17 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   const cleanup = () => {
     if (sessionRef.current) { try { sessionRef.current.close(); } catch (e) {} sessionRef.current = null; }
     if (streamRef.current) { streamRef.current.getTracks().forEach(track => track.stop()); streamRef.current = null; }
+    
+    // Close contexts to release hardware
+    if (audioContextRef.current) { try { audioContextRef.current.close(); } catch (e) {} audioContextRef.current = null; }
+    // outputAudioContextRef can stay or be closed, but closing ensures clean state
+    
     sources.current.forEach(s => { try { s.stop(); } catch(e){} });
     sources.current.clear();
+    
     setIsActive(false);
     setIsConnecting(false);
+    setVolume(0);
   };
 
   const getTools = () => {
@@ -115,7 +122,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const declarationCheckPatient: FunctionDeclaration = {
       name: 'checkPatient',
-      description: 'PASO 1: Buscar paciente. Devuelve si existe y si sus datos están completos.',
+      description: 'Buscar si el paciente existe en la base de datos por nombre.',
       parameters: {
         type: Type.OBJECT,
         properties: { name: { type: Type.STRING } },
@@ -125,7 +132,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const declarationGetPatientAppointments: FunctionDeclaration = {
       name: 'getPatientAppointments',
-      description: 'PASO 1.5: Obtener las citas futuras de un paciente.',
+      description: 'Obtener las citas futuras de un paciente existente.',
       parameters: {
         type: Type.OBJECT,
         properties: { patientId: { type: Type.STRING } },
@@ -145,7 +152,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const declarationUpdatePatientContact: FunctionDeclaration = {
       name: 'updatePatientContact',
-      description: 'PASO 2 (Opcional): Actualizar contacto.',
+      description: 'Actualizar datos de contacto de un paciente existente.',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -158,7 +165,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const declarationRegisterPatient: FunctionDeclaration = {
       name: 'registerPatient',
-      description: 'PASO 2 (Nuevo): Registra paciente. REQUIERE: Nombre + 2 Apellidos.',
+      description: 'Registrar NUEVO paciente. Usar SOLO si checkPatient confirmó que no existe.',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -172,7 +179,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const declarationCheckAvailability: FunctionDeclaration = {
       name: 'checkAvailability',
-      description: 'PASO 3: Consultar huecos libres. VERIFICA FESTIVOS Y HORARIOS ESPECÍFICOS DE SUCURSAL.',
+      description: 'Consultar huecos libres en agenda.',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -186,7 +193,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const declarationBookAppointment: FunctionDeclaration = {
       name: 'bookAppointment',
-      description: 'PASO 4: Confirmar y agendar la cita.',
+      description: 'Confirmar y agendar la cita.',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -200,7 +207,12 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
       }
     };
 
-    return [declarationCheckPatient, declarationGetPatientAppointments, declarationCancelAppointment, declarationUpdatePatientContact, declarationRegisterPatient, declarationCheckAvailability, declarationBookAppointment];
+    const declarationEndCall: FunctionDeclaration = {
+      name: 'endCall',
+      description: 'FINALIZAR LLAMADA. Ejecutar si el usuario confirma que no necesita nada más.',
+    };
+
+    return [declarationCheckPatient, declarationGetPatientAppointments, declarationCancelAppointment, declarationUpdatePatientContact, declarationRegisterPatient, declarationCheckAvailability, declarationBookAppointment, declarationEndCall];
   };
 
   const validateData = (phone: string, email: string) => {
@@ -214,37 +226,27 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     return { valid: true, cleanPhone };
   };
 
-  // --- LÓGICA MAESTRA DE APERTURA (ACTUALIZADA & ROBUSTA) ---
   const checkOpeningStatus = (dateStr: string, timeStr: string, branchName?: string) => {
-      // 1. Determinar contexto geográfico y horario
       let province = settingsRef.current.province;
       let city = settingsRef.current.city;
-      // Por defecto usamos el horario global
       let scheduleSource = settingsRef.current.globalSchedule;
-      let scheduleType = settingsRef.current.scheduleType;
 
-      // 2. Si hay sucursal específica, sobrescribimos
       if (branchName && settingsRef.current.branchCount > 1) {
           const targetBranch = branchesRef.current.find(b => b.name === branchName);
           if (targetBranch) {
               if (targetBranch.province) province = targetBranch.province;
               if (targetBranch.city) city = targetBranch.city;
-              
-              // **NUEVO: Usar horario específico de la sucursal si existe**
               if (targetBranch.schedule) {
                   scheduleSource = targetBranch.schedule;
-                  if (targetBranch.scheduleType) scheduleType = targetBranch.scheduleType;
               }
           }
       }
 
-      // 3. Chequeo de Festivos (Prioridad Máxima)
       const holidayName = getHolidayInfo(dateStr, settingsRef.current.region, province, city);
       if (holidayName) {
           return { isOpen: false, reason: `Es festivo (${holidayName}) en la ubicación seleccionada.` };
       }
 
-      // 4. Chequeo de Horario Semanal (Usando la fuente correcta)
       const date = new Date(dateStr);
       const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
       const dayName = dayNames[date.getDay()];
@@ -254,18 +256,8 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
       const check = (s:string, e:string) => timeStr >= s && timeStr < e;
       
-      // LOGIC: Check Shift based on schedule config
-      // Morning
-      if (schedule.morning.active) {
-          if (check(schedule.morning.start, schedule.morning.end)) return { isOpen: true };
-      }
-      
-      // Afternoon - Logic must consider Shift Type implicitly handled by 'active' flags or logic
-      // In Split shift, afternoon gap is closed. In Continuous, afternoon is typically disabled or set to end late.
-      // We rely on the ACTIVE flags. If afternoon is active, we check it.
-      if (schedule.afternoon.active) {
-          if (check(schedule.afternoon.start, schedule.afternoon.end)) return { isOpen: true };
-      }
+      if (schedule.morning.active && check(schedule.morning.start, schedule.morning.end)) return { isOpen: true };
+      if (schedule.afternoon.active && check(schedule.afternoon.start, schedule.afternoon.end)) return { isOpen: true };
 
       return { isOpen: false, reason: `La sucursal ${branchName || 'central'} está cerrada a las ${timeStr}.` };
   };
@@ -273,41 +265,89 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   const startSession = async () => {
     if (isConnecting || isActive) return;
     setIsConnecting(true);
+    setErrorMsg(null);
     
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      
+      // Initialize Contexts
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       if (!outputAudioContextRef.current) outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000, latencyHint: 'interactive' });
+      
       const ctxIn = audioContextRef.current;
       const ctxOut = outputAudioContextRef.current;
+      
+      // FORCE RESUME CONTEXTS
       if (ctxIn.state === 'suspended') await ctxIn.resume();
       if (ctxOut.state === 'suspended') await ctxOut.resume();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { 
+              echoCancellation: true, 
+              noiseSuppression: true, 
+              autoGainControl: true, 
+              channelCount: 1 
+          } 
+      });
       streamRef.current = stream;
 
       const region = settings.region || 'ES';
       const hasBranches = settings.branchCount > 1;
       const branchList = branchesRef.current.map(b => `${b.name} (${b.city})`).join(', ');
       
-      const SYSTEM_PROMPT = `
-        # ROL
-        Eres ${settings.aiPhoneSettings.assistantName}, recepcionista de ${settings.aiPhoneSettings.aiCompanyName}.
-        
-        # DATOS
-        - Región: ${region}.
-        - Sucursales: ${hasBranches ? branchList : 'Sede Única'}.
-        
-        # LÓGICA DE AGENDA (CRÍTICO)
-        1. **HORARIOS POR SUCURSAL**: Cada sucursal puede tener su propio horario. Al usar 'checkAvailability', el sistema verificará automáticamente el horario específico de la sucursal solicitada y los festivos locales.
-        2. **FESTIVOS**: Si el usuario pide cita en un festivo, el sistema te avisará. Ofrece otra fecha.
-        
-        # REGLAS DE ORO
-        1. **ALTA PACIENTE**: Nombre + 2 Apellidos OBLIGATORIO.
-        2. **PRIVACIDAD**: NUNCA reveles datos de otros.
-        3. **ERRORES**: Sé natural.
+      // --- CORE SYSTEM PROMPT CONFIGURATION ---
+      const now = new Date();
+      const hour = now.getHours();
+      const timeGreeting = hour < 12 ? "Buenos días" : "Buenas tardes";
+      const exactGreeting = `${timeGreeting}, soy ${settings.aiPhoneSettings.assistantName} de ${settings.aiPhoneSettings.aiCompanyName}.`;
 
-        # FLUJO
-        Saludo -> Identificar -> Gestionar Cita.
+      const SYSTEM_PROMPT = `
+        # ROL CORE (INMUTABLE)
+        Eres ${settings.aiPhoneSettings.assistantName}, asistente de ${settings.aiPhoneSettings.aiCompanyName}.
+        - Voz/Personalidad: ${settings.aiPhoneSettings.voiceName}. Tono natural, eficiente y educado.
+        - Idioma: ${region === 'ES' ? 'Español de España' : 'Español Latino'}. NUNCA cambies el acento configurado.
+
+        # INICIO DE LLAMADA (OBLIGATORIO)
+        Tu primera frase DEBE SER EXACTAMENTE: "${exactGreeting} ¿Ya eres cliente nuestro?"
+
+        # FLUJO DE IDENTIFICACIÓN (CRÍTICO)
+        
+        1. **SI EL USUARIO DICE QUE SÍ (ES CLIENTE):**
+           - Pide su nombre completo UNA SOLA VEZ.
+           - Ejecuta 'checkPatient' para verificarlo internamente.
+           - Si existe: Llámalo por su nombre de pila (ej: "Perfecto, Juan"). Pregunta qué necesita.
+           - NO le preguntes teléfono ni email si ya lo has encontrado.
+        
+        2. **SI EL USUARIO DICE QUE NO (NO ES CLIENTE):**
+           - Si ya te dijo su nombre al saludar, ÚSALO. NO lo vuelvas a pedir.
+           - Si no sabes el nombre, pídelo.
+           - Di de forma natural: "Vale, veo que todavía no tienes ficha. Si te parece, te doy de alta ahora mismo."
+           - Pide SOLO lo que falte (Teléfono y Email).
+           - Ejecuta 'registerPatient'.
+           - Una vez registrado, continúa normal llamándole por su nombre.
+
+        # MEMORIA CONVERSACIONAL (REGLA DE ORO)
+        - RECUERDA todo lo que te dice el usuario.
+        - NUNCA pidas un dato que ya te han dicho en la frase anterior.
+        - Si ya te dijo "Soy Juan Pérez y quiero cita", NO preguntes "¿Cómo te llamas?". Ve directo a buscar a Juan Pérez.
+
+        # FLUJO PARA AGENDAR (ORDEN ESTRICTO)
+        Para agendar una cita, sigue estos pasos UNO A UNO. No pidas todo a la vez:
+        1. **SUCURSAL**: Pregunta en qué centro quiere la cita (SOLO si hay varias sucursales: ${hasBranches ? branchList : 'Sede Única'}).
+        2. **DÍA**: Pregunta qué día le viene mejor.
+        3. **HORA**: Pregunta qué hora prefiere.
+        4. Ejecuta 'checkAvailability'. Si está libre, confirma y ejecuta 'bookAppointment'.
+
+        # REPROGRAMAR O CANCELAR
+        - Asume que el paciente existe. Búscalo.
+        - JAMÁS intentes registrar de nuevo a alguien que quiere cancelar o cambiar una cita.
+
+        # CIERRE
+        - Al terminar la gestión: "¿Necesitas algo más?".
+        - Si dice NO: Despídete y EJECUTA 'endCall' INMEDIATAMENTE.
+
+        # DATOS CONTEXTUALES
+        - Fecha/Hora Actual: ${now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}.
       `;
 
       const sessionPromise = ai.live.connect({
@@ -316,150 +356,183 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
           onopen: () => {
             setIsConnecting(false);
             setIsActive(true);
-            sessionPromise.then((session) => {
-              if (session) {
-                const text = `INICIO LLAMADA. Saluda: "${settings.aiPhoneSettings.initialGreeting}"`;
-                // Use robust base64 encoding for UTF-8 text
-                const data = btoa(unescape(encodeURIComponent(text)));
-                session.sendRealtimeInput({ 
-                  media: { 
-                    mimeType: 'text/plain', 
-                    data 
-                  } 
-                });
-              }
-            });
+            
+            // Set up audio input stream
             const source = ctxIn.createMediaStreamSource(stream);
             const processor = ctxIn.createScriptProcessor(2048, 1, 1);
-            processor.onaudioprocess = (e) => { sessionPromise.then(s => s && s.sendRealtimeInput({ media: createBlob(e.inputBuffer.getChannelData(0)) })); };
-            source.connect(processor); processor.connect(ctxIn.destination);
+            
+            processor.onaudioprocess = (e) => { 
+                const inputData = e.inputBuffer.getChannelData(0);
+                
+                // Volume Visualization
+                let sum = 0;
+                for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
+                const rms = Math.sqrt(sum / inputData.length);
+                const amplifiedVolume = Math.min(1, rms * 5); 
+                setVolume(amplifiedVolume);
+
+                sessionPromise.then(s => s && s.sendRealtimeInput({ media: createBlob(inputData) })); 
+            };
+            
+            source.connect(processor); 
+            processor.connect(ctxIn.destination);
           },
           onmessage: async (msg: LiveServerMessage) => {
             const audio = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
             if (audio && ctxOut) {
               const buffer = await decodeAudioDataToBuffer(decodeBase64(audio), ctxOut, 24000, 1);
-              const src = ctxOut.createBufferSource(); src.buffer = buffer; src.connect(ctxOut.destination);
-              const now = ctxOut.currentTime; const startAt = nextStartTimeRef.current < now ? now : nextStartTimeRef.current;
-              src.start(startAt); nextStartTimeRef.current = startAt + buffer.duration;
-              src.onended = () => sources.current.delete(src); sources.current.add(src);
+              const src = ctxOut.createBufferSource(); 
+              src.buffer = buffer; 
+              src.connect(ctxOut.destination);
+              
+              const now = ctxOut.currentTime; 
+              const startAt = nextStartTimeRef.current < now ? now : nextStartTimeRef.current;
+              
+              src.start(startAt); 
+              nextStartTimeRef.current = startAt + buffer.duration;
+              
+              src.onended = () => sources.current.delete(src); 
+              sources.current.add(src);
             }
-            if (msg.serverContent?.interrupted) { sources.current.forEach(s => s.stop()); sources.current.clear(); nextStartTimeRef.current = 0; }
+            
+            if (msg.serverContent?.interrupted) { 
+                sources.current.forEach(s => { try { s.stop(); } catch(e){} }); 
+                sources.current.clear(); 
+                nextStartTimeRef.current = 0; 
+            }
 
             if (msg.toolCall) {
               for (const fc of msg.toolCall.functionCalls) {
                 let res: any = { error: 'Error desconocido' };
-
-                if (fc.name === 'checkPatient') {
-                  const nameInput = (fc.args.name as string).toLowerCase().trim();
-                  const inputParts = nameInput.split(' ');
-                  const found = patientsRef.current.filter(pat => {
-                      const patName = pat.name.toLowerCase();
-                      return inputParts.every(part => patName.includes(part));
-                  });
-                  if (found.length === 0) res = { status: 'NOT_FOUND', msg: 'No lo encuentro. Pide Nombre Completo (2 apellidos) para registrar.' };
-                  else if (found.length > 1) res = { status: 'MULTIPLE_RESULTS', msg: `Hay ${found.length} coincidencias. Pide más apellidos o DNI.` };
-                  else {
-                    const p = found[0];
-                    const hasPhone = p.phone && p.phone.length > 5;
-                    const hasEmail = p.email && p.email.includes('@');
-                    if (hasPhone && hasEmail) res = { status: 'FOUND_OK', id: p.id, name: p.name, msg: 'Paciente OK.' };
-                    else res = { status: 'FOUND_BUT_INCOMPLETE', id: p.id, name: p.name, missing: !hasPhone ? 'Teléfono' : 'Email', msg: 'Faltan datos.' };
-                  }
-                }
-                else if (fc.name === 'getPatientAppointments') {
-                    const { patientId } = fc.args as any;
-                    const patApps = appointmentsRef.current.filter(a => a.patientId === patientId && ['Confirmed', 'Pending', 'Reprogramada'].includes(a.status));
-                    if (patApps.length === 0) res = { status: 'NO_APPOINTMENTS', msg: 'Sin citas activas.' };
-                    else {
-                        const appList = patApps.map(a => `Día ${a.date} a las ${a.time}`).join(', ');
-                        res = { status: 'FOUND', appointments: appList, msg: `Tiene estas citas: ${appList}` };
+                try {
+                    // --- CORE TOOLS ---
+                    if (fc.name === 'endCall') {
+                        // Cierre automático de la llamada solicitado por la IA
+                        cleanup();
+                        return; // Stop processing
                     }
-                }
-                else if (fc.name === 'cancelAppointment') {
-                    const { appointmentId } = fc.args as any;
-                    setAppointments(prev => prev.map(a => a.id === appointmentId ? { ...a, status: 'Cancelled' } : a));
-                    res = { status: 'SUCCESS', msg: 'Cancelada.' };
-                }
-                else if (fc.name === 'updatePatientContact') {
-                  const { patientId, phone, email } = fc.args as any;
-                  let error = null;
-                  if(phone) { const v = validateData(phone, 'test@test.com'); if(!v.valid) error = v.error; }
-                  if(email) { const v = validateData('600000000', email); if(!v.valid) error = v.error; }
-                  if (error) res = { status: 'ERROR', msg: error };
-                  else {
-                    setPatients(prev => prev.map(p => p.id === patientId ? { ...p, phone: phone || p.phone, email: email || p.email } : p));
-                    res = { status: 'SUCCESS', msg: 'Actualizado.' };
-                  }
-                }
-                else if (fc.name === 'registerPatient') {
-                  const { fullName, phone, email } = fc.args as any;
-                  const nameParts = fullName.trim().split(/\s+/);
-                  if (nameParts.length < 3) res = { status: 'ERROR', msg: "Faltan apellidos. Necesito Nombre + 2 Apellidos." };
-                  else {
-                      const val = validateData(phone, email);
-                      if (!val.valid) res = { status: 'ERROR', msg: val.error };
+                    else if (fc.name === 'checkPatient') {
+                      const nameInput = (fc.args.name as string).toLowerCase().trim();
+                      const inputParts = nameInput.split(' ');
+                      const found = patientsRef.current.filter(pat => {
+                          const patName = pat.name.toLowerCase();
+                          return inputParts.every(part => patName.includes(part));
+                      });
+                      if (found.length === 0) res = { status: 'NOT_FOUND', msg: 'No encontrado. Procede con flujo de Nuevo Cliente (registerPatient).' };
+                      else if (found.length > 1) res = { status: 'MULTIPLE', msg: `Hay ${found.length} coincidencias. Pide un dato más para filtrar.` };
                       else {
-                        const newP: Patient = {
-                          id: 'P-' + Math.floor(Math.random() * 10000), name: fullName, phone: val.cleanPhone!, email,
-                          identityDocument: 'PENDIENTE', birthDate: new Date().toISOString().split('T')[0], gender: 'Otro', address: '', medicalHistory: 'Alta Voz', img: `https://api.dicebear.com/7.x/notionists-neutral/svg?seed=${fullName}`, allergies: [], pathologies: [], surgeries: [], medications: [], habits: [], familyHistory: [], history: []
-                        };
-                        setPatients(prev => [...prev, newP]);
-                        res = { status: 'SUCCESS', id: newP.id, msg: 'Registrado. Puedes agendar.' };
+                        const p = found[0];
+                        const hasPhone = p.phone && p.phone.length > 5;
+                        const hasEmail = p.email && p.email.includes('@');
+                        if (hasPhone && hasEmail) res = { status: 'FOUND_OK', id: p.id, name: p.name, msg: `Paciente encontrado: ${p.name}. NO pidas más datos de contacto. Pregunta qué necesita.` };
+                        else res = { status: 'INCOMPLETE', id: p.id, name: p.name, missing: !hasPhone ? 'Teléfono' : 'Email', msg: 'Encontrado pero faltan datos de contacto.' };
                       }
-                  }
-                }
-                else if (fc.name === 'checkAvailability') {
-                  const { branch, date, time } = fc.args as any;
-                  if (settingsRef.current.branchCount > 1 && !branch) res = { status: 'ERROR', msg: '¿En qué sucursal?' };
-                  else {
-                      // CORE LOGIC: Check Specific Branch Schedule + Holidays
+                    }
+                    else if (fc.name === 'getPatientAppointments') {
+                        const { patientId } = fc.args as any;
+                        const patApps = appointmentsRef.current.filter(a => a.patientId === patientId && ['Confirmed', 'Pending', 'Reprogramada'].includes(a.status));
+                        if (patApps.length === 0) res = { status: 'NO_APPS', msg: 'No tiene citas futuras.' };
+                        else {
+                            const appList = patApps.map(a => `${a.date} a las ${a.time}`).join(', ');
+                            res = { status: 'FOUND', msg: `Citas: ${appList}` };
+                        }
+                    }
+                    else if (fc.name === 'cancelAppointment') {
+                        const { appointmentId } = fc.args as any;
+                        setAppointments(prev => prev.map(a => a.id === appointmentId ? { ...a, status: 'Cancelled' } : a));
+                        res = { status: 'SUCCESS', msg: 'Cita cancelada.' };
+                    }
+                    else if (fc.name === 'updatePatientContact') {
+                      const { patientId, phone, email } = fc.args as any;
+                      let error = null;
+                      if(phone) { const v = validateData(phone, 'test@test.com'); if(!v.valid) error = v.error; }
+                      if(email) { const v = validateData('600000000', email); if(!v.valid) error = v.error; }
+                      if (error) res = { status: 'ERROR', msg: error };
+                      else {
+                        setPatients(prev => prev.map(p => p.id === patientId ? { ...p, phone: phone || p.phone, email: email || p.email } : p));
+                        res = { status: 'SUCCESS', msg: 'Datos actualizados.' };
+                      }
+                    }
+                    else if (fc.name === 'registerPatient') {
+                      const { fullName, phone, email } = fc.args as any;
+                      const nameParts = fullName.trim().split(/\s+/);
+                      if (nameParts.length < 2) res = { status: 'ERROR', msg: "Necesito Nombre y al menos un Apellido." };
+                      else {
+                          const val = validateData(phone, email);
+                          if (!val.valid) res = { status: 'ERROR', msg: val.error };
+                          else {
+                            const newP: Patient = {
+                              id: 'P-' + Math.floor(Math.random() * 10000), name: fullName, phone: val.cleanPhone!, email,
+                              identityDocument: 'PENDIENTE', birthDate: new Date().toISOString().split('T')[0], gender: 'Otro', address: '', medicalHistory: 'Alta Voz', img: `https://api.dicebear.com/7.x/notionists-neutral/svg?seed=${fullName}`, allergies: [], pathologies: [], surgeries: [], medications: [], habits: [], familyHistory: [], history: []
+                            };
+                            setPatients(prev => [...prev, newP]);
+                            res = { status: 'SUCCESS', id: newP.id, msg: `Paciente ${fullName} registrado. Llámalo por su nombre y pregunta cuándo quiere la cita.` };
+                          }
+                      }
+                    }
+                    else if (fc.name === 'checkAvailability') {
+                      const { branch, date, time } = fc.args as any;
+                      if (settingsRef.current.branchCount > 1 && !branch) res = { status: 'ERROR', msg: 'Falta sucursal. Pregúntala antes de mirar disponibilidad.' };
+                      else {
+                          const status = checkOpeningStatus(date, time, branch);
+                          if (!status.isOpen) {
+                              res = { status: 'CLOSED', msg: status.reason };
+                          } else {
+                              const busy = appointmentsRef.current.some(a => {
+                                  if (a.status === 'Cancelled') return false;
+                                  if (a.date !== date || a.time !== time) return false;
+                                  if (settingsRef.current.branchCount > 1 && branch) return a.branch === branch;
+                                  return true;
+                              });
+                              if (busy) res = { status: 'BUSY', msg: 'Ocupado.' };
+                              else res = { status: 'AVAILABLE', msg: 'Libre.' };
+                          }
+                      }
+                    }
+                    else if (fc.name === 'bookAppointment') {
+                      const { patientId, branch, date, time, treatment } = fc.args as any;
                       const status = checkOpeningStatus(date, time, branch);
-                      if (!status.isOpen) {
-                          res = { status: 'CLOSED', msg: status.reason };
-                      } else {
-                          const busy = appointmentsRef.current.some(a => {
-                              if (a.status === 'Cancelled') return false;
-                              if (a.date !== date || a.time !== time) return false;
-                              if (settingsRef.current.branchCount > 1 && branch) return a.branch === branch;
-                              return true;
-                          });
-                          if (busy) res = { status: 'BUSY', msg: 'Hueco ocupado.' };
-                          else res = { status: 'AVAILABLE', msg: 'Hueco libre.' };
+                      if (!status.isOpen) res = { status: 'ERROR', msg: status.reason };
+                      else {
+                          const pat = patientsRef.current.find(p => p.id === patientId);
+                          const assignedBranch = settingsRef.current.branchCount > 1 ? branch : 'Centro';
+                          const newApt: Appointment = {
+                            id: 'V-' + Math.random().toString(36).substr(2, 9), patientId, patientName: pat?.name || 'Voz',
+                            doctorName: 'Dr. Asignado', doctorId: 'D-AUTO', date, time, treatment: treatment || 'Consulta General', 
+                            status: 'Confirmed', branch: assignedBranch
+                          };
+                          setAppointments(prev => [...prev, newApt]);
+                          res = { status: 'BOOKED', msg: 'Cita confirmada correctamente.' };
                       }
-                  }
-                }
-                else if (fc.name === 'bookAppointment') {
-                  const { patientId, branch, date, time, treatment } = fc.args as any;
-                  const status = checkOpeningStatus(date, time, branch);
-                  if (!status.isOpen) res = { status: 'ERROR', msg: status.reason };
-                  else {
-                      const pat = patientsRef.current.find(p => p.id === patientId);
-                      const assignedBranch = settingsRef.current.branchCount > 1 ? branch : 'Centro';
-                      const newApt: Appointment = {
-                        id: 'V-' + Math.random().toString(36).substr(2, 9), patientId, patientName: pat?.name || 'Voz',
-                        doctorName: 'Dr. Asignado', doctorId: 'D-AUTO', date, time, treatment: treatment || 'Consulta General', 
-                        status: 'Confirmed', branch: assignedBranch
-                      };
-                      setAppointments(prev => [...prev, newApt]);
-                      res = { status: 'BOOKED', msg: 'Agendado.' };
-                  }
+                    }
+                } catch (toolError) {
+                    console.error("Tool execution error:", toolError);
+                    res = { status: 'ERROR', msg: 'Error interno.' };
                 }
                 sessionPromise.then(s => s && s.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: res } } }));
               }
             }
           },
-          onerror: () => { setErrorMsg("Reconexión..."); cleanup(); },
+          onerror: (e) => { 
+              console.error("Session Error:", e);
+              setErrorMsg("Conexión interrumpida. Reintentando..."); 
+              cleanup(); 
+          },
           onclose: () => cleanup()
         },
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.aiPhoneSettings.voiceName as any } } },
-          systemInstruction: SYSTEM_PROMPT,
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
           tools: [{ functionDeclarations: getTools() }]
         }
       });
       sessionRef.current = await sessionPromise;
-    } catch (e) { setErrorMsg("Error conexión."); cleanup(); }
+    } catch (e) { 
+        console.error("Connection Start Error:", e);
+        setErrorMsg("No se pudo iniciar la conexión. Verifica permisos."); 
+        cleanup(); 
+    }
   };
 
   return (
@@ -485,7 +558,14 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
             <div className="space-y-6 w-full">
               <div className="flex items-center justify-center gap-1.5 h-16">
                 {[...Array(12)].map((_, i) => (
-                  <div key={i} className="w-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: `${i * 0.05}s`, height: `${40 + Math.random() * 60}%` }}></div>
+                  <div 
+                    key={i} 
+                    className="w-1 bg-primary rounded-full transition-all duration-75" 
+                    style={{ 
+                        height: `${Math.max(15, volume * 100 * (0.5 + Math.random() * 0.5))}%`,
+                        opacity: 0.5 + (volume * 0.5) 
+                    }}
+                  ></div>
                 ))}
               </div>
               <div className="bg-slate-50 dark:bg-slate-800/50 px-6 py-3 rounded-xl border border-slate-100 dark:border-slate-700">

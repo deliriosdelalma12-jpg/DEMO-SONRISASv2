@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { ClinicSettings, User, Doctor, Patient, Branch } from '../types';
 import SettingsCompany from './settings/SettingsCompany';
-import SettingsLabor from './settings/SettingsLabor';
 import SettingsVisual from './settings/SettingsVisual';
 import SettingsAssistant from './settings/SettingsAssistant';
 import SettingsImport from './settings/SettingsImport';
@@ -29,7 +28,7 @@ const Settings: React.FC<SettingsProps> = ({
   patients, setPatients, branches, setBranches,
   onOpenDoctor 
 }) => {
-  const [activeTab, setActiveTab] = useState<'company' | 'labor' | 'visual' | 'assistant' | 'import'>('company');
+  const [activeTab, setActiveTab] = useState<'company' | 'visual' | 'assistant' | 'import'>('company');
   const [showSuccessMsg, setShowSuccessMsg] = useState(false);
   
   const [localSettings, setLocalSettings] = useState<ClinicSettings>(settings);
@@ -59,7 +58,7 @@ const Settings: React.FC<SettingsProps> = ({
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div className="flex flex-col gap-2">
             <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter">Configuración del Sistema</h1>
-            <p className="text-slate-500 dark:text-slate-400 font-medium italic text-base">Personaliza la identidad de tu marca, políticas laborales y la inteligencia de tu asistente.</p>
+            <p className="text-slate-500 dark:text-slate-400 font-medium italic text-base">Personaliza la identidad de tu marca y la inteligencia de tu asistente.</p>
           </div>
           <button onClick={handleGlobalSave} className="h-14 px-10 bg-primary text-white rounded-md font-black text-sm uppercase tracking-wider shadow-sm hover:bg-primary-dark transition-all flex items-center gap-3 shrink-0">
             <span className="material-symbols-outlined text-xl">save</span> Guardar Configuración Maestra
@@ -67,7 +66,6 @@ const Settings: React.FC<SettingsProps> = ({
         </div>
         <div className="flex flex-wrap bg-white dark:bg-bg-dark p-1 rounded-lg w-fit border border-slate-200 dark:border-slate-800">
            <button onClick={() => setActiveTab('company')} className={`px-6 py-2.5 rounded-md text-xs font-black uppercase tracking-[0.1em] transition-all flex items-center gap-2 ${activeTab === 'company' ? 'bg-slate-100 dark:bg-surface-dark text-primary' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">business</span> Empresa</button>
-           <button onClick={() => setActiveTab('labor')} className={`px-6 py-2.5 rounded-md text-xs font-black uppercase tracking-[0.1em] transition-all flex items-center gap-2 ${activeTab === 'labor' ? 'bg-slate-100 dark:bg-surface-dark text-primary' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">badge</span> Laboral</button>
            <button onClick={() => setActiveTab('visual')} className={`px-6 py-2.5 rounded-md text-xs font-black uppercase tracking-[0.1em] transition-all flex items-center gap-2 ${activeTab === 'visual' ? 'bg-slate-100 dark:bg-surface-dark text-primary' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">palette</span> Visual</button>
            <button onClick={() => setActiveTab('assistant')} className={`px-6 py-2.5 rounded-md text-xs font-black uppercase tracking-[0.1em] transition-all flex items-center gap-2 ${activeTab === 'assistant' ? 'bg-slate-100 dark:bg-surface-dark text-primary' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">psychology</span> Asistente IA</button>
            <button onClick={() => setActiveTab('import')} className={`px-6 py-2.5 rounded-md text-xs font-black uppercase tracking-[0.1em] transition-all flex items-center gap-2 ${activeTab === 'import' ? 'bg-slate-100 dark:bg-surface-dark text-primary' : 'text-slate-400 hover:text-slate-600'}`}><span className="material-symbols-outlined text-lg">upload_file</span> Importación</button>
@@ -87,7 +85,6 @@ const Settings: React.FC<SettingsProps> = ({
                 setBranches={setBranches} // Passed
             />
         )}
-        {activeTab === 'labor' && <SettingsLabor settings={localSettings} setSettings={setLocalSettings} doctors={doctors} setDoctors={setDoctors} />}
         {activeTab === 'visual' && <SettingsVisual settings={localSettings} setSettings={setLocalSettings} onToggleTheme={onToggleTheme} darkMode={darkMode} />}
         {activeTab === 'assistant' && <SettingsAssistant settings={localSettings} setSettings={setLocalSettings} />}
         {activeTab === 'import' && (

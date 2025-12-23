@@ -7,7 +7,6 @@ import Metrics from './screens/Metrics';
 import Patients from './screens/Patients';
 import Doctors from './screens/Doctors';
 import Branches from './screens/Branches';
-import HRManagement from './screens/HRManagement';
 import Settings from './screens/Settings';
 import Layout from './components/Layout';
 import VoiceAssistant from './components/VoiceAssistant';
@@ -239,7 +238,6 @@ const App: React.FC = () => {
           <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={currentUser} team={doctors} />} />
           <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} branches={branches} patients={patients} clinicSettings={settings} setAppointments={setAppointments} />} />
           <Route path="/branches" element={<Branches branches={branches} setBranches={setBranches} doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
-          <Route path="/hr" element={<HRManagement doctors={doctors} setDoctors={setDoctors} />} />
           <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} settings={settings} branches={branches} />} />
           <Route path="/settings" element={<Settings settings={settings} setSettings={setSettings} onToggleTheme={() => setDarkMode(!darkMode)} darkMode={darkMode} systemUsers={systemUsers} setSystemUsers={setSystemUsers} doctors={doctors} setDoctors={setDoctors} patients={patients} setPatients={setPatients} branches={branches} setBranches={setBranches} onOpenDoctor={handleOpenDoctor} />} />
         </Routes>

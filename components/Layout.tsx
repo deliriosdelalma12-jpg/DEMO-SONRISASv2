@@ -29,7 +29,6 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
     { path: '/patients', label: 'Pacientes', icon: 'group', perm: 'view_patients' },
     { path: '/doctors', label: 'Médicos', icon: 'medical_services', perm: 'view_doctors' },
     { path: '/branches', label: 'Sucursales', icon: 'apartment', perm: 'view_branches' },
-    { path: '/hr', label: 'Calendario de Personal', icon: 'event_note', perm: 'view_hr' },
     { path: '/metrics', label: 'Métricas', icon: 'leaderboard', perm: 'view_metrics' },
     { path: '/settings', label: 'Configuración', icon: 'settings', perm: 'view_settings' },
   ];
