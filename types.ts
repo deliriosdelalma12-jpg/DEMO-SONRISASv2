@@ -156,6 +156,12 @@ export interface AiPhoneSettings {
   temperature: number;
   accent: VoiceAccent;
   model: string;
+  // --- CORE CONFIGURATION FIELDS ---
+  aiEmotion: string;
+  aiStyle: string;
+  aiRelation: string;
+  aiFocus: string;
+  configVersion: number;
   knowledgeBase?: string;
   knowledgeFiles?: FileAttachment[];
 }

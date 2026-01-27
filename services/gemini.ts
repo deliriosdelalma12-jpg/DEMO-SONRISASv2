@@ -28,7 +28,8 @@ export const decodeAudioDataToBuffer = async (
   sampleRate: number = 24000,
   numChannels: number = 1
 ): Promise<AudioBuffer> => {
-  const dataInt16 = new Int16Array(data.buffer);
+  // Alineación precisa del buffer para evitar el error de "Audio no disponible" o recortes
+  const dataInt16 = new Int16Array(data.buffer, data.byteOffset, data.byteLength / 2);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
 
@@ -42,9 +43,9 @@ export const decodeAudioDataToBuffer = async (
 };
 
 /**
- * Genera audio TTS optimizado para velocidad.
+ * Genera audio TTS respetando estrictamente la configuración de voz y personalidad.
  */
-export const speakText = async (text: string, voiceName: string, options?: { pitch?: number, speed?: number }) => {
+export const speakText = async (text: string, voiceName: string, config?: { pitch?: number, speed?: number }) => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
@@ -63,17 +64,32 @@ export const speakText = async (text: string, voiceName: string, options?: { pit
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts[0]?.inlineData?.data;
-    if (!base64Audio) throw new Error("Audio no disponible");
+    // Búsqueda exhaustiva de la parte de audio en la respuesta
+    const candidates = response.candidates || [];
+    let base64Audio = '';
+    
+    for (const candidate of candidates) {
+        const parts = candidate.content?.parts || [];
+        const audioPart = parts.find(p => p.inlineData && p.inlineData.data);
+        if (audioPart) {
+            base64Audio = audioPart.inlineData.data;
+            break;
+        }
+    }
+
+    if (!base64Audio) {
+        throw new Error("El motor TTS no devolvió datos de audio válidos.");
+    }
+    
     return base64Audio;
   } catch (error) {
-    console.error("Error TTS:", error);
+    console.error("Error crítico en TTS:", error);
     throw error;
   }
 };
 
 /**
- * Genera una respuesta de chat en streaming (Flash es el más rápido).
+ * Genera una respuesta de chat en streaming.
  */
 export async function* streamChatResponse(message: string) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -81,7 +97,7 @@ export async function* streamChatResponse(message: string) {
     model: 'gemini-3-flash-preview',
     contents: message,
     config: {
-        thinkingConfig: { thinkingBudget: 0 } // Desactivar pensamiento profundo para máxima velocidad
+        thinkingConfig: { thinkingBudget: 0 }
     }
   });
 
@@ -93,11 +109,13 @@ export async function* streamChatResponse(message: string) {
 }
 
 /**
- * Genera un prompt de personalidad maestro.
+ * Genera un prompt de personalidad maestro optimizado para latencia.
  */
 export const generatePersonalityPrompt = async (tags: string[], name: string, clinic: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const prompt = `Escribe instrucciones de sistema ultracortas para un asistente de voz clínico llamado ${name} para la clínica ${clinic}. Estilo: ${tags.join(', ')}. Responde siempre de forma breve.`;
+  const prompt = `Escribe instrucciones de sistema CRÍTICAS Y BREVES para un asistente de voz clínico llamado ${name} para la clínica ${clinic}. 
+  Usa estas etiquetas de comportamiento: ${tags.join(', ')}. 
+  REGLA DE ORO: Responde siempre con menos de 10 palabras. Prohibido saludar en cada turno.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
