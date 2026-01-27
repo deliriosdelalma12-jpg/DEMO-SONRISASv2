@@ -19,6 +19,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
   const [currentDate, setCurrentDate] = useState(new Date());
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
   const [doctorFilter, setDoctorFilter] = useState<string>('ALL');
+  const [globalSearch, setGlobalSearch] = useState<string>(''); // BUSCADOR MAESTRO
+  const [localSearch, setLocalSearch] = useState<string>('');   // BUSCADOR DENTRO DEL DÍA
   const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
@@ -46,7 +48,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
     return days;
   };
 
-  const filteredAppointments = useMemo(() => {
+  // FILTRADO CORE (Sin incluir búsqueda para mantener la estructura visual)
+  const baseFilteredAppointments = useMemo(() => {
     return appointments.filter(a => {
         const matchBranch = (branchFilter === 'ALL') ? true : a.branch === branchFilter;
         const matchDoctor = doctorFilter === 'ALL' ? true : a.doctorId === doctorFilter;
@@ -69,7 +72,6 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
   };
 
   const handleUpdateStatus = (id: string, status: AppointmentStatus, newDate?: string, newTime?: string, doctorId?: string, doctorName?: string) => {
-    // ACTUALIZACIÓN FUNCIONAL PARA EVITAR DUPLICADOS (Sincronización CORE)
     setAppointments(prev => prev.map(apt => apt.id === id ? { 
         ...apt, status, date: newDate || apt.date, time: newTime || apt.time, 
         doctorId: doctorId || apt.doctorId, doctorName: doctorName || apt.doctorName 
@@ -111,6 +113,8 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
 
   const renderMonthView = () => {
     const calendarDays = getDaysInMonth(currentDate);
+    const s = globalSearch.toLowerCase().trim();
+
     return (
       <div className="flex-1 grid grid-cols-7 border-t border-slate-100 dark:border-slate-800">
         {daysHeader.map(d => (
@@ -120,7 +124,20 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
         ))}
         {calendarDays.map((d, i) => {
           const dateStr = `${d.year}-${(d.month + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}`;
-          const dayApts = filteredAppointments.filter(a => a.date === dateStr).sort((a,b) => a.time.localeCompare(b.time));
+          const dayApts = baseFilteredAppointments.filter(a => a.date === dateStr).sort((a,b) => a.time.localeCompare(b.time));
+          
+          // Lógica de iluminación si hay coincidencias de búsqueda
+          const hasMatches = s !== '' && dayApts.some(a => 
+            a.patientName.toLowerCase().includes(s) || 
+            a.treatment.toLowerCase().includes(s)
+          );
+
+          // Filtrar citas a mostrar en la mini-lista según búsqueda
+          const displayApts = s === '' ? dayApts : dayApts.filter(a => 
+            a.patientName.toLowerCase().includes(s) || 
+            a.treatment.toLowerCase().includes(s)
+          );
+
           const isToday = new Date().toISOString().split('T')[0] === dateStr;
 
           return (
@@ -129,19 +146,23 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
               onDragOver={(e) => { e.preventDefault(); setDragOverDate(dateStr); }}
               onDragLeave={() => setDragOverDate(null)}
               onDrop={(e) => handleDrop(e, dateStr)}
-              className={`min-h-[200px] p-6 border-b border-r border-slate-100 dark:border-slate-800 transition-all relative flex flex-col group ${!d.current ? 'bg-slate-50/20 dark:bg-slate-900/10 grayscale' : 'bg-white dark:bg-surface-dark'} ${dragOverDate === dateStr ? 'bg-primary/5 ring-4 ring-primary/20 ring-inset' : ''} hover:z-10`}
+              className={`min-h-[200px] p-6 border-b border-r border-slate-100 dark:border-slate-800 transition-all relative flex flex-col group 
+                ${!d.current ? 'bg-slate-50/20 dark:bg-slate-900/10 grayscale' : 'bg-white dark:bg-surface-dark'} 
+                ${dragOverDate === dateStr ? 'bg-primary/5 ring-4 ring-primary/20 ring-inset' : ''} 
+                ${hasMatches ? 'ring-4 ring-primary/40 ring-inset bg-primary/5 z-20 shadow-[0_0_30px_rgba(59,130,246,0.2)] animate-pulse' : ''}
+                hover:z-10`}
             >
               <div className="flex justify-between items-start mb-6">
-                <span className={`text-4xl font-display font-black leading-none transition-transform group-hover:scale-110 ${isToday ? 'text-primary' : 'text-slate-200 dark:text-slate-800 group-hover:text-slate-900 dark:group-hover:text-white'}`}>{d.day}</span>
+                <span className={`text-4xl font-display font-black leading-none transition-transform group-hover:scale-110 ${isToday ? 'text-primary' : 'text-slate-200 dark:text-slate-800 group-hover:text-slate-900 dark:group-hover:text-white'} ${hasMatches ? 'text-primary scale-110' : ''}`}>{d.day}</span>
                 {dayApts.length > 0 && (
-                    <span className="px-2.5 py-1 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-lg text-[9px] font-black uppercase tracking-tighter shadow-lg">
+                    <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter shadow-lg transition-colors ${hasMatches ? 'bg-primary text-white' : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'}`}>
                         {dayApts.length} Turnos
                     </span>
                 )}
               </div>
               
               <div className="flex-1 space-y-1.5 overflow-hidden mb-4">
-                {dayApts.slice(0, 4).map(apt => {
+                {displayApts.slice(0, 4).map(apt => {
                   const style = getStatusStyle(apt.status);
                   return (
                     <div 
@@ -149,12 +170,13 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                       draggable
                       onDragStart={(e) => e.dataTransfer.setData("appointmentId", apt.id)}
                       onClick={() => setSelectedApt(apt)}
-                      className="group/apt px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-transparent hover:border-primary cursor-pointer transition-all flex items-center gap-2 overflow-hidden animate-in fade-in"
+                      className={`group/apt px-2.5 py-1.5 rounded-lg border border-transparent hover:border-primary cursor-pointer transition-all flex items-center gap-2 overflow-hidden animate-in fade-in 
+                        ${hasMatches ? 'bg-white dark:bg-slate-800 shadow-md scale-105' : 'bg-slate-50 dark:bg-slate-800/40'}`}
                     >
                       <div className={`w-1.5 h-6 rounded-full shrink-0 ${style.bg} shadow-sm`}></div>
                       <div className="min-w-0 flex-1">
                         <p className="text-[10px] font-black text-slate-800 dark:text-white truncate leading-none mb-0.5 uppercase tracking-tighter">{apt.patientName}</p>
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">{apt.time}</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">{apt.time} • {apt.treatment}</p>
                       </div>
                     </div>
                   );
@@ -163,10 +185,10 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
 
               {dayApts.length > 0 && (
                 <button 
-                    onClick={() => setExpandedDay(dateStr)}
-                    className="w-full py-2.5 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-all shadow-xl -translate-y-2 group-hover:translate-y-0"
+                    onClick={() => { setExpandedDay(dateStr); setLocalSearch(globalSearch); }}
+                    className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl -translate-y-2 group-hover:translate-y-0 group-hover:opacity-100 ${hasMatches ? 'bg-primary text-white opacity-100' : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 opacity-0'}`}
                 >
-                    Ver Todo
+                    {hasMatches ? 'Coincidencias' : 'Ver Todo'}
                 </button>
               )}
             </div>
@@ -178,12 +200,17 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
 
   const renderExpandedDayView = () => {
     if (!expandedDay) return null;
-    const dayApts = filteredAppointments.filter(a => a.date === expandedDay).sort((a,b) => a.time.localeCompare(b.time));
+    const dayApts = baseFilteredAppointments.filter(a => a.date === expandedDay).sort((a,b) => a.time.localeCompare(b.time));
+    const s = localSearch.toLowerCase().trim();
+    const displayApts = s === '' ? dayApts : dayApts.filter(a => 
+        a.patientName.toLowerCase().includes(s) || 
+        a.treatment.toLowerCase().includes(s)
+    );
     const displayDate = new Date(expandedDay);
 
     return (
         <div className="fixed inset-0 z-[250] bg-slate-50 dark:bg-bg-dark flex flex-col animate-in slide-in-from-bottom-10 duration-500 overflow-hidden">
-            <header className="p-12 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white/90 dark:bg-bg-dark/90 backdrop-blur-3xl shrink-0">
+            <header className="p-12 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center bg-white/90 dark:bg-bg-dark/90 backdrop-blur-3xl shrink-0 gap-8">
                 <div className="flex items-center gap-10">
                     <div className="size-24 rounded-[2rem] bg-primary text-white flex flex-col items-center justify-center shadow-2xl shadow-primary/30 rotate-2">
                         <span className="text-4xl font-black leading-none">{displayDate.getDate()}</span>
@@ -193,31 +220,47 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                         <h2 className="text-5xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter leading-none">{displayDate.toLocaleDateString('es-ES', { weekday: 'long' })}</h2>
                         <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-[0.4em] flex items-center gap-3">
                             <span className="size-2 bg-success rounded-full animate-ping"></span>
-                            Monitorización Operativa • {dayApts.length} Servicios Programados
+                            Monitorización Operativa • {dayApts.length} Servicios
                         </p>
                     </div>
                 </div>
-                <button 
-                    onClick={() => setExpandedDay(null)}
-                    className="h-16 px-10 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-3 shadow-2xl border border-slate-100 dark:border-slate-700"
-                >
-                    <span className="material-symbols-outlined text-2xl">close</span> Salir de Vista
-                </button>
+
+                <div className="flex flex-1 max-w-2xl w-full gap-4">
+                    <div className="relative flex-1">
+                        <span className="material-symbols-outlined absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 text-2xl">search</span>
+                        <input 
+                            type="text"
+                            placeholder="Buscar en esta jornada (Paciente o Servicio)..."
+                            value={localSearch}
+                            onChange={(e) => setLocalSearch(e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800 rounded-[2rem] py-5 pl-16 pr-8 text-lg font-bold shadow-inner focus:ring-4 focus:ring-primary/10 transition-all outline-none"
+                        />
+                    </div>
+                    <button 
+                        onClick={() => { setExpandedDay(null); setLocalSearch(''); }}
+                        className="h-16 px-10 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-3 shadow-2xl border border-slate-100 dark:border-slate-700"
+                    >
+                        <span className="material-symbols-outlined text-2xl">close</span> Salir
+                    </button>
+                </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-16 space-y-8 custom-scrollbar">
-                {dayApts.map(apt => {
+                {displayApts.length > 0 ? displayApts.map(apt => {
                     const style = getStatusStyle(apt.status);
+                    const isMatch = s !== '' && (apt.patientName.toLowerCase().includes(s) || apt.treatment.toLowerCase().includes(s));
+
                     return (
                         <div 
                             key={apt.id} 
                             onClick={() => setSelectedApt(apt)}
-                            className="bg-white dark:bg-surface-dark border border-slate-100 dark:border-slate-800 rounded-[3rem] p-12 flex flex-col xl:flex-row items-center gap-16 hover:border-primary transition-all cursor-pointer shadow-xl group relative overflow-hidden"
+                            className={`bg-white dark:bg-surface-dark border rounded-[3rem] p-12 flex flex-col xl:flex-row items-center gap-16 hover:border-primary transition-all cursor-pointer shadow-xl group relative overflow-hidden 
+                                ${isMatch ? 'border-primary ring-4 ring-primary/10 animate-in zoom-in-95' : 'border-slate-100 dark:border-slate-800'}`}
                         >
                             <div className={`absolute top-0 left-0 w-3 h-full ${style.bg}`}></div>
                             
                             <div className="text-center xl:w-40 group-hover:scale-110 transition-transform">
-                                <p className="text-6xl font-display font-black text-primary leading-none tracking-tighter">{apt.time}</p>
+                                <p className={`text-6xl font-display font-black leading-none tracking-tighter ${isMatch ? 'text-primary' : 'text-slate-800 dark:text-white'}`}>{apt.time}</p>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-3">Turno Local</p>
                             </div>
 
@@ -227,12 +270,13 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                                         {style.label}
                                     </span>
                                     <span className="px-6 py-2 bg-slate-100 dark:bg-slate-800 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-400">EXP: {apt.patientId}</span>
+                                    {isMatch && <span className="px-6 py-2 bg-primary text-white rounded-full text-[9px] font-black uppercase tracking-widest animate-bounce">Coincidencia</span>}
                                 </div>
-                                <h3 className="text-5xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter leading-none">{apt.patientName}</h3>
+                                <h3 className={`text-5xl font-display font-black uppercase tracking-tighter leading-none transition-colors ${isMatch ? 'text-primary' : 'text-slate-900 dark:text-white'}`}>{apt.patientName}</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-slate-50 dark:border-slate-800">
                                     <div className="flex items-center gap-5">
-                                        <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shadow-inner"><span className="material-symbols-outlined text-2xl">medical_services</span></div>
-                                        <div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Servicio</p><p className="text-base font-bold text-slate-800 dark:text-white">{apt.treatment}</p></div>
+                                        <div className={`size-12 rounded-2xl flex items-center justify-center shadow-inner ${isMatch ? 'bg-primary text-white' : 'bg-primary/10 text-primary'}`}><span className="material-symbols-outlined text-2xl">medical_services</span></div>
+                                        <div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Servicio</p><p className={`text-base font-bold ${isMatch ? 'text-primary' : 'text-slate-800 dark:text-white'}`}>{apt.treatment}</p></div>
                                     </div>
                                     <div className="flex items-center gap-5">
                                         <div className="size-12 rounded-2xl bg-orange-400/10 text-orange-500 flex items-center justify-center shadow-inner"><span className="material-symbols-outlined text-2xl">stethoscope</span></div>
@@ -250,7 +294,12 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                             </button>
                         </div>
                     );
-                })}
+                }) : (
+                    <div className="py-32 text-center opacity-40 flex flex-col items-center gap-6">
+                        <span className="material-symbols-outlined text-8xl">search_off</span>
+                        <p className="font-black text-2xl uppercase tracking-widest">Sin coincidencias para "{localSearch}"</p>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -263,13 +312,28 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
             <div className="flex flex-col md:flex-row items-center gap-10 w-full xl:w-auto">
                 <div>
                     <h1 className="text-4xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tighter leading-none">{settings.labels.agendaTitle}</h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-2 text-base font-medium italic">Sincronización CORE v3.2 • Latencia Zero</p>
+                    <p className="text-slate-500 dark:text-slate-400 mt-2 text-base font-medium italic">Sincronización CORE v3.5 • Latencia Zero</p>
                 </div>
                 <div className="flex bg-white dark:bg-surface-dark p-2 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-xl">
                    {(['month', 'day'] as const).map(v => (
                        <button key={v} onClick={() => setView(v)} className={`px-10 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${view === v ? 'bg-primary text-white shadow-2xl shadow-primary/30 scale-105' : 'text-slate-400 hover:text-slate-600'}`}>{v === 'month' ? 'Mensual' : 'Hoy'}</button>
                    ))}
                 </div>
+            </div>
+
+            {/* BUSCADOR MAESTRO DE AGENDA */}
+            <div className="flex-1 max-w-xl w-full relative group">
+                <span className="material-symbols-outlined absolute left-6 top-1/2 -translate-y-1/2 text-primary text-2xl group-focus-within:scale-110 transition-transform">search</span>
+                <input 
+                    type="text" 
+                    placeholder="Buscador inteligente: Paciente o Servicio..." 
+                    value={globalSearch}
+                    onChange={(e) => setGlobalSearch(e.target.value)}
+                    className="w-full h-16 bg-white dark:bg-surface-dark border-2 border-slate-100 dark:border-slate-800 rounded-[2rem] py-4 pl-16 pr-6 text-sm font-black uppercase tracking-wider shadow-2xl focus:ring-8 focus:ring-primary/10 focus:border-primary transition-all outline-none"
+                />
+                {globalSearch && (
+                    <button onClick={() => setGlobalSearch('')} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500 transition-colors"><span className="material-symbols-outlined">cancel</span></button>
+                )}
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-4 w-full xl:w-auto">
