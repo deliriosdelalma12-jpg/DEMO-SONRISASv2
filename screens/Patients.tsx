@@ -7,7 +7,6 @@ import { DataField } from '../components/shared/DataField';
 
 const FLAT_ICON_MALE = 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Felix&backgroundColor=e2e8f0';
 const FLAT_ICON_FEMALE = 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Aneka&backgroundColor=e2e8f0';
-const FLAT_ICON_OTHER = 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=Midnight&backgroundColor=e2e8f0';
 
 interface PatientsProps {
   patients: Patient[];
@@ -20,14 +19,37 @@ interface PatientsProps {
 
 const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments, clinicSettings, currentUser, team }) => {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [initialModalTab, setInitialModalTab] = useState<'info' | 'medical' | 'history'>('info');
+  const [initialModalTab, setInitialModalTab] = useState<'info' | 'medical' | 'history' | 'files' | 'ai'>('info');
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   
   const initialNewPatient: Partial<Patient> = {
-    name: '', gender: 'Masculino', birthDate: new Date().toISOString().split('T')[0], identityDocument: '', phone: '', email: '', address: '', medicalHistory: '', img: FLAT_ICON_MALE, allergies: [], attachments: [], savedReports: [], history: [], weight: '', height: '', bloodType: 'A+', associatedDoctorId: team[0]?.id || ''
+    name: '', 
+    gender: 'Masculino', 
+    birthDate: new Date().toISOString().split('T')[0], 
+    identityDocument: '', 
+    phone: '', 
+    email: '', 
+    address: '', 
+    medicalHistory: '', 
+    img: FLAT_ICON_MALE, 
+    allergies: [], 
+    pathologies: [],
+    surgeries: [],
+    medications: [],
+    habits: [],
+    familyHistory: [],
+    attachments: [], 
+    savedReports: [], 
+    history: [], 
+    weight: '', 
+    height: '', 
+    bloodType: 'A+', 
+    associatedDoctorId: team[0]?.id || '',
+    clinicalSummary: '',
+    emotionalNotes: ''
   };
 
   const [newPatient, setNewPatient] = useState<Partial<Patient>>(initialNewPatient);
@@ -68,7 +90,7 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
   const handleCreatePatient = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPatient.name?.trim() || !newPatient.identityDocument?.trim()) {
-        alert("Por favor completa los campos obligatorios.");
+        alert("Por favor completa los campos obligatorios (Nombre y DNI).");
         return;
     }
     const doc = team.find(d => d.id === newPatient.associatedDoctorId);
@@ -125,7 +147,7 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
                 <div className="grid grid-cols-2 gap-2 mt-auto w-full pt-4 border-t border-slate-100 dark:border-slate-800">
                 <button onClick={() => { setInitialModalTab('history'); setSelectedPatient(p); }} className="py-2.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[9px] font-black uppercase text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1.5">
                     <span className="material-symbols-outlined text-base">history</span>
-                    <span>Historial</span>
+                    <span>Citas</span>
                 </button>
                 <button onClick={() => { setInitialModalTab('info'); setSelectedPatient(p); }} className="py-2.5 bg-primary/10 text-primary rounded-md text-[9px] font-black uppercase hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-1.5">
                     <span className="material-symbols-outlined text-base">contact_page</span>
@@ -175,13 +197,14 @@ const Patients: React.FC<PatientsProps> = ({ patients, setPatients, appointments
             </header>
             <form onSubmit={handleCreatePatient} className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar bg-transparent">
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <DataField required label="Nombre y Apellidos" value={newPatient.name} editing={true} onChange={(e: any) => setNewPatient({...newPatient, name: e.target.value})} />
-                    <DataField required label="DNI" value={newPatient.identityDocument} editing={true} onChange={(e: any) => setNewPatient({...newPatient, identityDocument: e.target.value})} />
-                    <DataField label="Teléfono" value={newPatient.phone} editing={true} onChange={(e: any) => setNewPatient({...newPatient, phone: e.target.value})} />
-                    <DataField label="Médico Asignado" value={newPatient.associatedDoctorId} editing={true} type="select" selectOptions={team.map(d => ({ value: d.id, label: d.name }))} onChange={(e: any) => setNewPatient({...newPatient, associatedDoctorId: e.target.value})} />
+                    <DataField required label="Nombre y Apellidos" value={newPatient.name} editing={true} onChange={(v: string) => setNewPatient({...newPatient, name: v})} />
+                    <DataField required label="DNI" value={newPatient.identityDocument} editing={true} onChange={(v: string) => setNewPatient({...newPatient, identityDocument: v})} />
+                    <DataField label="Teléfono" value={newPatient.phone} editing={true} onChange={(v: string) => setNewPatient({...newPatient, phone: v})} />
+                    <DataField label="Email" value={newPatient.email} editing={true} onChange={(v: string) => setNewPatient({...newPatient, email: v})} />
+                    <DataField label="Médico Asignado" value={newPatient.associatedDoctorId} editing={true} type="select" options={team.map(d => ({ value: d.id, label: d.name }))} onChange={(v: string) => setNewPatient({...newPatient, associatedDoctorId: v})} />
                 </div>
                 <div className="pt-6 flex justify-center border-t border-slate-200 dark:border-slate-800">
-                    <button type="submit" className="h-14 w-full md:w-auto md:px-16 bg-primary text-white rounded-md font-black uppercase text-sm tracking-widest hover:bg-primary-dark transition-all">Finalizar Registro</button>
+                    <button type="submit" className="h-14 w-full md:w-auto md:px-16 bg-primary text-white rounded-md font-black uppercase text-sm tracking-widest hover:bg-primary-dark transition-all shadow-xl shadow-primary/20">Finalizar Registro</button>
                 </div>
             </form>
           </div>

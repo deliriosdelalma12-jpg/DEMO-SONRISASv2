@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
  * Decodifica una cadena Base64 a Uint8Array de forma segura.
@@ -42,8 +42,7 @@ export const decodeAudioDataToBuffer = async (
 };
 
 /**
- * Genera audio TTS optimizado para versión gratuita.
- * Fix: added optional options parameter to fix argument mismatch in SettingsAssistant.tsx
+ * Genera audio TTS optimizado para velocidad.
  */
 export const speakText = async (text: string, voiceName: string, options?: { pitch?: number, speed?: number }) => {
   try {
@@ -74,13 +73,16 @@ export const speakText = async (text: string, voiceName: string, options?: { pit
 };
 
 /**
- * Genera una respuesta de chat en streaming.
+ * Genera una respuesta de chat en streaming (Flash es el más rápido).
  */
 export async function* streamChatResponse(message: string) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContentStream({
     model: 'gemini-3-flash-preview',
     contents: message,
+    config: {
+        thinkingConfig: { thinkingBudget: 0 } // Desactivar pensamiento profundo para máxima velocidad
+    }
   });
 
   for await (const chunk of response) {
@@ -95,7 +97,7 @@ export async function* streamChatResponse(message: string) {
  */
 export const generatePersonalityPrompt = async (tags: string[], name: string, clinic: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const prompt = `Define la personalidad de un asistente de voz llamado ${name} para la clínica ${clinic}. Atributos: ${tags.join(', ')}. Escribe instrucciones maestras de comportamiento.`;
+  const prompt = `Escribe instrucciones de sistema ultracortas para un asistente de voz clínico llamado ${name} para la clínica ${clinic}. Estilo: ${tags.join(', ')}. Responde siempre de forma breve.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',

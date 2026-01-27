@@ -37,7 +37,7 @@ export interface Branch {
   name: string;
   address: string;
   city: string;
-  province?: string; // New
+  province?: string;
   zip: string;
   phone: string;
   email: string;
@@ -48,9 +48,9 @@ export interface Branch {
   };
   img: string;
   manager?: string;
-  openingHours?: string; // Texto legible (L-V 09-20)
-  schedule?: Record<string, DaySchedule>; // Horario estructurado específico
-  scheduleType?: 'continuous' | 'split'; // Tipo de jornada específica por sucursal
+  openingHours?: string;
+  schedule?: Record<string, DaySchedule>;
+  scheduleType?: 'continuous' | 'split';
   description?: string;
 }
 
@@ -145,7 +145,7 @@ export type VoiceAccent = 'es-ES-Madrid' | 'es-ES-Canarias' | 'es-LATAM' | 'en-G
 export interface AiPhoneSettings {
   phoneNumber: string;
   assistantName: string;
-  aiCompanyName: string; // Nuevo campo dedicado
+  aiCompanyName: string;
   initialGreeting: string;
   systemPrompt: string;
   instructions: string; 
@@ -199,8 +199,8 @@ export interface ClinicSettings {
   businessName: string;
   sector: string; 
   region: CountryRegion;
-  province?: string; // New
-  city?: string; // New
+  province?: string;
+  city?: string;
   branchCount: number; 
   scheduleType: 'continuous' | 'split'; 
   logo: string;
@@ -260,16 +260,15 @@ export interface Patient {
   weight?: string;
   height?: string;
   bloodType?: string;
-  
-  // ESTRUCTURA GRANULAR POR PÍLDORAS
   allergies: string[];
   pathologies: string[]; 
   surgeries: string[];    
   medications: string[]; 
   habits: string[];      
   familyHistory: string[]; 
-  
   medicalHistory: string; 
+  clinicalSummary?: string; 
+  emotionalNotes?: string;  
   attachments?: FileAttachment[];
   savedReports?: MedicalReport[];
   history?: { date: string; action: string; description: string; }[];

@@ -45,6 +45,22 @@ const generatePatients = (): Patient[] => {
   const names = ["Mateo", "Lucía", "Alejandro", "Sofía", "Martín", "Elena", "Hugo", "Valentina", "Lucas", "Julia", "Daniel", "Martina", "Leo", "Emma", "Enzo", "Carla", "Diego", "Nora", "Marcos", "Chloe", "Juan", "Maria", "Pedro", "Carlos", "David", "Laura", "Pablo", "Marta", "Jorge", "Ana", "Luis", "Carmen", "Raul", "Isabel", "Alberto", "Beatriz", "Fernando", "Clara", "Oscar", "Silvia", "Ruben", "Ines", "Victor", "Paula", "Adrian", "Raquel", "Gemma", "Felipe", "Berta", "Teresa", "Ricardo", "Sara", "Mateo", "Ivan", "Valeria", "Bruno", "Daniela", "Alvaro", "Abril", "Manuel"];
   const surnames = ["Garcia", "Rodriguez", "Gonzalez", "Fernandez", "Lopez", "Martinez", "Sanchez", "Perez", "Gomez", "Martin"];
   
+  const emotionalMock = [
+    "Paciente muy miedoso con las agujas, tratar con extrema delicadeza.",
+    "Le encanta hablar de sus nietos, es muy amable.",
+    "Tuvo una queja por el tiempo de espera el mes pasado, ser muy puntual.",
+    "Prefiere que le expliquen todo el proceso antes de empezar.",
+    "Paciente VIP, CEO de una empresa local, trato muy formal."
+  ];
+
+  const clinicalMock = [
+    "En proceso de ortodoncia invisible, fase 4.",
+    "Revisiones semestrales por encías sensibles.",
+    "Seguimiento post-operatorio de implante molar derecho.",
+    "Tratamiento de blanqueamiento finalizado, pendiente de protector nocturno.",
+    "Alergia leve a la penicilina registrada."
+  ];
+
   return names.map((name, i) => ({
     id: `P-${1000 + i}`,
     name: `${name} ${surnames[i % 10]}`,
@@ -59,6 +75,8 @@ const generatePatients = (): Patient[] => {
     bloodType: 'O+',
     allergies: [], pathologies: [], surgeries: [], medications: [], habits: [], familyHistory: [],
     medicalHistory: "Historial base.",
+    emotionalNotes: emotionalMock[i % emotionalMock.length],
+    clinicalSummary: clinicalMock[i % clinicalMock.length],
     history: []
   }));
 };
@@ -167,7 +185,7 @@ const App: React.FC = () => {
       systemPrompt: "Eres la recepcionista experta de la clínica MediClinic Premium.", instructions: "Verifica disponibilidad.",
       testSpeechText: "Hola, soy Sara. Es un placer saludarte. Estoy aquí para gestionar tus citas en MediClinic Premium y resolver cualquier duda sobre nuestros tratamientos de forma inmediata. Mi compromiso es ofrecerte una atención personalizada, cercana y profesional en cada contacto. ¿En qué puedo ayudarte hoy?", 
       voiceName: "Zephyr", voicePitch: 1.0, voiceSpeed: 1.0, temperature: 0.7, accent: 'es-ES-Madrid',
-      model: 'gemini-2.5-flash-native-audio-preview-09-2025'
+      model: 'gemini-2.5-flash-native-audio-preview-12-2025'
     },
     defaultTheme: 'light', colorTemplate: 'ocean',
     visuals: { titleFontSize: 32, bodyFontSize: 16 },
