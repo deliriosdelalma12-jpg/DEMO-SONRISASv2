@@ -24,7 +24,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
-  const userRole = settings.roles.find(r => r.id === currentUser?.role);
+  const userRole = settings?.roles?.find(r => r.id === currentUser?.role);
   const isAdmin = userRole?.permissions.includes('view_all_data');
 
   useEffect(() => {
@@ -63,6 +63,8 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
   [filteredAppointments, tomorrowStr]);
 
   const chartData = useMemo(() => {
+    if (!settings?.globalSchedule) return [];
+    
     const data = [];
     const now = new Date();
     const dayOfWeek = now.getDay();
@@ -81,7 +83,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
         }
     });
     return data;
-  }, [filteredAppointments, settings.globalSchedule]);
+  }, [filteredAppointments, settings?.globalSchedule]);
 
   const toggleTask = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -136,11 +138,13 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
     setDraggedTaskId(null);
   };
 
+  if (!settings) return null;
+
   return (
     <div className="w-full flex flex-col p-6 gap-6 animate-in fade-in duration-500">
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">{settings.labels.dashboardTitle}</h1>
+          <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white uppercase tracking-tight">{settings.labels?.dashboardTitle || 'Dashboard'}</h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium italic">Visión Global en Tiempo Real</p>
         </div>
         <div className="bg-white dark:bg-surface-dark p-2 rounded-lg border border-border-light dark:border-border-dark flex items-center gap-3 shadow-sm">
@@ -163,7 +167,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, appointments, setAppoin
                 <div className="h-[240px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <defs><linearGradient id="cDashboard" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                            <defs><linearGradient id="cDashboard" x1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 'bold'}} dy={10} />
                             <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} />

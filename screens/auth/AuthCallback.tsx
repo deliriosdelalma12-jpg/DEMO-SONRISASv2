@@ -9,41 +9,41 @@ const AuthCallback: React.FC = () => {
 
   useEffect(() => {
     const handleAuthCallback = async () => {
-      console.group('🔄 AUTH_CALLBACK_ENGINE');
+      console.group('🔄 [CALLBACK_PROCESSING]');
       
       try {
-        // En flujos PKCE (Supabase v2 default), el código viene en ?code=
-        const queryParams = new URLSearchParams(window.location.search);
-        let code = queryParams.get('code');
+        // En un entorno de SPA, el código puede estar en la URL real antes de que actúe el Router
+        const currentUrl = window.location.href;
+        console.log('🔗 URL de entrada:', currentUrl);
 
-        // Soporte para HashRouter: el code podría estar tras el #
-        if (!code && window.location.hash.includes('code=')) {
-          const hashQuery = window.location.hash.split('?')[1];
-          if (hashQuery) {
-            code = new URLSearchParams(hashQuery).get('code');
-          }
-        }
+        const url = new URL(currentUrl);
+        const code = url.searchParams.get('code');
 
         if (code) {
-          console.log('PKCE Code detected, exchanging...');
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-          if (exchangeError) throw exchangeError;
-          console.log('✅ Session created.');
+          console.log('📡 Código PKCE detectado. Intercambiando por sesión...');
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          
+          if (exchangeError) {
+            console.error('❌ [EXCHANGE_ERROR]:', exchangeError.message);
+            throw exchangeError;
+          }
+
+          console.log('✅ [SESSION_READY]: Sesión autenticada para:', data.user?.email);
+          navigate('/', { replace: true });
         } else {
-          // Intentar ver si la sesión ya existe por cookie/fragmento
+          // Si no hay código, verificamos si ya existe una sesión activa (por persistencia)
           const { data: { session } } = await supabase.auth.getSession();
-          if (!session) {
-            console.warn('No code or session found.');
-            throw new Error('No se pudo validar el enlace de confirmación. Intenta iniciar sesión manualmente.');
+          if (session) {
+            console.log('✅ [SESSION_FOUND]: Sesión persistente detectada.');
+            navigate('/', { replace: true });
+          } else {
+            console.warn('⚠️ [NO_CODE_FOUND]: La URL no contenía código de intercambio.');
+            setError('No se pudo encontrar un código de confirmación válido. El enlace puede haber expirado.');
           }
         }
-
-        console.log('Redirigiendo al dashboard...');
-        navigate('/', { replace: true });
-
       } catch (err: any) {
-        console.error('❌ CALLBACK_ERROR:', err.message);
-        setError(err.message || 'Error desconocido al validar acceso.');
+        console.error('❌ [CALLBACK_CRASH]:', err.message);
+        setError(err.message || 'Fallo crítico al procesar la confirmación.');
       } finally {
         console.groupEnd();
       }
@@ -53,24 +53,24 @@ const AuthCallback: React.FC = () => {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md bg-slate-900/50 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-12 text-center shadow-2xl">
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-full max-w-md bg-slate-900 border border-white/10 rounded-[2.5rem] p-12 shadow-2xl">
         {!error ? (
           <>
             <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8"></div>
-            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-4">Sincronizando Acceso</h1>
-            <p className="text-slate-400 font-medium">Validando tu cuenta con Mediclinic Cloud...</p>
+            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-4">Sincronizando</h1>
+            <p className="text-slate-400 font-medium italic">Estableciendo conexión segura con Mediclinic Cloud...</p>
           </>
         ) : (
           <>
-            <div className="size-20 bg-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-lg shadow-rose-500/20">
+            <div className="size-20 bg-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-8">
               <span className="material-symbols-outlined text-5xl">error</span>
             </div>
-            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-4">Error de Validación</h1>
+            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-4">Error de Acceso</h1>
             <p className="text-rose-500 font-bold mb-8 leading-relaxed">{error}</p>
             <button 
               onClick={() => navigate('/login')}
-              className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-all"
+              className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-lg"
             >
               Volver al Login
             </button>

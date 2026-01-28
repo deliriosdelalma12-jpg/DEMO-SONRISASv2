@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { supabase } from './lib/supabase';
 
@@ -36,9 +36,8 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
   useEffect(() => {
     const runOnboarding = async () => {
-      // Solo si el usuario está autenticado en Auth pero no existe en public.users
       if (user && !tenantUser && !loading && !onboarding) {
-        console.log('🚀 Triggering Onboarding...');
+        console.log('🚀 [ONBOARDING_TRIGGER] Preparando datos de clínica...');
         setOnboarding(true);
         const { data: { session } } = await supabase.auth.getSession();
         
@@ -52,48 +51,41 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
           });
           
           if (res.ok) {
-            console.log('✅ Onboarding success');
+            console.log('✅ [ONBOARDING_SUCCESS]');
             await refreshContext();
-          } else {
-            console.error('❌ Onboarding failed endpoint status:', res.status);
           }
         } catch (e) {
-          console.error("❌ Onboarding network error:", e);
+          console.error("❌ Onboarding failed:", e);
         } finally {
           setOnboarding(false);
         }
       }
     };
     runOnboarding();
-  }, [user, tenantUser, loading]);
+  }, [user, tenantUser, loading, onboarding, refreshContext]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-6">
-          <div className="size-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-400 font-black uppercase text-[10px] tracking-[0.4em] animate-pulse">Sincronizando Core SaaS...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (onboarding) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-6 text-center">
-          <div className="size-20 bg-primary/10 rounded-[2rem] flex items-center justify-center mb-4">
-             <span className="material-symbols-outlined text-primary text-4xl animate-bounce">cloud_sync</span>
-          </div>
-          <p className="text-white font-display font-black text-xl uppercase tracking-tight">Preparando tu Clínica</p>
-          <p className="text-slate-500 text-sm font-medium italic">Configurando bases de datos multi-tenant...</p>
-        </div>
+        <div className="size-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (onboarding) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center p-8">
+        <div className="size-20 bg-primary/10 rounded-[2rem] flex items-center justify-center mb-6">
+           <span className="material-symbols-outlined text-primary text-4xl animate-bounce">cloud_sync</span>
+        </div>
+        <p className="text-white font-display font-black text-xl uppercase tracking-widest">Preparando tu Espacio</p>
+        <p className="text-slate-500 text-sm mt-2 italic">Configurando bases de datos multi-tenant...</p>
+      </div>
+    );
   }
 
   return <>{children}</>;
@@ -104,7 +96,6 @@ const AppContent: React.FC = () => {
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const location = useLocation();
   
-  // Real data state
   const [patients, setPatients] = useState<Patient[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -132,74 +123,78 @@ const AppContent: React.FC = () => {
   const publicRoutes = ['/login', '/signup', '/auth/callback'];
   const isPublicRoute = publicRoutes.includes(location.pathname);
 
-  // Evitar blank screen si estamos cargando settings tras login exitoso
-  if (user && !isPublicRoute && (!tenantUser || !settings)) {
+  // 1. Si es una ruta pública, renderizamos sin Layout
+  if (isPublicRoute) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<SignUp />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+      </Routes>
+    );
+  }
+
+  // 2. Si hay un usuario pero los datos del tenant aún no están listos, mostramos loader preventivo
+  if (user && (!tenantUser || !settings)) {
     return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-6">
-            <div className="size-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-slate-400 font-black uppercase text-[10px] tracking-[0.4em] animate-pulse">Cargando Ajustes de Clínica...</p>
+          <div className="flex flex-col items-center gap-4">
+             <div className="size-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sincronizando Core...</p>
           </div>
         </div>
     );
   }
 
+  // 3. Solo renderizamos el bloque de Layout si tenemos settings y tenantUser garantizados
+  // Si user es null, PrivateRoute se encargará de redirigir, pero aquí evitamos el crash de Layout.
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<SignUp />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
-      
-      <Route path="/*" element={
-        <PrivateRoute>
-          {tenantUser && settings ? (
-            <Layout 
-              darkMode={darkMode} 
-              onToggleTheme={() => setDarkMode(!darkMode)} 
-              currentUser={tenantUser} 
-              settings={settings}
-              onOpenVoiceAssistant={() => setIsVoiceOpen(true)}
-              onSignOut={signOut}
-            >
-              <Routes>
-                <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={tenantUser} systemUsers={[tenantUser]} />} />
-                <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} globalSchedule={settings.globalSchedule || {}} settings={settings} />} />
-                <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={tenantUser} team={doctors} />} />
-                <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} branches={branches} patients={patients} clinicSettings={settings} setAppointments={setAppointments} />} />
-                <Route path="/branches" element={<Branches branches={branches} setBranches={setBranches} doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
-                <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} settings={settings} branches={branches} />} />
-                <Route path="/settings" element={
-                  <Settings 
-                    settings={settings} 
-                    setSettings={(newS: any) => {
-                      setSettings(newS);
-                      supabase.from('tenant_settings').upsert({ 
-                        clinic_id: tenantUser.clinic_id, 
-                        settings: newS 
-                      }).then(({ error }) => {
-                        if (error) console.error("Error persisting settings:", error);
-                      });
-                    }} 
-                    onToggleTheme={() => setDarkMode(!darkMode)} 
-                    darkMode={darkMode} 
-                    systemUsers={[tenantUser]} 
-                    setSystemUsers={() => {}} 
-                    doctors={doctors} 
-                    setDoctors={setDoctors} 
-                    patients={patients} 
-                    setPatients={setPatients} 
-                    branches={branches} 
-                    setBranches={setBranches} 
-                  />
-                } />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-              {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} patients={patients} setPatients={setPatients} />}
-            </Layout>
-          ) : null}
-        </PrivateRoute>
-      } />
-    </Routes>
+    <PrivateRoute>
+      {tenantUser && settings ? (
+        <Layout 
+          darkMode={darkMode} 
+          onToggleTheme={() => setDarkMode(!darkMode)} 
+          currentUser={tenantUser} 
+          settings={settings}
+          onOpenVoiceAssistant={() => setIsVoiceOpen(true)}
+          onSignOut={signOut}
+        >
+          <Routes>
+            <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={tenantUser} systemUsers={[tenantUser]} />} />
+            <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} globalSchedule={settings.globalSchedule || {}} settings={settings} />} />
+            <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={tenantUser} team={doctors} />} />
+            <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} branches={branches} patients={patients} clinicSettings={settings} setAppointments={setAppointments} />} />
+            <Route path="/branches" element={<Branches branches={branches} setBranches={setBranches} doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
+            <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} settings={settings} branches={branches} />} />
+            <Route path="/settings" element={
+              <Settings 
+                settings={settings} 
+                setSettings={(newS: any) => {
+                  setSettings(newS);
+                  supabase.from('tenant_settings').upsert({ clinic_id: tenantUser.clinic_id, settings: newS });
+                }} 
+                onToggleTheme={() => setDarkMode(!darkMode)} 
+                darkMode={darkMode} 
+                systemUsers={[tenantUser]} 
+                setSystemUsers={() => {}} 
+                doctors={doctors} 
+                setDoctors={setDoctors} 
+                patients={patients} 
+                setPatients={setPatients} 
+                branches={branches} 
+                setBranches={setBranches} 
+              />
+            } />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+          {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} patients={patients} setPatients={setPatients} />}
+        </Layout>
+      ) : (
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+            <div className="size-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      )}
+    </PrivateRoute>
   );
 };
 

@@ -24,10 +24,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchTenantContext = async (sessionUser: any) => {
     if (!sessionUser) return;
     
-    console.log('🔄 Fetching Tenant Context for:', sessionUser.id);
+    console.log('🔄 [AUTH_INIT] Cargando contexto para:', sessionUser.id);
     try {
-      // 1. Obtener perfil de usuario ligado a clínica
-      const { data: profile, error: pError } = await supabase
+      const { data: profile } = await supabase
         .from('users')
         .select('*')
         .eq('id', sessionUser.id)
@@ -35,57 +34,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (profile) {
         setTenantUser(profile);
-        console.log('✅ Tenant User Profile loaded.');
-        
-        // 2. Obtener ajustes de la clínica
-        const { data: sData, error: sError } = await supabase
+        const { data: sData } = await supabase
           .from('tenant_settings')
           .select('settings')
           .eq('clinic_id', profile.clinic_id)
           .maybeSingle();
 
-        if (sData) {
-          setSettings(sData.settings);
-          console.log('✅ Clinic Settings loaded.');
-        } else {
-          console.warn('⚠️ Settings not found for clinic:', profile.clinic_id);
-        }
-      } else {
-        console.warn('⚠️ No profile found for user in public.users table.');
-        setTenantUser(null);
-        setSettings(null);
+        if (sData) setSettings(sData.settings);
       }
     } catch (e) {
-      console.error("❌ Error fetching context:", e);
-    }
-  };
-
-  const initializeAuth = async () => {
-    try {
-      console.log('🎬 Initializing Auth...');
-      const { data: { session } } = await supabase.auth.getSession();
-      const u = session?.user ?? null;
-      setUser(u);
-      
-      if (u) {
-        await fetchTenantContext(u);
-      }
-    } catch (err) {
-      console.error('❌ Failed to initialize auth session:', err);
-    } finally {
-      setLoading(false);
+      console.error("❌ Error al cargar contexto SaaS:", e);
     }
   };
 
   useEffect(() => {
-    initializeAuth();
+    // 1. Carga inicial
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        await fetchTenantContext(session.user);
+      }
+      setLoading(false);
+    };
+    init();
 
-    // Listener global de Supabase
+    // 2. Escucha de cambios de estado (Login, Logout, Token Refreshed)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔔 AUTH_EVENT:', event);
-      const u = session?.user ?? null;
+      console.log('🔔 [AUTH_EVENT]:', event);
       
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED') {
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        const u = session?.user ?? null;
         setUser(u);
         if (u) await fetchTenantContext(u);
         setLoading(false);
@@ -102,13 +81,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshContext = async () => {
     const { data: { user: sessionUser } } = await supabase.auth.getUser();
-    if (sessionUser) {
-      await fetchTenantContext(sessionUser);
-    }
+    if (sessionUser) await fetchTenantContext(sessionUser);
   };
 
   const signOut = async () => {
-    console.log('🚪 Signing out...');
+    console.log('🚪 [LOGOUT_INIT]');
     await supabase.auth.signOut();
     window.location.href = '/#/login';
   };

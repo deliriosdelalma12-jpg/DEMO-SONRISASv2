@@ -7,7 +7,6 @@ const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resending, setResending] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const navigate = useNavigate();
@@ -16,9 +15,12 @@ const Login: React.FC = () => {
   useEffect(() => {
     if (location.state?.message) setInfo(location.state.message);
     
-    // Si ya hay sesión, no deberíamos estar aquí
+    // Auto-redirección si ya hay sesión
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) navigate('/', { replace: true });
+      if (session) {
+        console.log('✅ [SESSION_READY]: Redirigiendo desde Login.');
+        navigate('/');
+      }
     });
   }, [location, navigate]);
 
@@ -28,70 +30,36 @@ const Login: React.FC = () => {
     setError('');
     setInfo('');
 
-    // Safety timeout (15s)
-    const timer = setTimeout(() => {
-      if (loading) {
-        setLoading(false);
-        setError('El servidor tarda demasiado en responder. Revisa tu conexión.');
-      }
-    }, 15000);
+    console.group('🔑 [LOGIN_ATTEMPT]');
+    console.log('User:', email);
 
-    console.group('🔑 LOGIN_ATTEMPT');
     try {
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      clearTimeout(timer);
-
       if (authError) {
-        console.warn('❌ LOGIN_FAILED:', authError.message);
+        console.warn('❌ [LOGIN_FAILED]:', authError.message);
+        
+        // Detectar específicamente el error de confirmación de email
         if (authError.message.toLowerCase().includes('email not confirmed')) {
-          setError('Debes confirmar tu correo antes de iniciar sesión.');
+          setError('Tu correo aún no está verificado. Revisa tu bandeja de entrada o solicita un nuevo enlace.');
         } else if (authError.message.toLowerCase().includes('invalid login credentials')) {
-          setError('Credenciales inválidas. Revisa tu email y contraseña.');
+          setError('Credenciales incorrectas. Verifica tu email y contraseña.');
         } else {
           setError(authError.message);
         }
-        setLoading(false);
       } else if (data.session) {
-        console.log('✅ LOGIN_SUCCESS');
-        navigate('/', { replace: true });
+        console.log('✅ [LOGIN_SUCCESS]: Bienvenido de nuevo.');
+        navigate('/');
       }
     } catch (err) {
-      clearTimeout(timer);
-      console.error('🔥 LOGIN_CRASH:', err);
-      setError('Error crítico de conexión.');
+      console.error('🔥 [CRITICAL_LOGIN_ERROR]:', err);
+      setError('Fallo de conexión con el servidor de identidad.');
+    } finally {
       setLoading(false);
-    } finally {
       console.groupEnd();
-    }
-  };
-
-  const handleResend = async () => {
-    if (!email) {
-      setError('Introduce tu email para reenviar el enlace.');
-      return;
-    }
-    setResending(true);
-    setError('');
-    
-    try {
-      const { error: resendError } = await supabase.auth.resend({
-        type: 'signup',
-        email: email,
-        options: {
-          emailRedirectTo: 'https://demo-sonrisasv2-production.up.railway.app/auth/callback'
-        }
-      });
-      
-      if (resendError) throw resendError;
-      setInfo('Enlace de verificación reenviado. Revisa tu bandeja de entrada.');
-    } catch (err: any) {
-      setError(`Error al reenviar: ${err.message}`);
-    } finally {
-      setResending(false);
     }
   };
 
@@ -104,41 +72,32 @@ const Login: React.FC = () => {
           <div className="size-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/20">
             <span className="material-symbols-outlined text-white text-4xl font-bold">hospital</span>
           </div>
-          <h1 className="text-3xl font-display font-black text-white uppercase tracking-tighter">Mediclinic Cloud</h1>
-          <p className="text-slate-400 text-sm mt-2 font-medium">Panel de Gestión Médica Unificado</p>
+          <h1 className="text-3xl font-display font-black text-white uppercase tracking-tighter">MediClinic Cloud</h1>
+          <p className="text-slate-400 text-sm mt-2 font-medium">Gestión Profesional Unificada</p>
         </div>
 
         {info && (
-          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-xs font-bold text-center animate-in fade-in slide-in-from-top-2">
+          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-xs font-bold text-center">
             {info}
           </div>
         )}
 
         {error && (
-          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center animate-in shake duration-500">
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center">
             {error}
-            {error.includes('confirmar') && (
-              <button 
-                onClick={handleResend}
-                disabled={resending}
-                className="block mx-auto mt-3 text-primary hover:underline uppercase text-[9px] font-black tracking-[0.2em] border border-primary/20 px-3 py-1.5 rounded-lg bg-primary/5"
-              >
-                {resending ? 'Enviando...' : 'Reenviar enlace de confirmación'}
-              </button>
-            )}
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email</label>
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email Profesional</label>
             <input 
               type="email" required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={loading}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white outline-none focus:ring-4 focus:ring-primary/10 transition-all disabled:opacity-50"
-              placeholder="ejemplo@clinicacloud.com"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none"
+              placeholder="ejemplo@clinicamedica.com"
             />
           </div>
           <div className="space-y-2">
@@ -148,7 +107,7 @@ const Login: React.FC = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white outline-none focus:ring-4 focus:ring-primary/10 transition-all disabled:opacity-50"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none"
               placeholder="••••••••"
             />
           </div>
@@ -160,14 +119,14 @@ const Login: React.FC = () => {
             {loading ? (
               <>
                 <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                Iniciando...
+                Autenticando...
               </>
             ) : 'Entrar al Sistema'}
           </button>
         </form>
 
         <p className="text-center mt-8 text-slate-500 text-xs font-medium">
-          ¿No tienes cuenta? <Link to="/signup" className="text-primary font-black hover:underline">Regístrate gratis</Link>
+          ¿No tienes cuenta? <Link to="/signup" className="text-primary font-black hover:underline">Regístrate ahora</Link>
         </p>
       </div>
     </div>
