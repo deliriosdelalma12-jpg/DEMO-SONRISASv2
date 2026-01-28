@@ -10,12 +10,15 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+// Use the port provided by Railway or fallback to 3000 for local development
 const PORT = process.env.PORT || 3000;
 
 // Initialize Supabase with Service Role Key for administrative tasks
+// Note: Service Role Key should NEVER be used on the client-side
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
 
 app.use(cors());
@@ -51,7 +54,7 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
       .from('users')
       .select('clinic_id')
       .eq('id', userId)
-      .single();
+      .maybeSingle(); // Use maybeSingle to avoid errors if not found
 
     if (existingUser?.clinic_id) {
       return res.json({ status: 'ok', message: 'User already onboarded', clinic_id: existingUser.clinic_id });
@@ -104,9 +107,24 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
       colorTemplate: "ocean",
       defaultTheme: "light",
       roles: [
-        { id: 'admin_role', name: 'Administrador Global', permissions: ['view_dashboard', 'view_all_data', 'can_edit', 'view_settings'] }
+        { id: 'admin', name: 'Administrador Global', permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'view_doctors', 'view_branches', 'view_metrics', 'view_settings', 'view_all_data', 'can_edit'] }
       ],
       labels: { dashboardTitle: "Dashboard Directivo", agendaTitle: "Agenda Centralizada" },
+      visuals: { titleFontSize: 32, bodyFontSize: 16 },
+      laborSettings: { vacationDaysPerYear: 30, allowCarryOver: false, incidentTypes: [] },
+      appointmentPolicy: { confirmationWindow: 24, leadTimeThreshold: 2, autoConfirmShortNotice: true },
+      services: [
+        { id: 'S1', name: 'Consulta General', price: 50, duration: 30 }
+      ],
+      globalSchedule: {
+        'Lunes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+        'Martes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+        'Miércoles': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+        'Jueves': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+        'Viernes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+        'Sábado': { morning: { start: '09:00', end: '13:00', active: true }, afternoon: { start: '00:00', end: '00:00', active: false } },
+        'Domingo': { morning: { start: '00:00', end: '00:00', active: false }, afternoon: { start: '00:00', end: '00:00', active: false } }
+      },
       aiPhoneSettings: {
         assistantName: "Sara",
         clinicDisplayName: clinicName,
@@ -117,7 +135,24 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
         active: true,
         systemPrompt: "Eres la asistente virtual de " + clinicName,
         initialGreeting: "Hola, bienvenida a " + clinicName + ". ¿En qué puedo ayudarte?",
-        testSpeechText: "Prueba de voz del sistema SaaS."
+        testSpeechText: "Prueba de voz del sistema SaaS.",
+        instructions: "Ayuda a los pacientes a agendar citas.",
+        voice: "default",
+        phoneNumber: "",
+        aiCompanyName: clinicName,
+        voicePitch: 1.0,
+        voiceSpeed: 1.0,
+        temperature: 0.7,
+        accent: "es-ES-Madrid",
+        model: "gemini-3-flash-preview",
+        escalation_rules: { transfer_number: "", escalate_on_frustration: true },
+        policy_texts: { cancel_policy: "", privacy_notice: "" },
+        prompt_overrides: {},
+        aiEmotion: "Empática",
+        aiStyle: "Concisa",
+        aiRelation: "Formal (Usted)",
+        aiFocus: "Resolutiva",
+        configVersion: Date.now()
       }
     };
 
@@ -142,48 +177,6 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
   }
 });
 
-// API: Voximplant Bind Number (Stub using secure env keys)
-app.post('/api/voximplant/bind-number', authenticate, async (req, res) => {
-  const { clinic_id, phone_number, country } = req.body;
-  
-  if (!process.env.VOXIMPLANT_API_KEY || !process.env.VOXIMPLANT_ACCOUNT_ID) {
-    return res.status(503).json({ error: 'Telephony provider not configured' });
-  }
-
-  try {
-    // Check if user is admin for this clinic
-    const { data: member } = await supabaseAdmin
-      .from('clinic_members')
-      .select('role')
-      .eq('clinic_id', clinic_id)
-      .eq('user_id', req.user.id)
-      .single();
-
-    if (member?.role !== 'admin') {
-      return res.status(403).json({ error: 'Permission denied' });
-    }
-
-    // Call Voximplant API here... (using secret keys)
-    const mockRemoteId = "vox_" + Date.now();
-
-    // Persist number to Supabase
-    const { error } = await supabaseAdmin.from('clinic_phone_numbers').insert({
-      clinic_id,
-      phone_number,
-      provider: 'voximplant',
-      country: country || 'ES',
-      active: true,
-      settings: { remote_id: mockRemoteId }
-    });
-
-    if (error) throw error;
-
-    res.json({ status: 'success', phone: phone_number });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Serve frontend dist folder
 app.use(express.static(path.join(__dirname, '../dist')));
 
@@ -192,6 +185,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
-app.listen(PORT, () => {
+// Binding to 0.0.0.0 is often required for cloud platforms like Railway
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server SaaS active on port ${PORT}`);
 });
