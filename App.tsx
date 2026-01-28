@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { supabase } from './lib/supabase';
 
@@ -14,7 +14,7 @@ import Branches from './screens/Branches';
 import Settings from './screens/Settings';
 import Login from './screens/auth/Login';
 import SignUp from './screens/auth/SignUp';
-import AuthCallback from './screens/auth/AuthCallback'; // Nueva ruta
+import AuthCallback from './screens/auth/AuthCallback';
 
 // Components
 import Layout from './components/Layout';
@@ -36,7 +36,9 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
   useEffect(() => {
     const runOnboarding = async () => {
-      if (user && !tenantUser && !loading) {
+      // Solo si el usuario está autenticado en Auth pero no existe en public.users
+      if (user && !tenantUser && !loading && !onboarding) {
+        console.log('🚀 Triggering Onboarding...');
         setOnboarding(true);
         const { data: { session } } = await supabase.auth.getSession();
         
@@ -50,10 +52,13 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
           });
           
           if (res.ok) {
+            console.log('✅ Onboarding success');
             await refreshContext();
+          } else {
+            console.error('❌ Onboarding failed endpoint status:', res.status);
           }
         } catch (e) {
-          console.error("Onboarding endpoint call failed", e);
+          console.error("❌ Onboarding network error:", e);
         } finally {
           setOnboarding(false);
         }
@@ -62,7 +67,7 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     runOnboarding();
   }, [user, tenantUser, loading]);
 
-  if (loading || onboarding) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-6">
@@ -73,8 +78,22 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     );
   }
 
+  if (onboarding) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-6 text-center">
+          <div className="size-20 bg-primary/10 rounded-[2rem] flex items-center justify-center mb-4">
+             <span className="material-symbols-outlined text-primary text-4xl animate-bounce">cloud_sync</span>
+          </div>
+          <p className="text-white font-display font-black text-xl uppercase tracking-tight">Preparando tu Clínica</p>
+          <p className="text-slate-500 text-sm font-medium italic">Configurando bases de datos multi-tenant...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;
@@ -83,6 +102,7 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 const AppContent: React.FC = () => {
   const { user, settings, setSettings, tenantUser, signOut, loading } = useAuth();
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const location = useLocation();
   
   // Real data state
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -109,16 +129,16 @@ const AppContent: React.FC = () => {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  const isAuthContentNeeded = useLocation().pathname !== '/login' && 
-                             useLocation().pathname !== '/signup' && 
-                             useLocation().pathname !== '/auth/callback';
+  const publicRoutes = ['/login', '/signup', '/auth/callback'];
+  const isPublicRoute = publicRoutes.includes(location.pathname);
 
-  if (user && isAuthContentNeeded && (!tenantUser || !settings)) {
+  // Evitar blank screen si estamos cargando settings tras login exitoso
+  if (user && !isPublicRoute && (!tenantUser || !settings)) {
     return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center">
           <div className="flex flex-col items-center gap-6">
             <div className="size-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-slate-400 font-black uppercase text-[10px] tracking-[0.4em] animate-pulse">Cargando Ajustes...</p>
+            <p className="text-slate-400 font-black uppercase text-[10px] tracking-[0.4em] animate-pulse">Cargando Ajustes de Clínica...</p>
           </div>
         </div>
     );
@@ -172,6 +192,7 @@ const AppContent: React.FC = () => {
                     setBranches={setBranches} 
                   />
                 } />
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} patients={patients} setPatients={setPatients} />}
             </Layout>
