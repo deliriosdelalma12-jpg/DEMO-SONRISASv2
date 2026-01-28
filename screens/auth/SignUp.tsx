@@ -32,12 +32,6 @@ const SignUp: React.FC = () => {
       console.log("[SIGNUP_ATTEMPT]", { email: formData.email });
       const origin = window.location.origin;
 
-      const env = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
-      const baseUrl = env.VITE_SUPABASE_URL || 'https://nylfetawfgvmawagdpir.supabase.co';
-      
-      console.group('📡 [SIGNUP_NETWORK_DEBUG]');
-      console.log('Request URL:', `${baseUrl}/auth/v1/signup`);
-
       const { data, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
@@ -54,9 +48,8 @@ const SignUp: React.FC = () => {
       console.log("[SIGNUP_RESULT]", { data, error: authError });
 
       if (authError) {
-        // Manejo específico del error detectado en los logs (504 / Retryable)
         if (authError.message.includes('fetch') || authError.name === 'AuthRetryableFetchError') {
-          setError('El servidor de correo de Supabase está tardando demasiado. Por favor, espera 30 segundos e inténtalo de nuevo.');
+          setError('El servidor de correo está tardando demasiado. Espera un momento e inténtalo de nuevo.');
         } else {
           setError(authError.message);
         }
@@ -76,7 +69,7 @@ const SignUp: React.FC = () => {
         return;
       }
 
-      window.location.href = "/#/dashboard";
+      navigate('/dashboard');
     } catch (e: any) {
       console.error("[SIGNUP_EXCEPTION]", e);
       if (e.message?.includes('504')) {
@@ -85,8 +78,6 @@ const SignUp: React.FC = () => {
         setError("Error inesperado de red. Revisa tu conexión.");
       }
       setLoading(false);
-    } finally {
-      console.groupEnd();
     }
   };
 
@@ -115,7 +106,7 @@ const SignUp: React.FC = () => {
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center animate-shake">
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center">
             {error}
           </div>
         )}

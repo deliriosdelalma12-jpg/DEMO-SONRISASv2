@@ -42,7 +42,6 @@ const Login: React.FC = () => {
         return;
       }
 
-      // Bloque 5: Bloqueo si email no confirmado
       const user = data.user;
       if (!user?.email_confirmed_at) {
         console.warn("[LOGIN_BLOCKED] Email not confirmed");
@@ -53,7 +52,7 @@ const Login: React.FC = () => {
       }
 
       console.log("[LOGIN_SUCCESS] Redirecting...");
-      window.location.href = "/#/dashboard";
+      navigate('/dashboard');
     } catch (err) {
       console.error("[LOGIN_EXCEPTION]", err);
       setError("Error inesperado al iniciar sesión. Revisa consola.");

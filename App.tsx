@@ -1,8 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { supabase } from './lib/supabase';
 
 // Screens
 import Dashboard from './screens/Dashboard';
@@ -25,7 +24,7 @@ export const COLOR_TEMPLATES: ColorTemplate[] = [
   { id: 'ocean', name: 'Océano', primary: '#3b82f6', dark: '#1d4ed8', light: '#dbeafe' },
   { id: 'emerald', name: 'Esmeralda', primary: '#10b981', dark: '#047857', light: '#d1fae5' },
   { id: 'amethyst', name: 'Amatista', primary: '#8b5cf6', dark: '#6d28d9', light: '#ede9fe' },
-  { id: 'sunset', name: 'Atardecer', primary: '#f59e0b', dark: '#d97706', light: '#fef3c7' },
+  { id: 'sunset', name: 'Atardecer', primary: '#f59e0b', dark: '#1d4ed8', light: '#fef3c7' },
   { id: 'coal', name: 'Carbón', primary: '#475569', dark: '#1e293b', light: '#f1f5f9' },
 ];
 
@@ -49,7 +48,7 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 };
 
 const AppContent: React.FC = () => {
-  const { user, settings, setSettings, tenantUser, signOut, loading } = useAuth();
+  const { user, settings, setSettings, tenantUser, signOut, loading: authLoading } = useAuth();
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const location = useLocation();
   
@@ -77,9 +76,10 @@ const AppContent: React.FC = () => {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  // Bloque 4: Rutas públicas críticas
-  const publicRoutes = ['/login', '/signup', '/auth/callback'];
-  if (publicRoutes.includes(location.pathname)) {
+  // Rutas públicas que no requieren el Layout principal
+  const isPublicRoute = ['/login', '/signup', '/auth/callback'].includes(location.pathname);
+
+  if (isPublicRoute) {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -116,7 +116,7 @@ const AppContent: React.FC = () => {
       ) : (
         <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
             <div className="size-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Cargando Entorno Clínico...</p>
+            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Sincronizando Entorno Clínico...</p>
         </div>
       )}
     </PrivateRoute>
@@ -125,11 +125,11 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <AuthProvider>
         <AppContent />
       </AuthProvider>
-    </HashRouter>
+    </BrowserRouter>
   );
 };
 

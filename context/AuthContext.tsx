@@ -24,11 +24,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchTenantContext = async (sessionUser: any) => {
     if (!sessionUser) return;
     try {
-      const { data: profile } = await supabase.from('users').select('*').eq('id', sessionUser.id).maybeSingle();
+      console.log("🔍 [AUTH_CONTEXT] Buscando perfil para:", sessionUser.id);
+      const { data: profile, error: pErr } = await supabase.from('users').select('*').eq('id', sessionUser.id).maybeSingle();
+      
+      if (pErr) throw pErr;
+
       if (profile) {
         setTenantUser(profile);
-        const { data: sData } = await supabase.from('tenant_settings').select('settings').eq('clinic_id', profile.clinic_id).maybeSingle();
-        if (sData) setSettings(sData.settings);
+        const { data: sData, error: sErr } = await supabase.from('tenant_settings').select('settings').eq('clinic_id', profile.clinic_id).maybeSingle();
+        if (sErr) throw sErr;
+        if (sData) {
+          setSettings(sData.settings);
+          console.log("✅ [AUTH_CONTEXT] Contexto cargado con éxito.");
+        }
+      } else {
+        console.warn("⚠️ [AUTH_CONTEXT] El usuario auth existe pero no tiene perfil en public.users. ¿Onboarding pendiente?");
       }
     } catch (e) {
       console.error("❌ Error contexto SaaS:", e);
@@ -36,7 +46,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Bloque 6: Escucha de sesión real
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null;
       setUser(u);
@@ -69,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    window.location.href = '/#/login';
+    window.location.href = '/login';
   };
 
   return (
