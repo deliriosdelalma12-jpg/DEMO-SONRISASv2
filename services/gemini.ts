@@ -1,6 +1,23 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
 
+/**
+ * Safely retrieves environment variables in browser environment.
+ */
+const getApiKey = (): string => {
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  try {
+    // @ts-ignore
+    if (import.meta && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+      // @ts-ignore
+      return import.meta.env.VITE_GEMINI_API_KEY;
+    }
+  } catch (e) {}
+  return '';
+};
+
 export const decodeBase64 = (base64: string): Uint8Array => {
   try {
     const binaryString = atob(base64);
@@ -37,7 +54,8 @@ export const decodeAudioDataToBuffer = async (
 
 export const speakText = async (text: string, voiceName: string, config?: { pitch?: number, speed?: number }) => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = getApiKey();
+    const ai = new GoogleGenAI({ apiKey });
     
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
@@ -78,7 +96,8 @@ export const speakText = async (text: string, voiceName: string, config?: { pitc
 };
 
 export async function* streamChatResponse(message: string) {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContentStream({
     model: 'gemini-3-flash-preview',
     contents: message,
@@ -95,7 +114,8 @@ export async function* streamChatResponse(message: string) {
 }
 
 export const generatePersonalityPrompt = async (tags: string[], name: string, clinic: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  const ai = new GoogleGenAI({ apiKey });
   const prompt = `Escribe instrucciones de sistema CRÍTICAS Y BREVES para un asistente de voz clínico llamado ${name} para la clínica ${clinic}. 
   Usa estas etiquetas de comportamiento: ${tags.join(', ')}. 
   REGLA DE ORO: Responde siempre con menos de 10 palabras. Prohibido saludar en cada turno.`;
