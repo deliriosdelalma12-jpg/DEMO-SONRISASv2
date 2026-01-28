@@ -24,7 +24,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchTenantContext = async (sessionUser: any) => {
     if (!sessionUser) return;
     try {
-      console.log("🔍 [AUTH] Cargando contexto para:", sessionUser.id);
+      console.log("🔍 [AUTH_CONTEXT] Cargando contexto para:", sessionUser.id);
       
       const { data: profile, error: pErr } = await supabase
         .from('users')
@@ -45,12 +45,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (sData) setSettings(sData.settings);
       }
     } catch (e) {
-      console.error("❌ [AUTH] Error contexto:", e);
+      console.error("❌ [AUTH_CONTEXT] Error contexto:", e);
     }
   };
 
   useEffect(() => {
-    // Si estamos en callback, dejamos que la pantalla de callback maneje la sesión
+    // BLOQUE 1: Ceder control total si estamos en la ruta de callback
     const isCallback = window.location.pathname === '/auth/callback';
     
     if (!isCallback) {
@@ -62,6 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
         .finally(() => setLoading(false));
     } else {
+      console.log("🚥 [AUTH_CONTEXT] Ruta de callback activa. Standby...");
       setLoading(false);
     }
 
@@ -83,6 +84,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const refreshContext = async () => {
+    console.log("♻️ [AUTH_CONTEXT] Refrescando contexto global...");
     const { data: { user: sessionUser } } = await supabase.auth.getUser();
     if (sessionUser) await fetchTenantContext(sessionUser);
   };

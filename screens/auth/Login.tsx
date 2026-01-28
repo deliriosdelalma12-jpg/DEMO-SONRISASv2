@@ -37,25 +37,27 @@ const Login: React.FC = () => {
       console.log("[LOGIN_RESULT]", { data, error: authError });
 
       if (authError) {
-        setError(authError.message);
+        // BLOQUE 5: Detección de email no confirmado
+        const msg = authError.message.toLowerCase();
+        if (msg.includes("email") && (msg.includes("confirm") || msg.includes("verified"))) {
+          setError("Debes confirmar tu correo antes de iniciar sesión. Por favor, revisa tu bandeja de entrada.");
+        } else {
+          setError(authError.message);
+        }
         setLoading(false);
         return;
       }
 
-      const user = data.user;
-      if (!user?.email_confirmed_at) {
-        console.warn("[LOGIN_BLOCKED] Email not confirmed");
-        await supabase.auth.signOut();
-        setError("Debes confirmar tu correo antes de iniciar sesión. Revisa tu bandeja de entrada y spam.");
+      if (!data.session) {
+        setError("Acceso bloqueado: sesión no iniciada.");
         setLoading(false);
         return;
       }
 
-      console.log("[LOGIN_SUCCESS] Redirecting...");
       navigate('/dashboard');
-    } catch (err) {
-      console.error("[LOGIN_EXCEPTION]", err);
-      setError("Error inesperado al iniciar sesión. Revisa consola.");
+    } catch (err: any) {
+      console.error("[LOGIN_FATAL]", err);
+      setError("Error inesperado en el acceso. Revisa la consola.");
       setLoading(false);
     }
   };

@@ -26,17 +26,17 @@ const SignUp: React.FC = () => {
 
     setLoading(true);
     setError('');
-    setMessage('');
 
     try {
-      console.log("[SIGNUP_ATTEMPT]", { email: formData.email });
-      const origin = window.location.origin;
+      // BLOQUE 2: redirectTo exacto y estable
+      const EMAIL_REDIRECT_TO = `${window.location.origin}/auth/callback`;
+      console.log("[SIGNUP_ATTEMPT]", { email: formData.email, redirectTo: EMAIL_REDIRECT_TO });
 
       const { data, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
         options: {
-          emailRedirectTo: `${origin}/auth/callback`,
+          emailRedirectTo: EMAIL_REDIRECT_TO,
           data: {
             clinic_name: formData.clinicName.trim(),
             full_name: formData.fullName.trim(),
@@ -48,31 +48,21 @@ const SignUp: React.FC = () => {
       console.log("[SIGNUP_RESULT]", { data, error: authError });
 
       if (authError) {
-        // DETECCIÓN ESPECÍFICA DE ERROR DE SMTP (HOSTINGER/SUPABASE CONFIG)
-        if (authError.status === 500 || authError.message.toLowerCase().includes('email')) {
-          setError('Error en el servidor de correos (SMTP). Verifica la configuración de Hostinger en el panel de Supabase. El host debe ser smtp.hostinger.com y el puerto 465.');
-        } else if (authError.message.includes('rate limit')) {
-          setError('Has excedido el límite de correos de Supabase (3/hora). Por favor, espera una hora o termina de configurar tu SMTP propio.');
-        } else {
-          setError(authError.message);
-        }
+        setError(authError.message);
         setLoading(false);
         return;
       }
 
-      if (!data.user?.id) {
-         setError('El servidor no devolvió una respuesta válida. Revisa si ya existe una cuenta con este email.');
-         setLoading(false);
-         return;
+      if (data.user) {
+        setMessage("¡Registro con éxito! Te hemos enviado un correo para confirmar tu cuenta. Por favor, revisa tu bandeja de entrada y spam.");
+      } else {
+        setError("El servidor no pudo procesar la creación del usuario.");
       }
 
-      // Si llegamos aquí sin error, el usuario se ha creado en Auth pero el envío del mail es el que puede fallar
-      setMessage("¡Registro iniciado! Te hemos enviado un correo para confirmar tu cuenta. Si no te llega en 1 minuto, revisa tu configuración de SMTP en Supabase.");
-      setLoading(false);
-
     } catch (e: any) {
-      console.error("[SIGNUP_EXCEPTION]", e);
-      setError("Fallo crítico de conexión. Revisa los logs de consola.");
+      console.error("[SIGNUP_FATAL]", e);
+      setError("Fallo crítico de conexión al servidor de autenticación.");
+    } finally {
       setLoading(false);
     }
   };

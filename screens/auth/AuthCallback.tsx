@@ -1,85 +1,62 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 
 const AuthCallback: React.FC = () => {
   const { refreshContext } = useAuth();
+  const [msg, setMsg] = useState("Iniciando validación de seguridad...");
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState("Iniciando validación...");
   const [logs, setLogs] = useState<string[]>([]);
-  const hasProcessed = useRef(false);
 
-  const addLog = (msg: string) => {
-    console.log(`[CALLBACK]: ${msg}`);
-    setLogs(prev => [...prev, `${new Date().toLocaleTimeString().split(' ')[0]} - ${msg}`]);
+  const addLog = (m: string) => {
+    console.log(`[AUTH_CALLBACK] ${m}`);
+    setLogs(prev => [...prev, `${new Date().toLocaleTimeString().split(' ')[0]} - ${m}`]);
   };
 
   useEffect(() => {
+    let cancelled = false;
+
     const runAuthFlow = async () => {
-      if (hasProcessed.current) return;
-      hasProcessed.current = true;
-
       try {
-        addLog("Buscando sesión existente...");
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-
-        if (currentSession) {
-          addLog("Sesión activa recuperada. Sincronizando...");
-          await completeOnboarding(currentSession.access_token);
-          return;
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get('code');
-
-        if (!code) {
-          addLog("No se encontró código en la URL.");
-          setError("El enlace de activación no es válido.");
-          return;
-        }
-
-        setStatus("Validando identidad...");
-        addLog("Intercambiando código por sesión...");
+        addLog("Detectando parámetros en URL...");
+        const url = window.location.href;
         
-        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        // BLOQUE 3: Intercambio manual de código por sesión
+        setMsg("Validando identidad con la nube...");
+        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(url);
+
+        if (cancelled) return;
 
         if (exchangeError) {
-          addLog(`Error de intercambio: ${exchangeError.message}`);
-          // Re-chequeo por si el intercambio ocurrió en segundo plano
-          const { data: { session: retrySession } } = await supabase.auth.getSession();
-          if (retrySession) {
-            addLog("Sesión detectada tras error (concurrencia).");
-            await completeOnboarding(retrySession.access_token);
+          addLog(`Error en intercambio: ${exchangeError.message}`);
+          // Si ya hay sesión, ignoramos el error (doble ejecución)
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            addLog("Sesión ya activa. Procediendo a sincronización...");
+            await ensureOnboarding(session.access_token);
             return;
           }
           throw exchangeError;
         }
 
-        if (data.session) {
-          addLog("Intercambio exitoso.");
-          await completeOnboarding(data.session.access_token);
+        if (data?.session) {
+          addLog("Sesión establecida correctamente.");
+          await ensureOnboarding(data.session.access_token);
         } else {
-          throw new Error("No se pudo establecer la sesión segura.");
+          throw new Error("No se pudo recuperar la sesión de usuario.");
         }
 
       } catch (err: any) {
-        if (err.name === 'AbortError') {
-          addLog("Petición interrumpida por el sistema. Reintentando sesión...");
-          const { data: { session: lastTry } } = await supabase.auth.getSession();
-          if (lastTry) {
-            await completeOnboarding(lastTry.access_token);
-            return;
-          }
-        }
-        addLog(`Fallo: ${err.message}`);
+        if (cancelled) return;
+        addLog(`FALLO CRÍTICO: ${err.message}`);
         setError(err.message);
       }
     };
 
-    const completeOnboarding = async (token: string) => {
-      setStatus("Sincronizando clínica...");
-      addLog("Llamando a API de Onboarding...");
+    const ensureOnboarding = async (token: string) => {
+      setMsg("Preparando tu entorno clínico...");
+      addLog("Llamando a MediClinic Onboarding API...");
       
       try {
         const response = await fetch('/api/onboarding/ensure', {
@@ -92,23 +69,27 @@ const AuthCallback: React.FC = () => {
 
         if (!response.ok) {
           const res = await response.json();
-          throw new Error(res.error || "Error en servidor");
+          throw new Error(res.error || "Error de comunicación con el servidor");
         }
 
-        addLog("Onboarding completado.");
-        setStatus("Actualizando perfiles...");
+        addLog("Onboarding finalizado con éxito.");
+        setMsg("Sincronizando perfiles...");
+        
+        // Actualizar el contexto global antes de irse
         await refreshContext();
         
-        addLog("Todo listo. Redirigiendo...");
-        // Redirección forzada para limpiar la URL
+        addLog("Todo listo. Redirigiendo al Dashboard...");
+        // Usamos path directo ya que server/index.js maneja SPA
         window.location.replace('/dashboard');
       } catch (e: any) {
-        addLog(`Error Onboarding: ${e.message}`);
+        if (cancelled) return;
+        addLog(`Error en Onboarding: ${e.message}`);
         setError(e.message);
       }
     };
 
     runAuthFlow();
+    return () => { cancelled = true; };
   }, [refreshContext]);
 
   return (
@@ -117,11 +98,11 @@ const AuthCallback: React.FC = () => {
         {!error ? (
           <>
             <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8"></div>
-            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-2">Sincronizando...</h1>
-            <p className="text-primary font-bold text-xs uppercase tracking-widest mb-10">{status}</p>
+            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-2">Validando Acceso</h1>
+            <p className="text-primary font-bold text-xs uppercase tracking-widest mb-10 animate-pulse">{msg}</p>
             
             <div className="bg-black/40 rounded-2xl p-6 text-left font-mono text-[10px] text-emerald-500 space-y-1 h-48 overflow-y-auto border border-white/5 custom-scrollbar">
-                <p className="text-slate-500 font-bold mb-2 uppercase tracking-widest border-b border-white/5 pb-2">Consola de Estado:</p>
+                <p className="text-slate-500 font-bold mb-2 uppercase tracking-widest border-b border-white/5 pb-2">Diagnóstico de Sistema:</p>
                 {logs.map((log, i) => <p key={i} className="animate-in fade-in slide-in-from-left-2">{log}</p>)}
                 <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth' })}></div>
             </div>
@@ -139,7 +120,7 @@ const AuthCallback: React.FC = () => {
           </>
         )}
       </div>
-      <p className="mt-8 text-slate-600 text-[10px] font-black uppercase tracking-[0.3em]">MediClinic Cloud SaaS Infrastructure</p>
+      <p className="mt-8 text-slate-600 text-[10px] font-black uppercase tracking-[0.3em]">MediClinic Cloud Infrastructure</p>
     </div>
   );
 };
