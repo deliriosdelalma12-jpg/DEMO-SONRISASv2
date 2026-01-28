@@ -30,39 +30,8 @@ export const COLOR_TEMPLATES: ColorTemplate[] = [
 ];
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, tenantUser, loading, refreshContext } = useAuth();
-  const [onboarding, setOnboarding] = useState(false);
+  const { user, loading } = useAuth();
   const location = useLocation();
-
-  useEffect(() => {
-    const runOnboarding = async () => {
-      if (user && !tenantUser && !loading && !onboarding) {
-        console.log('🚀 [ONBOARDING_TRIGGER] Preparando datos de clínica...');
-        setOnboarding(true);
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        try {
-          const res = await fetch('/api/onboarding/ensure', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session?.access_token}` 
-            }
-          });
-          
-          if (res.ok) {
-            console.log('✅ [ONBOARDING_SUCCESS]');
-            await refreshContext();
-          }
-        } catch (e) {
-          console.error("❌ Onboarding failed:", e);
-        } finally {
-          setOnboarding(false);
-        }
-      }
-    };
-    runOnboarding();
-  }, [user, tenantUser, loading, onboarding, refreshContext]);
 
   if (loading) {
     return (
@@ -74,18 +43,6 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
-  if (onboarding) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center p-8">
-        <div className="size-20 bg-primary/10 rounded-[2rem] flex items-center justify-center mb-6">
-           <span className="material-symbols-outlined text-primary text-4xl animate-bounce">cloud_sync</span>
-        </div>
-        <p className="text-white font-display font-black text-xl uppercase tracking-widest">Preparando tu Espacio</p>
-        <p className="text-slate-500 text-sm mt-2 italic">Configurando bases de datos multi-tenant...</p>
-      </div>
-    );
   }
 
   return <>{children}</>;
@@ -120,11 +77,9 @@ const AppContent: React.FC = () => {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
+  // Bloque 4: Rutas públicas críticas
   const publicRoutes = ['/login', '/signup', '/auth/callback'];
-  const isPublicRoute = publicRoutes.includes(location.pathname);
-
-  // 1. Si es una ruta pública, renderizamos sin Layout
-  if (isPublicRoute) {
+  if (publicRoutes.includes(location.pathname)) {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -134,20 +89,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 2. Si hay un usuario pero los datos del tenant aún no están listos, mostramos loader preventivo
-  if (user && (!tenantUser || !settings)) {
-    return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-             <div className="size-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sincronizando Core...</p>
-          </div>
-        </div>
-    );
-  }
-
-  // 3. Solo renderizamos el bloque de Layout si tenemos settings y tenantUser garantizados
-  // Si user es null, PrivateRoute se encargará de redirigir, pero aquí evitamos el crash de Layout.
   return (
     <PrivateRoute>
       {tenantUser && settings ? (
@@ -160,38 +101,22 @@ const AppContent: React.FC = () => {
           onSignOut={signOut}
         >
           <Routes>
-            <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={tenantUser} systemUsers={[tenantUser]} />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={tenantUser} systemUsers={[tenantUser]} />} />
             <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} globalSchedule={settings.globalSchedule || {}} settings={settings} />} />
             <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={tenantUser} team={doctors} />} />
             <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} branches={branches} patients={patients} clinicSettings={settings} setAppointments={setAppointments} />} />
             <Route path="/branches" element={<Branches branches={branches} setBranches={setBranches} doctors={doctors} setDoctors={setDoctors} appointments={appointments} />} />
             <Route path="/metrics" element={<Metrics appointments={appointments} doctors={doctors} patients={patients} settings={settings} branches={branches} />} />
-            <Route path="/settings" element={
-              <Settings 
-                settings={settings} 
-                setSettings={(newS: any) => {
-                  setSettings(newS);
-                  supabase.from('tenant_settings').upsert({ clinic_id: tenantUser.clinic_id, settings: newS });
-                }} 
-                onToggleTheme={() => setDarkMode(!darkMode)} 
-                darkMode={darkMode} 
-                systemUsers={[tenantUser]} 
-                setSystemUsers={() => {}} 
-                doctors={doctors} 
-                setDoctors={setDoctors} 
-                patients={patients} 
-                setPatients={setPatients} 
-                branches={branches} 
-                setBranches={setBranches} 
-              />
-            } />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/settings" element={<Settings settings={settings} setSettings={setSettings} onToggleTheme={() => setDarkMode(!darkMode)} darkMode={darkMode} systemUsers={[tenantUser]} setSystemUsers={() => {}} doctors={doctors} setDoctors={setDoctors} patients={patients} setPatients={setPatients} branches={branches} setBranches={setBranches} />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
           {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} patients={patients} setPatients={setPatients} />}
         </Layout>
       ) : (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-            <div className="size-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+            <div className="size-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Cargando Entorno Clínico...</p>
         </div>
       )}
     </PrivateRoute>

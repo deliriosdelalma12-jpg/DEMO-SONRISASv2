@@ -23,53 +23,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchTenantContext = async (sessionUser: any) => {
     if (!sessionUser) return;
-    
-    console.log('🔄 [AUTH_INIT] Cargando contexto para:', sessionUser.id);
     try {
-      const { data: profile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', sessionUser.id)
-        .maybeSingle();
-
+      const { data: profile } = await supabase.from('users').select('*').eq('id', sessionUser.id).maybeSingle();
       if (profile) {
         setTenantUser(profile);
-        const { data: sData } = await supabase
-          .from('tenant_settings')
-          .select('settings')
-          .eq('clinic_id', profile.clinic_id)
-          .maybeSingle();
-
+        const { data: sData } = await supabase.from('tenant_settings').select('settings').eq('clinic_id', profile.clinic_id).maybeSingle();
         if (sData) setSettings(sData.settings);
       }
     } catch (e) {
-      console.error("❌ Error al cargar contexto SaaS:", e);
+      console.error("❌ Error contexto SaaS:", e);
     }
   };
 
   useEffect(() => {
-    // 1. Carga inicial
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        await fetchTenantContext(session.user);
-      }
+    // Bloque 6: Escucha de sesión real
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) fetchTenantContext(u);
       setLoading(false);
-    };
-    init();
+    });
 
-    // 2. Escucha de cambios de estado (Login, Logout, Token Refreshed)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('🔔 [AUTH_EVENT]:', event);
+      const u = session?.user ?? null;
+      setUser(u);
       
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        const u = session?.user ?? null;
-        setUser(u);
         if (u) await fetchTenantContext(u);
         setLoading(false);
       } else if (event === 'SIGNED_OUT') {
-        setUser(null);
         setTenantUser(null);
         setSettings(null);
         setLoading(false);
@@ -85,7 +68,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    console.log('🚪 [LOGOUT_INIT]');
     await supabase.auth.signOut();
     window.location.href = '/#/login';
   };

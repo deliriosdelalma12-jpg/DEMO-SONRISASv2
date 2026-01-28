@@ -15,12 +15,8 @@ const Login: React.FC = () => {
   useEffect(() => {
     if (location.state?.message) setInfo(location.state.message);
     
-    // Auto-redirección si ya hay sesión
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        console.log('✅ [SESSION_READY]: Redirigiendo desde Login.');
-        navigate('/');
-      }
+      if (session) navigate('/dashboard');
     });
   }, [location, navigate]);
 
@@ -30,36 +26,38 @@ const Login: React.FC = () => {
     setError('');
     setInfo('');
 
-    console.group('🔑 [LOGIN_ATTEMPT]');
-    console.log('User:', email);
-
     try {
+      console.log("[LOGIN_ATTEMPT]", { email });
+
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
+      console.log("[LOGIN_RESULT]", { data, error: authError });
+
       if (authError) {
-        console.warn('❌ [LOGIN_FAILED]:', authError.message);
-        
-        // Detectar específicamente el error de confirmación de email
-        if (authError.message.toLowerCase().includes('email not confirmed')) {
-          setError('Tu correo aún no está verificado. Revisa tu bandeja de entrada o solicita un nuevo enlace.');
-        } else if (authError.message.toLowerCase().includes('invalid login credentials')) {
-          setError('Credenciales incorrectas. Verifica tu email y contraseña.');
-        } else {
-          setError(authError.message);
-        }
-      } else if (data.session) {
-        console.log('✅ [LOGIN_SUCCESS]: Bienvenido de nuevo.');
-        navigate('/');
+        setError(authError.message);
+        setLoading(false);
+        return;
       }
+
+      // Bloque 5: Bloqueo si email no confirmado
+      const user = data.user;
+      if (!user?.email_confirmed_at) {
+        console.warn("[LOGIN_BLOCKED] Email not confirmed");
+        await supabase.auth.signOut();
+        setError("Debes confirmar tu correo antes de iniciar sesión. Revisa tu bandeja de entrada y spam.");
+        setLoading(false);
+        return;
+      }
+
+      console.log("[LOGIN_SUCCESS] Redirecting...");
+      window.location.href = "/#/dashboard";
     } catch (err) {
-      console.error('🔥 [CRITICAL_LOGIN_ERROR]:', err);
-      setError('Fallo de conexión con el servidor de identidad.');
-    } finally {
+      console.error("[LOGIN_EXCEPTION]", err);
+      setError("Error inesperado al iniciar sesión. Revisa consola.");
       setLoading(false);
-      console.groupEnd();
     }
   };
 
@@ -76,58 +74,26 @@ const Login: React.FC = () => {
           <p className="text-slate-400 text-sm mt-2 font-medium">Gestión Profesional Unificada</p>
         </div>
 
-        {info && (
-          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-xs font-bold text-center">
-            {info}
-          </div>
-        )}
-
-        {error && (
-          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center">
-            {error}
-          </div>
-        )}
+        {info && <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-xs font-bold text-center">{info}</div>}
+        {error && <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center">{error}</div>}
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email Profesional</label>
-            <input 
-              type="email" required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none"
-              placeholder="ejemplo@clinicamedica.com"
-            />
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none" placeholder="ejemplo@clinica.com" />
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Contraseña</label>
-            <input 
-              type="password" required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none"
-              placeholder="••••••••"
-            />
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={loading} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none" placeholder="••••••••" />
           </div>
           
-          <button 
-            type="submit" disabled={loading}
-            className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
-          >
-            {loading ? (
-              <>
-                <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                Autenticando...
-              </>
-            ) : 'Entrar al Sistema'}
+          <button type="submit" disabled={loading} className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3">
+            {loading ? <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : null}
+            {loading ? 'Validando...' : 'Entrar al Sistema'}
           </button>
         </form>
 
-        <p className="text-center mt-8 text-slate-500 text-xs font-medium">
-          ¿No tienes cuenta? <Link to="/signup" className="text-primary font-black hover:underline">Regístrate ahora</Link>
-        </p>
+        <p className="text-center mt-8 text-slate-500 text-xs font-medium">¿No tienes cuenta? <Link to="/signup" className="text-primary font-black hover:underline">Regístrate ahora</Link></p>
       </div>
     </div>
   );

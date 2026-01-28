@@ -8,49 +8,29 @@ const AuthCallback: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const handleAuthCallback = async () => {
-      console.group('🔄 [CALLBACK_PROCESSING]');
-      
+    const run = async () => {
+      console.log("[AUTH_CALLBACK] start", window.location.href);
       try {
-        // En un entorno de SPA, el código puede estar en la URL real antes de que actúe el Router
-        const currentUrl = window.location.href;
-        console.log('🔗 URL de entrada:', currentUrl);
+        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(window.location.href);
 
-        const url = new URL(currentUrl);
-        const code = url.searchParams.get('code');
+        console.log("[AUTH_CALLBACK_RESULT]", { data, error: exchangeError });
 
-        if (code) {
-          console.log('📡 Código PKCE detectado. Intercambiando por sesión...');
-          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-          
-          if (exchangeError) {
-            console.error('❌ [EXCHANGE_ERROR]:', exchangeError.message);
-            throw exchangeError;
-          }
-
-          console.log('✅ [SESSION_READY]: Sesión autenticada para:', data.user?.email);
-          navigate('/', { replace: true });
-        } else {
-          // Si no hay código, verificamos si ya existe una sesión activa (por persistencia)
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) {
-            console.log('✅ [SESSION_FOUND]: Sesión persistente detectada.');
-            navigate('/', { replace: true });
-          } else {
-            console.warn('⚠️ [NO_CODE_FOUND]: La URL no contenía código de intercambio.');
-            setError('No se pudo encontrar un código de confirmación válido. El enlace puede haber expirado.');
-          }
+        if (exchangeError) {
+          setError(exchangeError.message);
+          return;
         }
+
+        // Bloque 3: Sesión establecida -> ir a dashboard
+        // Usamos window.location para asegurar limpieza total de parámetros de URL
+        window.location.href = "/#/dashboard";
       } catch (err: any) {
-        console.error('❌ [CALLBACK_CRASH]:', err.message);
-        setError(err.message || 'Fallo crítico al procesar la confirmación.');
-      } finally {
-        console.groupEnd();
+        console.error("[AUTH_CALLBACK_EXCEPTION]", err);
+        setError("Fallo crítico en el intercambio de sesión.");
       }
     };
 
-    handleAuthCallback();
-  }, [navigate]);
+    run();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
@@ -58,22 +38,17 @@ const AuthCallback: React.FC = () => {
         {!error ? (
           <>
             <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8"></div>
-            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-4">Sincronizando</h1>
-            <p className="text-slate-400 font-medium italic">Estableciendo conexión segura con Mediclinic Cloud...</p>
+            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-4">Validando sesión</h1>
+            <p className="text-slate-400 font-medium italic">Espera un momento mientras activamos tu cuenta...</p>
           </>
         ) : (
           <>
             <div className="size-20 bg-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-8">
               <span className="material-symbols-outlined text-5xl">error</span>
             </div>
-            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-4">Error de Acceso</h1>
+            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-4">Error de Activación</h1>
             <p className="text-rose-500 font-bold mb-8 leading-relaxed">{error}</p>
-            <button 
-              onClick={() => navigate('/login')}
-              className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-lg"
-            >
-              Volver al Login
-            </button>
+            <button onClick={() => navigate('/login')} className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-lg">Volver al Login</button>
           </>
         )}
       </div>
