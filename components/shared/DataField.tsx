@@ -7,7 +7,6 @@ export const DataField = ({ label, value, onChange, type = "text", options = [],
     const val = e.target.value;
     
     if (type === 'number') {
-      // Permitir cadena vacía para que el usuario pueda borrar todo
       if (val === '') {
         onChange(''); 
       } else {

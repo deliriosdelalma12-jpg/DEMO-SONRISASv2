@@ -1,9 +1,6 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
 
-/**
- * Decodifica una cadena Base64 a Uint8Array de forma segura.
- */
 export const decodeBase64 = (base64: string): Uint8Array => {
   try {
     const binaryString = atob(base64);
@@ -19,16 +16,12 @@ export const decodeBase64 = (base64: string): Uint8Array => {
   }
 };
 
-/**
- * Convierte datos PCM raw (Int16) a un AudioBuffer (Float32).
- */
 export const decodeAudioDataToBuffer = async (
   data: Uint8Array,
   ctx: AudioContext,
   sampleRate: number = 24000,
   numChannels: number = 1
 ): Promise<AudioBuffer> => {
-  // Alineación precisa del buffer para evitar el error de "Audio no disponible" o recortes
   const dataInt16 = new Int16Array(data.buffer, data.byteOffset, data.byteLength / 2);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
@@ -42,9 +35,6 @@ export const decodeAudioDataToBuffer = async (
   return buffer;
 };
 
-/**
- * Genera audio TTS respetando estrictamente la configuración de voz y personalidad.
- */
 export const speakText = async (text: string, voiceName: string, config?: { pitch?: number, speed?: number }) => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -64,7 +54,6 @@ export const speakText = async (text: string, voiceName: string, config?: { pitc
       },
     });
 
-    // Búsqueda exhaustiva de la parte de audio en la respuesta
     const candidates = response.candidates || [];
     let base64Audio = '';
     
@@ -88,9 +77,6 @@ export const speakText = async (text: string, voiceName: string, config?: { pitc
   }
 };
 
-/**
- * Genera una respuesta de chat en streaming.
- */
 export async function* streamChatResponse(message: string) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContentStream({
@@ -108,9 +94,6 @@ export async function* streamChatResponse(message: string) {
   }
 }
 
-/**
- * Genera un prompt de personalidad maestro optimizado para latencia.
- */
 export const generatePersonalityPrompt = async (tags: string[], name: string, clinic: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const prompt = `Escribe instrucciones de sistema CRÍTICAS Y BREVES para un asistente de voz clínico llamado ${name} para la clínica ${clinic}. 

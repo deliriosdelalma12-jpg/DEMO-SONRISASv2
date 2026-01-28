@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Clinic AI Profile Configuration",
+  "type": "object",
+  "properties": {
+    "assistant_name": {
+      "type": "string",
+      "default": "Sara",
+      "description": "Nombre con el que se identifica la IA."
+    },
+    "clinic_display_name": {
+      "type": "string",
+      "description": "Nombre comercial de la clínica."
+    },
+    "language": {
+      "type": "string",
+      "enum": ["es-ES", "es-MX", "en-US", "en-GB"],
+      "default": "es-ES"
+    },
+    "voice": {
+      "type": "string",
+      "default": "default",
+      "description": "Identificador de voz seleccionado para TTS/Live Voice."
+    },
+    "tone": {
+      "type": "string",
+      "enum": ["formal", "cercano"],
+      "default": "cercano"
+    },
+    "escalation_rules": {
+      "type": "object",
+      "properties": {
+        "transfer_number": { "type": "string", "description": "Número al que transferir si se escala." },
+        "escalate_on_frustration": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    },
+    "policy_texts": {
+      "type": "object",
+      "properties": {
+        "cancel_policy": { "type": "string" },
+        "privacy_notice": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "prompt_overrides": {
+      "type": "object",
+      "properties": {
+        "custom_greeting": { "type": "string", "description": "Saludo inicial personalizado." },
+        "custom_farewell": { "type": "string", "description": "Despedida personalizada." }
+      },
+      "additionalProperties": false
+    },
+    "core_version": {
+      "type": "string",
+      "default": "1.0.1",
+      "description": "Versión del core congelado en uso. No debe alterarse por la clínica."
+    },
+    "active": { "type": "boolean", "default": true }
+  },
+  "required": ["assistant_name", "clinic_display_name"],
+  "additionalProperties": false
+}

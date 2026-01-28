@@ -142,9 +142,28 @@ export interface ColorTemplate {
 
 export type VoiceAccent = 'es-ES-Madrid' | 'es-ES-Canarias' | 'es-LATAM' | 'en-GB' | 'en-US';
 
+export interface AiEscalationRules {
+  transfer_number: string;
+  escalate_on_frustration: boolean;
+}
+
+export interface AiPolicyTexts {
+  cancel_policy: string;
+  privacy_notice: string;
+}
+
+export interface AiPromptOverrides {
+  custom_greeting?: string;
+  custom_farewell?: string;
+}
+
 export interface AiPhoneSettings {
-  phoneNumber: string;
   assistantName: string;
+  clinicDisplayName: string;
+  language: string;
+  voice: string;
+  tone: 'formal' | 'cercano';
+  phoneNumber: string;
   aiCompanyName: string;
   initialGreeting: string;
   systemPrompt: string;
@@ -156,7 +175,11 @@ export interface AiPhoneSettings {
   temperature: number;
   accent: VoiceAccent;
   model: string;
-  // --- CORE CONFIGURATION FIELDS ---
+  escalation_rules: AiEscalationRules;
+  policy_texts: AiPolicyTexts;
+  prompt_overrides: AiPromptOverrides;
+  core_version: string;
+  active: boolean;
   aiEmotion: string;
   aiStyle: string;
   aiRelation: string;
@@ -201,6 +224,7 @@ export interface AppointmentPolicy {
 }
 
 export interface ClinicSettings {
+  id: string; 
   name: string;
   businessName: string;
   sector: string; 

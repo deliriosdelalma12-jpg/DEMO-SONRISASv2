@@ -37,11 +37,9 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
 
   return (
     <div className="flex min-h-screen w-full bg-bg-light dark:bg-bg-dark transition-colors duration-300 no-print">
-      {/* SIDEBAR - STICKY */}
       <aside className="w-[260px] border-r border-border-light dark:border-border-dark flex flex-col hidden lg:flex shrink-0 bg-white dark:bg-surface-dark transition-colors h-screen sticky top-0 z-50">
         <div className="p-6 h-20 flex items-center shrink-0">
           <Link to="/" className={`flex items-center gap-3 ${!settings.name ? 'justify-center' : ''} w-full`}>
-            {/* SI EL NOMBRE ESTÁ VACÍO, EL LOGO OCUPA EL ANCHO COMPLETO */}
             <div className={`${settings.name ? 'size-8' : 'w-full h-12 flex justify-center'} text-primary transition-all duration-300`}>
               <img 
                 src={settings.logo} 
@@ -80,11 +78,8 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        {/* HEADER - STICKY */}
         <header className="h-20 border-b border-border-light dark:border-border-dark flex items-center justify-between px-8 bg-white/90 dark:bg-surface-dark/90 backdrop-blur-xl shrink-0 z-40 transition-all no-print sticky top-0">
-          
           <div className="flex-1 flex items-center">
-            {/* RAZÓN SOCIAL EN LA PARTE SUPERIOR */}
             <h1 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] truncate max-w-xs">
               {settings.businessName}
             </h1>
@@ -103,7 +98,6 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
           </div>
 
           <div className="flex items-center gap-6 pl-8 flex-1 justify-end">
-            
             <button 
               onClick={onToggleTheme} 
               className="size-10 flex items-center justify-center rounded-md bg-slate-50 dark:bg-bg-dark text-slate-400 hover:text-primary border border-border-light dark:border-border-dark transition-all"
@@ -141,7 +135,6 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
           </div>
         </header>
 
-        {/* MAIN CONTENT AREA - NATURAL SCROLL */}
         <main className="flex-1 relative bg-bg-light dark:bg-bg-dark transition-colors duration-300">
           {children}
         </main>

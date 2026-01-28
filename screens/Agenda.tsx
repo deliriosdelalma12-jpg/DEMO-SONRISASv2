@@ -153,7 +153,7 @@ const Agenda: React.FC<AgendaProps> = ({ appointments, setAppointments, patients
                 hover:z-10`}
             >
               <div className="flex justify-between items-start mb-6">
-                <span className={`text-4xl font-display font-black leading-none transition-transform group-hover:scale-110 ${isToday ? 'text-primary' : 'text-slate-200 dark:text-slate-800 group-hover:text-slate-900 dark:group-hover:text-white'} ${hasMatches ? 'text-primary scale-110' : ''}`}>{d.day}</span>
+                <span className={`text-4xl font-display font-black leading-none transition-transform group-hover:scale-110 ${isToday ? 'text-primary' : 'text-slate-200 dark:text-slate-700 group-hover:text-slate-900 dark:group-hover:text-white'} ${hasMatches ? 'text-primary scale-110' : ''}`}>{d.day}</span>
                 {dayApts.length > 0 && (
                     <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter shadow-lg transition-colors ${hasMatches ? 'bg-primary text-white' : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'}`}>
                         {dayApts.length} Turnos
