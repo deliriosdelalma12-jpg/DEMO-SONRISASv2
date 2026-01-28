@@ -20,60 +20,65 @@ const AuthCallback: React.FC = () => {
       processingRef.current = true;
 
       addLog("Iniciando proceso de validación...");
-      
-      // Intentamos obtener sesión por si ya existiera
-      const { data: { session: existingSession } } = await supabase.auth.getSession();
-      
-      if (existingSession) {
-          addLog("Sesión detectada. Iniciando aprovisionamiento...");
-          await ensureOnboarding(existingSession.access_token);
-          return;
-      }
-
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-      const errorMsg = params.get('error_description');
-
-      if (errorMsg) {
-          addLog(`Error en URL: ${errorMsg}`);
-          setError(errorMsg);
-          return;
-      }
-
-      if (!code) {
-        addLog("No se encontró código de intercambio. Redirigiendo a login...");
-        setError("El enlace de validación no es válido o ha caducado.");
-        return;
-      }
-
-      addLog(`Código detectado: ${code.substring(0, 8)}...`);
 
       try {
-        addLog("Intercambiando código manualmente...");
+        // 1. Verificar si ya tenemos sesión (a veces Supabase la pilla solo)
+        const { data: { session: existingSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (existingSession) {
+            addLog("¡Sesión activa detectada! Procediendo a sincronizar...");
+            await ensureOnboarding(existingSession.access_token);
+            return;
+        }
+
+        // 2. Si no hay sesión, buscamos el código
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
+
+        if (!code) {
+          addLog("No hay código en la URL.");
+          setError("El enlace no contiene el código de validación.");
+          return;
+        }
+
+        addLog("Intercambiando código por sesión...");
         const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
         if (exchangeError) {
-          addLog(`Fallo en intercambio: ${exchangeError.message}`);
-          setError(exchangeError.message);
-          return;
+          // Si el error es sobre el código ya usado, volvemos a mirar si hay sesión
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          if (retrySession) {
+            addLog("Código ya validado en segundo plano. Éxito.");
+            await ensureOnboarding(retrySession.access_token);
+            return;
+          }
+          throw exchangeError;
         }
 
         if (data.session) {
-          addLog("¡Sesión obtenida! Sincronizando con el servidor...");
+          addLog("Intercambio manual exitoso.");
           await ensureOnboarding(data.session.access_token);
         } else {
-          setError("No se pudo establecer la sesión tras el intercambio.");
+          throw new Error("No se pudo obtener la sesión tras el intercambio.");
         }
 
       } catch (err: any) {
-        addLog(`Excepción: ${err.message}`);
-        setError("Error técnico de comunicación. Intenta loguear de nuevo.");
+        if (err.name === 'AbortError') {
+            addLog("Petición abortada por el sistema. Reintentando lectura de sesión...");
+            const { data: { session: lastChance } } = await supabase.auth.getSession();
+            if (lastChance) {
+                await ensureOnboarding(lastChance.access_token);
+                return;
+            }
+        }
+        addLog(`Error crítico: ${err.message}`);
+        setError(err.message);
       }
     };
 
     const ensureOnboarding = async (token: string) => {
       try {
-        addLog("Solicitando configuración de clínica...");
+        addLog("Sincronizando entorno clínico...");
         
         const response = await fetch('/api/onboarding/ensure', {
           method: 'POST',
@@ -83,20 +88,19 @@ const AuthCallback: React.FC = () => {
           }
         });
 
-        const result = await response.json();
-
         if (!response.ok) {
-          addLog(`Error onboarding: ${result.error || 'Desconocido'}`);
+          const result = await response.json();
+          addLog(`Error onboarding: ${result.error}`);
           setError(`Fallo al configurar la clínica: ${result.error}`);
           return;
         }
 
-        addLog("¡Entorno configurado con éxito!");
-        setTimeout(() => navigate('/dashboard'), 1500);
+        addLog("¡Sincronización completa! Redirigiendo...");
+        setTimeout(() => navigate('/dashboard'), 1000);
 
       } catch (e: any) {
         addLog(`Error red onboarding: ${e.message}`);
-        setError("El servicio de configuración no responde. Reintenta el acceso.");
+        setError("Error de comunicación con el servidor de la clínica.");
       }
     };
 
@@ -105,7 +109,7 @@ const AuthCallback: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-      <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-[3rem] p-12 shadow-2xl relative">
+      <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden">
         {!error ? (
           <>
             <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8"></div>

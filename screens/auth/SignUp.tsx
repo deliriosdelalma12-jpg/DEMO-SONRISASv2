@@ -48,8 +48,11 @@ const SignUp: React.FC = () => {
       console.log("[SIGNUP_RESULT]", { data, error: authError });
 
       if (authError) {
-        if (authError.message.includes('fetch') || authError.name === 'AuthRetryableFetchError') {
-          setError('El servidor de correo está tardando demasiado. Espera un momento e inténtalo de nuevo.');
+        // DETECCIÓN ESPECÍFICA DE ERROR DE SMTP (HOSTINGER/SUPABASE CONFIG)
+        if (authError.status === 500 || authError.message.toLowerCase().includes('email')) {
+          setError('Error en el servidor de correos (SMTP). Verifica la configuración de Hostinger en el panel de Supabase. El host debe ser smtp.hostinger.com y el puerto 465.');
+        } else if (authError.message.includes('rate limit')) {
+          setError('Has excedido el límite de correos de Supabase (3/hora). Por favor, espera una hora o termina de configurar tu SMTP propio.');
         } else {
           setError(authError.message);
         }
@@ -63,20 +66,13 @@ const SignUp: React.FC = () => {
          return;
       }
 
-      if (!data.session) {
-        setMessage("¡Casi listo! Te hemos enviado un correo para confirmar tu cuenta. Revisa tu bandeja de entrada y spam.");
-        setLoading(false);
-        return;
-      }
+      // Si llegamos aquí sin error, el usuario se ha creado en Auth pero el envío del mail es el que puede fallar
+      setMessage("¡Registro iniciado! Te hemos enviado un correo para confirmar tu cuenta. Si no te llega en 1 minuto, revisa tu configuración de SMTP en Supabase.");
+      setLoading(false);
 
-      navigate('/dashboard');
     } catch (e: any) {
       console.error("[SIGNUP_EXCEPTION]", e);
-      if (e.message?.includes('504')) {
-        setError("Error de tiempo de espera (504). El servidor está saturado, reintenta en un momento.");
-      } else {
-        setError("Error inesperado de red. Revisa tu conexión.");
-      }
+      setError("Fallo crítico de conexión. Revisa los logs de consola.");
       setLoading(false);
     }
   };

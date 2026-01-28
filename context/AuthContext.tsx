@@ -37,8 +37,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSettings(sData.settings);
           console.log("✅ [AUTH_CONTEXT] Contexto cargado con éxito.");
         }
-      } else {
-        console.warn("⚠️ [AUTH_CONTEXT] El usuario auth existe pero no tiene perfil en public.users. ¿Onboarding pendiente?");
       }
     } catch (e) {
       console.error("❌ Error contexto SaaS:", e);
@@ -46,14 +44,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        const u = session?.user ?? null;
-        setUser(u);
-        if (u) fetchTenantContext(u);
-      })
-      .catch(err => console.error("Error obteniendo sesión:", err))
-      .finally(() => setLoading(false));
+    // Si estamos en el callback, no hacemos nada aquí para evitar AbortError
+    if (window.location.pathname === '/auth/callback') {
+      setLoading(false);
+    } else {
+      supabase.auth.getSession()
+        .then(({ data: { session } }) => {
+          const u = session?.user ?? null;
+          setUser(u);
+          if (u) fetchTenantContext(u);
+        })
+        .catch(err => {
+          if (err.name !== 'AbortError') console.error("Error obteniendo sesión:", err);
+        })
+        .finally(() => setLoading(false));
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('🔔 [AUTH_EVENT]:', event);
