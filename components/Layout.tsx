@@ -11,9 +11,10 @@ interface LayoutProps {
   settings: ClinicSettings;
   onOpenVoiceAssistant: () => void;
   onOpenCurrentProfile?: () => void;
+  onSignOut?: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, currentUser, settings, onOpenVoiceAssistant, onOpenCurrentProfile }) => {
+const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, currentUser, settings, onOpenVoiceAssistant, onOpenCurrentProfile, onSignOut }) => {
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
 
@@ -72,8 +73,17 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
           ))}
         </nav>
 
-        <div className="p-6 opacity-40 pointer-events-none border-t border-border-light dark:border-border-dark shrink-0">
-          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">v3.0.0-flat</p>
+        <div className="p-4 border-t border-border-light dark:border-border-dark shrink-0 space-y-2">
+          <button 
+            onClick={onSignOut}
+            className="w-full flex items-center gap-3 px-3 py-3 rounded-md text-slate-400 hover:bg-rose-500/10 hover:text-rose-500 transition-all group"
+          >
+            <span className="material-symbols-outlined text-xl">logout</span>
+            <span className="text-sm font-bold tracking-tight uppercase tracking-widest text-[10px]">Cerrar Sesión</span>
+          </button>
+          <div className="p-2 opacity-40">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 text-center">v3.0.0-saas</p>
+          </div>
         </div>
       </aside>
 
@@ -127,7 +137,7 @@ const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme, curr
                 <div 
                   onClick={onOpenCurrentProfile}
                   className="size-10 rounded-md bg-cover bg-center border border-border-light dark:border-border-dark shadow-sm cursor-pointer hover:border-primary transition-colors" 
-                  style={{ backgroundImage: `url("${currentUser.img}")` }}
+                  style={{ backgroundImage: `url("${currentUser.img || 'https://api.dicebear.com/7.x/notionists-neutral/svg?seed=user'}")` }}
                   title="Ver Mi Ficha"
                 ></div>
               </div>

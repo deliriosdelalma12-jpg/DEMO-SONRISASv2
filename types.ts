@@ -73,12 +73,14 @@ export interface RoleDefinition {
   isSystem?: boolean; 
 }
 
+// Added clinic_id to User interface to resolve property access errors in multi-tenant contexts
 export interface User {
   id: string;
   username: string;
   name: string;
   role: string; 
   img?: string;
+  clinic_id: string;
 }
 
 export interface Shift {

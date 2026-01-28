@@ -184,7 +184,15 @@ const SettingsCompany: React.FC<SettingsCompanyProps> = ({ settings, setSettings
 
   const addUser = () => {
       if(!newUser.name || !newUser.username || !newUser.role) return;
-      const u: User = { id: 'U'+Date.now(), name: newUser.name, username: newUser.username, role: newUser.role, img: newUser.avatar };
+      // Fix: Added clinic_id from settings.id to satisfy User interface requirements
+      const u: User = { 
+          id: 'U'+Date.now(), 
+          name: newUser.name, 
+          username: newUser.username, 
+          role: newUser.role, 
+          img: newUser.avatar,
+          clinic_id: settings.id 
+      };
       setSystemUsers(prev => [...prev, u]);
       setNewUser({ name: '', username: '', role: '', avatar: 'https://i.pravatar.cc/150?u=new' });
   };
