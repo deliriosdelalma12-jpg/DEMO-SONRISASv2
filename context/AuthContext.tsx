@@ -24,7 +24,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchTenantContext = async (sessionUser: any) => {
     if (!sessionUser) return;
     try {
-      console.log("🔍 [AUTH_CONTEXT] Buscando perfil en DB para UID:", sessionUser.id);
+      console.log("🔍 [AUTH] Cargando contexto para:", sessionUser.id);
       
       const { data: profile, error: pErr } = await supabase
         .from('users')
@@ -32,85 +32,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', sessionUser.id)
         .maybeSingle();
       
-      if (pErr) {
-        console.error("❌ [AUTH_CONTEXT] Error de consulta SQL:", pErr.message);
-        throw pErr;
-      }
+      if (pErr) throw pErr;
 
       if (profile) {
-        console.log("✅ [AUTH_CONTEXT] Perfil encontrado:", profile.full_name);
         setTenantUser(profile);
-        
-        const { data: sData, error: sErr } = await supabase
+        const { data: sData } = await supabase
           .from('tenant_settings')
           .select('settings')
           .eq('clinic_id', profile.clinic_id)
           .maybeSingle();
           
-        if (sErr) console.error("❌ [AUTH_CONTEXT] Error cargando settings:", sErr.message);
-        if (sData) {
-          setSettings(sData.settings);
-          console.log("💎 [AUTH_CONTEXT] Configuración de clínica cargada.");
-        }
-      } else {
-        console.warn("⚠️ [AUTH_CONTEXT] El usuario está autenticado pero no existe registro en 'public.users'. Posible onboarding en curso.");
+        if (sData) setSettings(sData.settings);
       }
     } catch (e) {
-      console.error("❌ [AUTH_CONTEXT] Excepción técnica:", e);
+      console.error("❌ [AUTH] Error contexto:", e);
     }
   };
 
   useEffect(() => {
-    // Si estamos en el callback, no bloqueamos el loading para dejar que la página de callback trabaje
-    if (window.location.pathname === '/auth/callback') {
-      console.log("🚥 [AUTH_CONTEXT] Ruta de callback detectada. Cedendo control...");
-      setLoading(false);
-    } else {
+    // Si estamos en callback, dejamos que la pantalla de callback maneje la sesión
+    const isCallback = window.location.pathname === '/auth/callback';
+    
+    if (!isCallback) {
       supabase.auth.getSession()
         .then(({ data: { session } }) => {
           const u = session?.user ?? null;
           setUser(u);
           if (u) fetchTenantContext(u);
         })
-        .catch(err => {
-          if (err.name !== 'AbortError') console.error("Error inicializando sesión:", err);
-        })
         .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔔 [AUTH_EVENT]:', event, session?.user?.id || 'No User');
+      console.log('🔔 [AUTH_EVENT]:', event);
       const u = session?.user ?? null;
       setUser(u);
       
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         if (u) await fetchTenantContext(u);
-        setLoading(false);
       } else if (event === 'SIGNED_OUT') {
         setTenantUser(null);
         setSettings(null);
-        setLoading(false);
       }
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   const refreshContext = async () => {
-    console.log("♻️ [AUTH_CONTEXT] Forzando refresco de contexto...");
-    try {
-      const { data: { user: sessionUser } } = await supabase.auth.getUser();
-      if (sessionUser) {
-          await fetchTenantContext(sessionUser);
-      }
-    } catch (e) {
-      console.error("Error refrescando:", e);
-    }
+    const { data: { user: sessionUser } } = await supabase.auth.getUser();
+    if (sessionUser) await fetchTenantContext(sessionUser);
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    window.location.href = '/login';
+    window.location.replace('/login');
   };
 
   return (

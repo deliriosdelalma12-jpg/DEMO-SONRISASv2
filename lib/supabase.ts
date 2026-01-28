@@ -1,9 +1,6 @@
 
 import { createClient } from "@supabase/supabase-js"
 
-/**
- * Acceso robusto a variables de entorno.
- */
 const getSafeEnv = () => {
   try {
     if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
@@ -24,7 +21,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false, // IMPORTANTE: Desactivado para evitar AbortError por concurrencia
+    detectSessionInUrl: false, // Control manual total
     flowType: 'pkce'
   }
 })

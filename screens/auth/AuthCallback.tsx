@@ -1,122 +1,115 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 
 const AuthCallback: React.FC = () => {
-  const navigate = useNavigate();
   const { refreshContext } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-  const processingRef = useRef(false);
+  const [status, setStatus] = useState("Iniciando validación...");
+  const [logs, setLogs] = useState<string[]>([]);
+  const hasProcessed = useRef(false);
 
   const addLog = (msg: string) => {
-    console.log(`[AUTH_CALLBACK_LOG]: ${msg}`);
-    setDebugInfo(prev => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`]);
+    console.log(`[CALLBACK]: ${msg}`);
+    setLogs(prev => [...prev, `${new Date().toLocaleTimeString().split(' ')[0]} - ${msg}`]);
   };
 
   useEffect(() => {
-    const processAuth = async () => {
-      if (processingRef.current) return;
-      processingRef.current = true;
-
-      addLog("Iniciando proceso de validación final...");
+    const runAuthFlow = async () => {
+      if (hasProcessed.current) return;
+      hasProcessed.current = true;
 
       try {
-        // 1. Obtener la sesión (Supabase suele validarla automáticamente desde el hash)
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) throw sessionError;
+        addLog("Buscando sesión existente...");
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
 
-        if (session) {
-          addLog(`Sesión detectada para: ${session.user.email}`);
-          await ensureOnboarding(session.access_token);
+        if (currentSession) {
+          addLog("Sesión activa recuperada. Sincronizando...");
+          await completeOnboarding(currentSession.access_token);
           return;
         }
 
-        // 2. Si no hay sesión, buscamos el código en la URL (PKCE)
         const params = new URLSearchParams(window.location.search);
         const code = params.get('code');
 
         if (!code) {
-          addLog("Error: No se ha detectado el código de acceso en la URL.");
-          setError("El enlace de validación es incorrecto o ha caducado.");
+          addLog("No se encontró código en la URL.");
+          setError("El enlace de activación no es válido.");
           return;
         }
 
-        addLog("Intercambiando código de seguridad por sesión activa...");
+        setStatus("Validando identidad...");
+        addLog("Intercambiando código por sesión...");
+        
         const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
         if (exchangeError) {
-          // Si el código ya se usó, comprobamos si tenemos sesión igualmente
+          addLog(`Error de intercambio: ${exchangeError.message}`);
+          // Re-chequeo por si el intercambio ocurrió en segundo plano
           const { data: { session: retrySession } } = await supabase.auth.getSession();
           if (retrySession) {
-            addLog("Identidad ya validada. Sincronizando datos...");
-            await ensureOnboarding(retrySession.access_token);
+            addLog("Sesión detectada tras error (concurrencia).");
+            await completeOnboarding(retrySession.access_token);
             return;
           }
           throw exchangeError;
         }
 
         if (data.session) {
-          addLog("Identidad verificada con éxito. Preparando entorno clínico...");
-          await ensureOnboarding(data.session.access_token);
+          addLog("Intercambio exitoso.");
+          await completeOnboarding(data.session.access_token);
         } else {
           throw new Error("No se pudo establecer la sesión segura.");
         }
 
       } catch (err: any) {
         if (err.name === 'AbortError') {
-            addLog("Petición abortada. Reintentando sincronización de sesión...");
-            const { data: { session: lastChance } } = await supabase.auth.getSession();
-            if (lastChance) {
-                await ensureOnboarding(lastChance.access_token);
-                return;
-            }
+          addLog("Petición interrumpida por el sistema. Reintentando sesión...");
+          const { data: { session: lastTry } } = await supabase.auth.getSession();
+          if (lastTry) {
+            await completeOnboarding(lastTry.access_token);
+            return;
+          }
         }
-        addLog(`ERROR CRÍTICO: ${err.message}`);
+        addLog(`Fallo: ${err.message}`);
         setError(err.message);
       }
     };
 
-    const ensureOnboarding = async (token: string) => {
+    const completeOnboarding = async (token: string) => {
+      setStatus("Sincronizando clínica...");
+      addLog("Llamando a API de Onboarding...");
+      
       try {
-        addLog("Conectando con el servidor de la nube MediClinic...");
-        
         const response = await fetch('/api/onboarding/ensure', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           }
         });
 
-        const result = await response.json();
-
         if (!response.ok) {
-          addLog(`Error en servidor: ${result.error || 'Respuesta no válida'}`);
-          setError(`Fallo al configurar la clínica: ${result.error}`);
-          return;
+          const res = await response.json();
+          throw new Error(res.error || "Error en servidor");
         }
 
-        addLog("¡Entorno configurado correctamente!");
-        
-        // CRITICAL: Refrescar el contexto global antes de navegar
-        addLog("Actualizando perfiles globales...");
+        addLog("Onboarding completado.");
+        setStatus("Actualizando perfiles...");
         await refreshContext();
         
-        addLog("Redirigiendo a panel de control...");
-        setTimeout(() => navigate('/dashboard'), 800);
-
+        addLog("Todo listo. Redirigiendo...");
+        // Redirección forzada para limpiar la URL
+        window.location.replace('/dashboard');
       } catch (e: any) {
-        addLog(`Fallo de red: ${e.message}`);
-        setError("Error de comunicación con el servidor. Reintenta en unos instantes.");
+        addLog(`Error Onboarding: ${e.message}`);
+        setError(e.message);
       }
     };
 
-    processAuth();
-  }, [navigate, refreshContext]);
+    runAuthFlow();
+  }, [refreshContext]);
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
@@ -124,12 +117,12 @@ const AuthCallback: React.FC = () => {
         {!error ? (
           <>
             <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8"></div>
-            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-4">Sincronizando...</h1>
-            <p className="text-slate-400 font-medium italic mb-10">Validando identidad en la red MediClinic...</p>
+            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-2">Sincronizando...</h1>
+            <p className="text-primary font-bold text-xs uppercase tracking-widest mb-10">{status}</p>
             
-            <div className="bg-black/40 rounded-2xl p-6 text-left font-mono text-[10px] text-emerald-500 space-y-1 h-40 overflow-y-auto border border-white/5 custom-scrollbar">
-                <p className="text-slate-500 font-bold mb-2 uppercase tracking-widest border-b border-white/5 pb-2 text-[8px]">Consola de Estado del Sistema:</p>
-                {debugInfo.map((log, i) => <p key={i} className="animate-in fade-in slide-in-from-left-2">{log}</p>)}
+            <div className="bg-black/40 rounded-2xl p-6 text-left font-mono text-[10px] text-emerald-500 space-y-1 h-48 overflow-y-auto border border-white/5 custom-scrollbar">
+                <p className="text-slate-500 font-bold mb-2 uppercase tracking-widest border-b border-white/5 pb-2">Consola de Estado:</p>
+                {logs.map((log, i) => <p key={i} className="animate-in fade-in slide-in-from-left-2">{log}</p>)}
                 <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth' })}></div>
             </div>
           </>
@@ -138,18 +131,15 @@ const AuthCallback: React.FC = () => {
             <div className="size-24 bg-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-8">
               <span className="material-symbols-outlined text-6xl">error</span>
             </div>
-            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-4">Fallo de Activación</h1>
+            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-4">Error de Activación</h1>
             <div className="text-rose-500 font-bold mb-10 leading-relaxed bg-rose-500/10 p-6 rounded-2xl border border-rose-500/20 text-sm">
               {error}
             </div>
-            <div className="space-y-4">
-                <button onClick={() => window.location.reload()} className="w-full h-16 bg-white/10 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-white/20 transition-all">Reintentar Sincronización</button>
-                <button onClick={() => navigate('/login')} className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-xl shadow-primary/20">Ir al Login</button>
-            </div>
+            <button onClick={() => window.location.replace('/login')} className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-xl">Volver al Login</button>
           </>
         )}
       </div>
-      <p className="mt-8 text-slate-600 text-[10px] font-black uppercase tracking-[0.3em]">MediClinic Cloud v3.0 SaaS Architecture</p>
+      <p className="mt-8 text-slate-600 text-[10px] font-black uppercase tracking-[0.3em]">MediClinic Cloud SaaS Infrastructure</p>
     </div>
   );
 };
