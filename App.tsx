@@ -48,7 +48,7 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 };
 
 const AppContent: React.FC = () => {
-  const { user, settings, setSettings, tenantUser, signOut, loading: authLoading } = useAuth();
+  const { user, settings, setSettings, tenantUser, signOut, loading: authLoading, refreshContext } = useAuth();
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const location = useLocation();
   
@@ -59,6 +59,7 @@ const AppContent: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   
   const [darkMode, setDarkMode] = useState(false);
+  const [syncTimeout, setSyncTimeout] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -76,7 +77,17 @@ const AppContent: React.FC = () => {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  // Rutas públicas que no requieren el Layout principal
+  // Detector de bloqueo de sincronización
+  useEffect(() => {
+    let timer: any;
+    if (user && !tenantUser) {
+        timer = setTimeout(() => setSyncTimeout(true), 12000);
+    } else {
+        setSyncTimeout(false);
+    }
+    return () => clearTimeout(timer);
+  }, [user, tenantUser]);
+
   const isPublicRoute = ['/login', '/signup', '/auth/callback'].includes(location.pathname);
 
   if (isPublicRoute) {
@@ -114,9 +125,22 @@ const AppContent: React.FC = () => {
           {isVoiceOpen && <VoiceAssistant onClose={() => setIsVoiceOpen(false)} settings={settings} appointments={appointments} setAppointments={setAppointments} doctors={doctors} branches={branches} patients={patients} setPatients={setPatients} />}
         </Layout>
       ) : (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
-            <div className="size-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Sincronizando Entorno Clínico...</p>
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center">
+            <div className="size-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-8 shadow-lg shadow-primary/20"></div>
+            <h1 className="text-2xl font-display font-black text-white uppercase tracking-tight mb-2">Conectando con tu Clínica...</h1>
+            <p className="text-xs text-slate-500 font-black uppercase tracking-[0.2em] max-w-xs leading-relaxed">
+                Estamos recuperando tu configuración personalizada desde la nube.
+            </p>
+            
+            {syncTimeout && (
+                <div className="mt-12 animate-in fade-in slide-in-from-bottom-4 space-y-6">
+                    <p className="text-rose-500 text-[10px] font-bold uppercase bg-rose-500/10 px-4 py-2 rounded-lg border border-rose-500/20">La sincronización está tardando más de lo habitual</p>
+                    <div className="flex flex-col gap-3">
+                        <button onClick={() => refreshContext()} className="px-8 py-4 bg-white text-slate-900 rounded-xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all">Reintentar Lectura</button>
+                        <button onClick={() => signOut()} className="px-8 py-2 text-slate-500 font-bold uppercase text-[9px] hover:text-white transition-colors">Cerrar Sesión y Volver a entrar</button>
+                    </div>
+                </div>
+            )}
         </div>
       )}
     </PrivateRoute>
