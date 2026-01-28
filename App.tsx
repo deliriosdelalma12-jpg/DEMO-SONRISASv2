@@ -14,6 +14,7 @@ import Branches from './screens/Branches';
 import Settings from './screens/Settings';
 import Login from './screens/auth/Login';
 import SignUp from './screens/auth/SignUp';
+import AuthCallback from './screens/auth/AuthCallback'; // Nueva ruta
 
 // Components
 import Layout from './components/Layout';
@@ -35,7 +36,6 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
   useEffect(() => {
     const runOnboarding = async () => {
-      // If user is logged in but doesn't have a profile yet, call backend to create it
       if (user && !tenantUser && !loading) {
         setOnboarding(true);
         const { data: { session } } = await supabase.auth.getSession();
@@ -109,9 +109,10 @@ const AppContent: React.FC = () => {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  // If user is logged in, wait until both tenantUser and settings are available
-  // before rendering the shell. This avoids layout thrashing and null property access.
-  const isAuthContentNeeded = useLocation().pathname !== '/login' && useLocation().pathname !== '/signup';
+  const isAuthContentNeeded = useLocation().pathname !== '/login' && 
+                             useLocation().pathname !== '/signup' && 
+                             useLocation().pathname !== '/auth/callback';
+
   if (user && isAuthContentNeeded && (!tenantUser || !settings)) {
     return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -127,6 +128,7 @@ const AppContent: React.FC = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<SignUp />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       
       <Route path="/*" element={
         <PrivateRoute>
@@ -151,7 +153,6 @@ const AppContent: React.FC = () => {
                     settings={settings} 
                     setSettings={(newS: any) => {
                       setSettings(newS);
-                      // Persistent Upsert to Supabase
                       supabase.from('tenant_settings').upsert({ 
                         clinic_id: tenantUser.clinic_id, 
                         settings: newS 

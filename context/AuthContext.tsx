@@ -24,9 +24,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchTenantContext = async (sessionUser: any) => {
     if (!sessionUser) return;
     
+    console.log('🔄 Fetching Tenant Context for:', sessionUser.id);
     try {
       // 1. Obtener perfil de usuario ligado a clínica
-      const { data: profile } = await supabase
+      const { data: profile, error: pError } = await supabase
         .from('users')
         .select('*')
         .eq('id', sessionUser.id)
@@ -34,9 +35,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (profile) {
         setTenantUser(profile);
+        console.log('✅ Tenant User Profile loaded.');
         
         // 2. Obtener ajustes de la clínica
-        const { data: sData } = await supabase
+        const { data: sData, error: sError } = await supabase
           .from('tenant_settings')
           .select('settings')
           .eq('clinic_id', profile.clinic_id)
@@ -44,22 +46,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (sData) {
           setSettings(sData.settings);
+          console.log('✅ Clinic Settings loaded.');
+        } else if (sError) {
+          console.warn('⚠️ Settings not found for clinic:', profile.clinic_id);
         }
+      } else if (pError) {
+        console.warn('⚠️ Profile not found for user:', sessionUser.id);
       }
     } catch (e) {
-      console.error("Error fetching context:", e);
+      console.error("❌ Error fetching context:", e);
     }
   };
 
   const initializeAuth = async () => {
     setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    const u = session?.user ?? null;
-    setUser(u);
-    if (u) {
-      await fetchTenantContext(u);
+    console.log('🎬 Initializing Auth...');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const u = session?.user ?? null;
+      setUser(u);
+      
+      if (u) {
+        console.log('🔐 Active session found on startup.');
+        await fetchTenantContext(u);
+      } else {
+        console.log('🔓 No active session found.');
+      }
+    } catch (err) {
+      console.error('❌ Failed to initialize auth session:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -67,11 +84,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Auth listener
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔔 Auth State Change Event:', event);
       const u = session?.user ?? null;
       
-      // Only set loading if user is signing in or changed
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        setLoading(true);
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED') {
         setUser(u);
         if (u) await fetchTenantContext(u);
         setLoading(false);
@@ -94,6 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
+    console.log('🚪 Signing out...');
     await supabase.auth.signOut();
   };
 
