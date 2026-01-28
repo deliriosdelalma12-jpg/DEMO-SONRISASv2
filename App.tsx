@@ -139,21 +139,11 @@ const generateSyncAppointments = (allPatients: Patient[], doctors: Doctor[]): Ap
 };
 
 const INITIAL_TASKS: Task[] = [
-  { id: 'T1', title: 'Revisar stock de Implantes 4mm', description: 'Gabinete 2 sin existencias de titanio grado 5', completed: false, priority: 'High', sub: 'Logística', assignedToId: 'D2' },
-  { id: 'T2', title: 'Seguimiento P-1025 (Post-Cirugía)', description: 'Llamar para verificar inflamación tras extracción', completed: false, priority: 'Medium', sub: 'Atención', assignedToId: 'D1' },
-  { id: 'T3', title: 'Validar Radiografías P-1002', description: 'Urge para plan de ortodoncia de la tarde', completed: false, priority: 'High', sub: 'Diagnóstico', assignedToId: 'D3' },
-  { id: 'T4', title: 'Firmar Consentimientos Pendientes', description: 'Regularizar expedientes semana anterior', completed: false, priority: 'Medium', sub: 'Administración', assignedToId: 'D1' },
-  { id: 'T5', title: 'Calibrar Autoclave Central', description: 'Mantenimiento preventivo mensual', completed: true, priority: 'High', sub: 'Mantenimiento', assignedToId: 'U1' },
-  { id: 'T6', title: 'Revisión Facturación Q1', description: 'Preparar cierre trimestral para contabilidad', completed: false, priority: 'Low', sub: 'Dirección', assignedToId: 'U1' },
-  { id: 'T7', title: 'Actualizar Precios Ortodoncia', description: 'Nuevas tarifas alineadores invisibles', completed: false, priority: 'Medium', sub: 'Comercial', assignedToId: 'D2' },
-  { id: 'T8', title: 'Llamar Proveedor de Desechables', description: 'Retraso en entrega de guantes y mascarillas', completed: false, priority: 'High', sub: 'Compras', assignedToId: 'D3' },
-  { id: 'T9', title: 'Validar Informe Laboratorio P-1044', description: 'Prótesis lista para prueba el jueves', completed: false, priority: 'Medium', sub: 'Protésico', assignedToId: 'D2' },
-  { id: 'T10', title: 'Organizar Sesión Clínica Viernes', description: 'Exponer caso complejo de maloclusión', completed: false, priority: 'Low', sub: 'Formación', assignedToId: 'D1' },
-  { id: 'T11', title: 'Audit de Historias Clínicas P-1000 a P-1050', description: 'Verificar firmas LOPD', completed: false, priority: 'Medium', sub: 'Calidad', assignedToId: 'U1' },
-  { id: 'T12', title: 'Entrevista nueva Higienista', description: 'Candidata recomendada por Dra. Torres', completed: false, priority: 'High', sub: 'RRHH', assignedToId: 'D1' },
-  { id: 'T13', title: 'Mantenimiento Sillón Dental G1', description: 'Ruidos en el sistema de aspiración', completed: false, priority: 'Low', sub: 'Técnico', assignedToId: 'D2' },
-  { id: 'T14', title: 'Preparar Pedido de Resinas', description: 'Quedan pocos botes de A2 y A3', completed: false, priority: 'Medium', sub: 'Compras', assignedToId: 'D3' },
-  { id: 'T15', title: 'Revisar Cierre de Caja Sucursal Malvarrosa', description: 'Descuadre de 15€ detectado ayer', completed: false, priority: 'High', sub: 'Admin', assignedToId: 'U1' }
+  { id: 'T1', title: 'Revisar stock de Implantes 4mm', description: 'Gabinete 2 sin existencias de titanio grado 5', completed: false, priority: 'High', sub: 'Logística', assignedToId: 'D2', createdById: 'U1', createdByName: 'Dirección General' },
+  { id: 'T2', title: 'Seguimiento P-1025 (Post-Cirugía)', description: 'Llamar para verificar inflamación tras extracción', completed: false, priority: 'Medium', sub: 'Atención', assignedToId: 'D1', createdById: 'U1', createdByName: 'Dirección General' },
+  { id: 'T3', title: 'Validar Radiografías P-1002', description: 'Urge para plan de ortodoncia de la tarde', completed: false, priority: 'High', sub: 'Diagnóstico', assignedToId: 'D3', createdById: 'U1', createdByName: 'Dirección General' },
+  { id: 'T4', title: 'Firmar Consentimientos Pendientes', description: 'Regularizar expedientes semana anterior', completed: false, priority: 'Medium', sub: 'Administración', assignedToId: 'D1', createdById: 'D1', createdByName: 'Dra. Ana Torres' },
+  { id: 'T5', title: 'Calibrar Autoclave Central', description: 'Mantenimiento preventivo mensual', completed: true, priority: 'High', sub: 'Mantenimiento', assignedToId: 'U1', createdById: 'U1', createdByName: 'Dirección General' }
 ];
 
 const App: React.FC = () => {
@@ -265,7 +255,7 @@ const App: React.FC = () => {
         onOpenCurrentProfile={() => handleOpenDoctor(currentUser.id)}
       >
         <Routes>
-          <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={currentUser} />} />
+          <Route path="/" element={<Dashboard settings={settings} appointments={appointments} setAppointments={setAppointments} tasks={tasks} setTasks={setTasks} patients={patients} doctors={doctors} currentUser={currentUser} systemUsers={systemUsers} />} />
           <Route path="/agenda" element={<Agenda appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} globalSchedule={settings.globalSchedule} settings={settings} />} />
           <Route path="/patients" element={<Patients patients={patients} setPatients={setPatients} appointments={appointments} clinicSettings={settings} currentUser={currentUser} team={doctors} />} />
           <Route path="/doctors" element={<Doctors doctors={doctors} setDoctors={setDoctors} appointments={appointments} branches={branches} patients={patients} clinicSettings={settings} setAppointments={setAppointments} />} />

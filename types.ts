@@ -231,11 +231,12 @@ export interface Task {
   id: string;
   title: string;
   description?: string; 
-  content?: string; 
   completed: boolean;
   priority: 'High' | 'Medium' | 'Low';
   sub?: string;
-  assignedToId?: string; 
+  assignedToId: string; 
+  createdById: string;
+  createdByName: string;
 }
 
 export interface Appointment {
