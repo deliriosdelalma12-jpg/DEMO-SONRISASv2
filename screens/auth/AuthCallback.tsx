@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
@@ -7,6 +7,7 @@ const AuthCallback: React.FC = () => {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const processingRef = useRef(false);
 
   const addLog = (msg: string) => {
     console.log(`[AUTH_CALLBACK_LOG]: ${msg}`);
@@ -15,35 +16,40 @@ const AuthCallback: React.FC = () => {
 
   useEffect(() => {
     const processAuth = async () => {
+      if (processingRef.current) return;
+      processingRef.current = true;
+
       addLog("Iniciando proceso de validación...");
-      addLog(`URL detectada: ${window.location.href}`);
       
+      // Intentamos obtener sesión por si ya existiera
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      
+      if (existingSession) {
+          addLog("Sesión detectada. Iniciando aprovisionamiento...");
+          await ensureOnboarding(existingSession.access_token);
+          return;
+      }
+
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
       const errorMsg = params.get('error_description');
 
       if (errorMsg) {
-          addLog(`Error detectado en URL: ${errorMsg}`);
+          addLog(`Error en URL: ${errorMsg}`);
           setError(errorMsg);
           return;
       }
 
       if (!code) {
-        addLog("No se encontró código de intercambio. Comprobando sesión existente...");
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-            addLog("Sesión activa. Procediendo a inicialización...");
-            await ensureOnboarding(session.access_token);
-            return;
-        }
-        setError("Falta el código de validación. El enlace podría haber caducado.");
+        addLog("No se encontró código de intercambio. Redirigiendo a login...");
+        setError("El enlace de validación no es válido o ha caducado.");
         return;
       }
 
-      addLog(`Código PKCE encontrado: ${code.substring(0, 8)}...`);
+      addLog(`Código detectado: ${code.substring(0, 8)}...`);
 
       try {
-        addLog("Solicitando intercambio de código...");
+        addLog("Intercambiando código manualmente...");
         const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
         if (exchangeError) {
@@ -53,23 +59,22 @@ const AuthCallback: React.FC = () => {
         }
 
         if (data.session) {
-          addLog("¡Sesión obtenida! Iniciando aprovisionamiento de clínica...");
+          addLog("¡Sesión obtenida! Sincronizando con el servidor...");
           await ensureOnboarding(data.session.access_token);
         } else {
           setError("No se pudo establecer la sesión tras el intercambio.");
         }
 
       } catch (err: any) {
-        addLog(`Excepción crítica: ${err.message}`);
-        setError("Fallo técnico en la activación. Intenta loguear manualmente.");
+        addLog(`Excepción: ${err.message}`);
+        setError("Error técnico de comunicación. Intenta loguear de nuevo.");
       }
     };
 
     const ensureOnboarding = async (token: string) => {
       try {
-        addLog("Sincronizando con el servidor de provisionamiento...");
+        addLog("Solicitando configuración de clínica...");
         
-        // Llamada al servidor Express para asegurar que las tablas public.users y tenant_settings existen
         const response = await fetch('/api/onboarding/ensure', {
           method: 'POST',
           headers: {
@@ -81,22 +86,17 @@ const AuthCallback: React.FC = () => {
         const result = await response.json();
 
         if (!response.ok) {
-          addLog(`Error en aprovisionamiento: ${result.error || 'Unknown error'}`);
-          setError(`Error al configurar tu clínica: ${result.error}`);
+          addLog(`Error onboarding: ${result.error || 'Desconocido'}`);
+          setError(`Fallo al configurar la clínica: ${result.error}`);
           return;
         }
 
-        addLog("¡Entorno clínico configurado correctamente!");
-        addLog("Redirigiendo al Dashboard...");
-        
-        // Esperamos un segundo para asegurar que Supabase refleje los cambios en las tablas
-        setTimeout(() => {
-            navigate('/dashboard');
-        }, 1500);
+        addLog("¡Entorno configurado con éxito!");
+        setTimeout(() => navigate('/dashboard'), 1500);
 
       } catch (e: any) {
-        addLog(`Error de red en onboarding: ${e.message}`);
-        setError("El servidor de configuración no responde. Contacta con soporte.");
+        addLog(`Error red onboarding: ${e.message}`);
+        setError("El servicio de configuración no responde. Reintenta el acceso.");
       }
     };
 
@@ -105,15 +105,15 @@ const AuthCallback: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-      <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-[3rem] p-12 shadow-2xl overflow-hidden relative">
+      <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-[3rem] p-12 shadow-2xl relative">
         {!error ? (
           <>
             <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8"></div>
-            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-4">Configurando tu Entorno</h1>
-            <p className="text-slate-400 font-medium italic mb-10">Estamos preparando tu base de datos y asistente de IA...</p>
+            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-4">Sincronizando...</h1>
+            <p className="text-slate-400 font-medium italic mb-10">Validando identidad en la red MediClinic...</p>
             
             <div className="bg-black/40 rounded-2xl p-6 text-left font-mono text-[10px] text-emerald-500 space-y-1 h-40 overflow-y-auto border border-white/5">
-                <p className="text-slate-500 font-bold mb-2 uppercase tracking-widest border-b border-white/5 pb-2">Status Log:</p>
+                <p className="text-slate-500 font-bold mb-2 uppercase tracking-widest border-b border-white/5 pb-2">Consola de Estado:</p>
                 {debugInfo.map((log, i) => <p key={i} className="animate-in fade-in slide-in-from-left-2">{log}</p>)}
             </div>
           </>
@@ -122,7 +122,7 @@ const AuthCallback: React.FC = () => {
             <div className="size-24 bg-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-8">
               <span className="material-symbols-outlined text-6xl">error</span>
             </div>
-            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-4">Error de Activación</h1>
+            <h1 className="text-3xl font-display font-black text-white uppercase tracking-tight mb-4">Fallo de Activación</h1>
             <div className="text-rose-500 font-bold mb-10 leading-relaxed bg-rose-500/10 p-6 rounded-2xl border border-rose-500/20 text-sm">
               {error}
             </div>

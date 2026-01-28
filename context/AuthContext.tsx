@@ -46,12 +46,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) fetchTenantContext(u);
-      setLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        const u = session?.user ?? null;
+        setUser(u);
+        if (u) fetchTenantContext(u);
+      })
+      .catch(err => console.error("Error obteniendo sesión:", err))
+      .finally(() => setLoading(false));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('🔔 [AUTH_EVENT]:', event);
@@ -72,8 +74,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const refreshContext = async () => {
-    const { data: { user: sessionUser } } = await supabase.auth.getUser();
-    if (sessionUser) await fetchTenantContext(sessionUser);
+    try {
+      const { data: { user: sessionUser } } = await supabase.auth.getUser();
+      if (sessionUser) await fetchTenantContext(sessionUser);
+    } catch (e) {
+      console.error("Error refrescando contexto:", e);
+    }
   };
 
   const signOut = async () => {
