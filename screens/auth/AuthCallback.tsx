@@ -15,78 +15,89 @@ export default function AuthCallback() {
 
     async function handleAuth() {
       try {
-        const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
+        // 1. EXTRACCIÓN ROBUSTA (Query + Hash)
+        const fullUrl = window.location.href;
+        const urlObj = new URL(fullUrl);
         
-        // 1. DIAGNÓSTICO DE STORAGE (Buscando PKCE Verifier)
-        const storageKeys = Object.keys(localStorage);
-        const verifierKeys = storageKeys.filter(k => 
-          k.toLowerCase().includes("verifier") || 
-          k.toLowerCase().includes("pkce") ||
-          (k.startsWith("sb-") && k.endsWith("-auth-token-code-verifier"))
-        );
+        // Intentamos obtener el code de la query ?code=...
+        let code = urlObj.searchParams.get("code");
+        
+        // Si no está en la query, buscamos en el hash #code=... (Común en algunos clientes de correo)
+        if (!code && urlObj.hash) {
+          const hashParams = new URLSearchParams(urlObj.hash.substring(1));
+          code = hashParams.get("code") || hashParams.get("access_token");
+        }
 
+        // Diagnóstico mejorado
         console.log("[AUTH_CALLBACK] Diagnostic:");
-        console.log(" - Origin:", window.location.origin);
-        console.log(" - PKCE Keys found:", verifierKeys);
-        console.log(" - Code present:", !!code);
+        console.log(" - Full URL:", fullUrl);
+        console.log(" - Code extracted:", code ? "YES (hidden for security)" : "NO");
+        console.log(" - Has Hash:", !!urlObj.hash);
 
         if (!code) {
-          throw { title: "Código ausente", msg: "No se encontró el token de activación en la URL." };
+          // Si llegamos aquí y no hay code, pero hay una sesión activa, quizá Supabase ya lo canjeó automáticamente
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            console.log("[AUTH_CALLBACK] No code found but session active. Proceeding...");
+            await completeOnboarding(session.user);
+            return;
+          }
+          throw { title: "Código ausente", msg: "No se encontró el token de activación en la URL (search ni hash). Por favor, solicita un nuevo enlace." };
         }
 
-        // 2. DETECCIÓN PREVENTIVA DE NAVEGADOR DISTINTO
-        if (verifierKeys.length === 0) {
-          console.warn("[AUTH_CALLBACK] PKCE Verifier missing in this browser context.");
-          setError({
-            title: "Mismo navegador requerido",
-            msg: "Este enlace se abrió en un navegador distinto o se perdió la sesión del registro. Por seguridad, no podemos activar tu cuenta aquí.\n\nSolución: vuelve a la pestaña donde te registraste y pulsa 'Reenviar activación'. Luego abre el email en ese MISMO navegador."
-          });
-          return;
-        }
-
-        // 3. EXCHANGE CON TIMEOUT (Sin AbortController para evitar Signal Aborted interno)
+        // 2. EXCHANGE CON TIMEOUT Y GESTIÓN DE ABORTERROR
         setStatus("Canjeando código de activación...");
-        console.time("exchange_time");
         
-        const exchangePromise = supabase.auth.exchangeCodeForSession(code);
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("TIMEOUT_ERROR")), 12000)
-        );
+        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
-        const result: any = await Promise.race([exchangePromise, timeoutPromise]);
-        console.timeEnd("exchange_time");
+        if (exchangeError) {
+          // Si el error es que el verifier no existe, explicar que debe abrirse en el mismo navegador
+          if (exchangeError.message?.includes("verifier") || exchangeError.name === "AuthPKCEVerifierNotFoundError") {
+             throw {
+               title: "Fallo de Verificación PKCE",
+               msg: "Para tu seguridad, debes abrir el enlace del correo en el MISMO navegador donde iniciaste el registro."
+             };
+          }
+          throw exchangeError;
+        }
 
-        if (result.error) throw result.error;
-        if (!result.data?.session) throw new Error("NO_SESSION_RETURNED");
-
-        // 4. ONBOARDING Y SINCRONIZACIÓN
-        setStatus("Configurando infraestructura clínica...");
-        await ensureClinicInfrastructure(result.data.session.user);
-        
-        setStatus("Sincronizando acceso...");
-        await refreshContext();
-
-        // REDIRECCIÓN FINAL
-        window.location.replace("/dashboard");
+        if (data.session) {
+          await completeOnboarding(data.session.user);
+        } else {
+          throw new Error("No se pudo establecer la sesión tras el canje.");
+        }
 
       } catch (e: any) {
-        console.error("[AUTH_CALLBACK] Fatal error:", e);
-        if (e.message === "TIMEOUT_ERROR") {
-          setError({ title: "Error de red", msg: "La verificación está tardando demasiado. Reintenta en unos momentos." });
-        } else if (e.message?.includes("verifier") || e.name === "AuthPKCEVerifierNotFoundError") {
-          setError({
-            title: "Fallo de Verificación PKCE",
-            msg: "Navegador no reconocido. Por favor, asegúrate de abrir el enlace del email en el mismo navegador donde iniciaste el registro."
-          });
-        } else {
-          setError({ 
-            title: "Fallo de Activación", 
-            msg: e.message || "Error inesperado durante la verificación técnica.",
-            code: e.code 
-          });
+        // Ignorar AbortError si es provocado por el navegador/Supabase internal locks
+        if (e.name === 'AbortError' || e.message?.includes('aborted')) {
+          console.warn("[AUTH_CALLBACK] Exchange aborted, checking if session was still established...");
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            await completeOnboarding(session.user);
+            return;
+          }
         }
+
+        console.error("[AUTH_CALLBACK] Fatal error:", e);
+        setError({ 
+          title: e.title || "Fallo de Activación", 
+          msg: e.msg || e.message || "Error inesperado durante la verificación.",
+          code: e.code 
+        });
       }
+    }
+
+    async function completeOnboarding(user: any) {
+        try {
+            setStatus("Configurando infraestructura clínica...");
+            await ensureClinicInfrastructure(user);
+            setStatus("Sincronizando acceso...");
+            await refreshContext();
+            window.location.replace("/dashboard");
+        } catch (err: any) {
+            console.error("[AUTH_CALLBACK] Onboarding error:", err);
+            setError({ title: "Error de Configuración", msg: "Tu cuenta está activa pero hubo un fallo al crear tu clínica. Contacta con soporte." });
+        }
     }
 
     handleAuth();
@@ -96,8 +107,11 @@ export default function AuthCallback() {
     const meta = user.user_metadata || {};
     const clinicName = meta.clinic_name || "Mi Clínica MediClinic";
     
+    // Verificar si ya existe (Idempotencia)
     const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', user.id).maybeSingle();
+    
     if (!clinic) {
+      console.log("[ONBOARDING] Creando nueva clínica para:", user.id);
       const { data: newC, error: cErr } = await supabase.from('clinics').insert({ name: clinicName, owner_id: user.id }).select('id').single();
       if (cErr) throw cErr;
       
@@ -106,20 +120,27 @@ export default function AuthCallback() {
         role: 'admin', is_active: true, username: user.email.split('@')[0]
       });
 
-      await supabase.from('tenant_settings').upsert({
-        clinic_id: newC.id,
-        settings: { id: newC.id, name: clinicName, businessName: clinicName, region: "ES", currency: "€", language: "es-ES", scheduleType: "split", roles: [{ id: 'admin', name: 'Admin', permissions: ['view_dashboard', 'view_all_data', 'can_edit'] }], labels: { dashboardTitle: "Panel", agendaTitle: "Agenda" }, visuals: { titleFontSize: 32, bodyFontSize: 16 }, laborSettings: { vacationDaysPerYear: 30, allowCarryOver: false, incidentTypes: [] }, appointmentPolicy: { confirmationWindow: 24, leadTimeThreshold: 2, autoConfirmShortNotice: true }, services: [{ id: 'S1', name: 'Consulta Gral', price: 50, duration: 30 }], aiPhoneSettings: { assistantName: "Sara", clinicDisplayName: clinicName, language: "es-ES", tone: "formal", voiceName: "Zephyr", core_version: "1.0.1", active: true, systemPrompt: "Asistente de " + clinicName, aiEmotion: "Empática", aiStyle: "Concisa", aiRelation: "Formal", aiFocus: "Resolutiva", configVersion: Date.now() } }
-      });
+      const defaultSettings = { 
+        id: newC.id, name: clinicName, businessName: clinicName, region: "ES", currency: "€", language: "es-ES", scheduleType: "split", 
+        roles: [{ id: 'admin', name: 'Admin', permissions: ['view_dashboard', 'view_all_data', 'can_edit'] }], 
+        labels: { dashboardTitle: "Panel", agendaTitle: "Agenda" }, visuals: { titleFontSize: 32, bodyFontSize: 16 }, 
+        laborSettings: { vacationDaysPerYear: 30, allowCarryOver: false, incidentTypes: [] }, 
+        appointmentPolicy: { confirmationWindow: 24, leadTimeThreshold: 2, autoConfirmShortNotice: true }, 
+        services: [{ id: 'S1', name: 'Consulta Gral', price: 50, duration: 30 }], 
+        aiPhoneSettings: { assistantName: "Sara", clinicDisplayName: clinicName, language: "es-ES", tone: "formal", voiceName: "Zephyr", core_version: "1.0.1", active: true, systemPrompt: "Asistente de " + clinicName, aiEmotion: "Empática", aiStyle: "Concisa", aiRelation: "Formal", aiFocus: "Resolutiva", configVersion: Date.now() } 
+      };
+
+      await supabase.from('tenant_settings').upsert({ clinic_id: newC.id, settings: defaultSettings });
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-white font-body">
-      <div className="w-full max-w-md bg-slate-900 border border-white/10 rounded-[2.5rem] p-12 text-center shadow-2xl animate-in fade-in zoom-in duration-500">
+      <div className="w-full max-w-md bg-slate-900 border border-white/10 rounded-[2.5rem] p-12 text-center shadow-2xl">
         {!error ? (
           <>
             <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8 shadow-lg shadow-primary/20"></div>
-            <h2 className="text-2xl font-display font-black uppercase tracking-tight mb-2">Activando Cuenta</h2>
+            <h2 className="text-2xl font-display font-black uppercase tracking-tight mb-2">Validando Credenciales</h2>
             <p className="text-primary font-bold text-[10px] uppercase tracking-[0.2em] animate-pulse">{status}</p>
           </>
         ) : (
@@ -128,17 +149,15 @@ export default function AuthCallback() {
               <span className="material-symbols-outlined text-6xl">gpp_maybe</span>
             </div>
             <h2 className="text-2xl font-display font-black uppercase tracking-tight mb-4 text-rose-500">{error.title}</h2>
-            <div className="bg-rose-500/5 p-6 rounded-2xl border border-rose-500/10 text-slate-400 text-xs font-medium leading-relaxed mb-10 whitespace-pre-wrap">
+            <div className="bg-rose-500/5 p-6 rounded-2xl border border-rose-500/10 text-slate-400 text-xs font-medium leading-relaxed mb-10 whitespace-pre-wrap text-center">
               {error.msg}
             </div>
-            <div className="space-y-3">
-              <button 
-                onClick={() => window.location.replace('/login')} 
-                className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl"
-              >
-                Volver al Login
-              </button>
-            </div>
+            <button 
+              onClick={() => window.location.replace('/login')} 
+              className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl"
+            >
+              Volver al Login
+            </button>
           </>
         )}
       </div>
