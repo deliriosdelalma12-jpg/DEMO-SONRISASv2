@@ -10,93 +10,97 @@ export default function AuthCallback() {
   const [status, setStatus] = useState("Iniciando validación de seguridad...");
 
   useEffect(() => {
+    // Protección estricta contra doble ejecución
     if (ran.current) return;
     ran.current = true;
 
     async function handleAuth() {
       try {
-        // 1. EXTRACCIÓN ROBUSTA (Query + Hash)
-        const fullUrl = window.location.href;
-        const urlObj = new URL(fullUrl);
+        const url = new URL(window.location.href);
+        let code = url.searchParams.get("code");
         
-        // Intentamos obtener el code de la query ?code=...
-        let code = urlObj.searchParams.get("code");
-        
-        // Si no está en la query, buscamos en el hash #code=... (Común en algunos clientes de correo)
-        if (!code && urlObj.hash) {
-          const hashParams = new URLSearchParams(urlObj.hash.substring(1));
+        // Búsqueda omnicanal (Query y Hash)
+        if (!code && url.hash) {
+          const hashParams = new URLSearchParams(url.hash.substring(1));
           code = hashParams.get("code") || hashParams.get("access_token");
         }
 
-        // Diagnóstico mejorado
-        console.log("[AUTH_CALLBACK] Diagnostic:");
-        console.log(" - Full URL:", fullUrl);
-        console.log(" - Code extracted:", code ? "YES (hidden for security)" : "NO");
-        console.log(" - Has Hash:", !!urlObj.hash);
+        // --- VALIDACIÓN DE PKCE VERIFIER ---
+        const storageKeys = Object.keys(localStorage);
+        const hasVerifier = storageKeys.some(k => k.includes("-auth-token-code-verifier"));
+        
+        console.log("[AUTH_CALLBACK] Diagnóstico:", {
+          hasCode: !!code,
+          hasVerifier,
+          origin: window.location.origin
+        });
 
         if (!code) {
-          // Si llegamos aquí y no hay code, pero hay una sesión activa, quizá Supabase ya lo canjeó automáticamente
+          // Si no hay código pero ya hay sesión, es que Supabase ya lo hizo (cookie persistente)
           const { data: { session } } = await supabase.auth.getSession();
           if (session) {
-            console.log("[AUTH_CALLBACK] No code found but session active. Proceeding...");
-            await completeOnboarding(session.user);
+            await finalizeAuth(session.user);
             return;
           }
-          throw { title: "Código ausente", msg: "No se encontró el token de activación en la URL (search ni hash). Por favor, solicita un nuevo enlace." };
+          throw { title: "Enlace Inválido", msg: "No se encontró el código de activación. Por favor, solicita un nuevo email de registro." };
         }
 
-        // 2. EXCHANGE CON TIMEOUT Y GESTIÓN DE ABORTERROR
-        setStatus("Canjeando código de activación...");
+        if (!hasVerifier) {
+          throw { 
+            title: "Navegador no reconocido", 
+            msg: "Por seguridad, debes abrir el enlace de confirmación en el MISMO navegador donde te registraste (Chrome, Safari, etc). Si abres el link en una app de correo distinta, el proceso fallará." 
+          };
+        }
+
+        // --- INTERCAMBIO CON TIMEOUT ---
+        setStatus("Verificando identidad con la nube...");
         
-        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        // Usamos Promise.race para no quedar colgados si Supabase no responde
+        const exchangePromise = supabase.auth.exchangeCodeForSession(code);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 15000));
 
-        if (exchangeError) {
-          // Si el error es que el verifier no existe, explicar que debe abrirse en el mismo navegador
-          if (exchangeError.message?.includes("verifier") || exchangeError.name === "AuthPKCEVerifierNotFoundError") {
-             throw {
-               title: "Fallo de Verificación PKCE",
-               msg: "Para tu seguridad, debes abrir el enlace del correo en el MISMO navegador donde iniciaste el registro."
-             };
-          }
-          throw exchangeError;
-        }
+        const result: any = await Promise.race([exchangePromise, timeoutPromise]);
 
-        if (data.session) {
-          await completeOnboarding(data.session.user);
-        } else {
-          throw new Error("No se pudo establecer la sesión tras el canje.");
-        }
+        if (result.error) throw result.error;
+        if (!result.data?.session) throw new Error("No se pudo establecer la sesión.");
+
+        await finalizeAuth(result.data.session.user);
 
       } catch (e: any) {
-        // Ignorar AbortError si es provocado por el navegador/Supabase internal locks
-        if (e.name === 'AbortError' || e.message?.includes('aborted')) {
-          console.warn("[AUTH_CALLBACK] Exchange aborted, checking if session was still established...");
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) {
-            await completeOnboarding(session.user);
-            return;
-          }
+        // Silenciar AbortError si de todos modos tenemos sesión
+        if (e.name === 'AbortError' || e.message === 'signal is aborted') {
+           const { data: { session } } = await supabase.auth.getSession();
+           if (session) {
+             await finalizeAuth(session.user);
+             return;
+           }
         }
 
-        console.error("[AUTH_CALLBACK] Fatal error:", e);
+        console.error("[AUTH_CALLBACK] Error fatal:", e);
         setError({ 
           title: e.title || "Fallo de Activación", 
-          msg: e.msg || e.message || "Error inesperado durante la verificación.",
+          msg: e.msg || e.message || "Error inesperado al validar el token de acceso.",
           code: e.code 
         });
       }
     }
 
-    async function completeOnboarding(user: any) {
+    async function finalizeAuth(user: any) {
         try {
-            setStatus("Configurando infraestructura clínica...");
+            setStatus("Creando infraestructura de tu clínica...");
             await ensureClinicInfrastructure(user);
-            setStatus("Sincronizando acceso...");
+            
+            setStatus("Sincronizando acceso final...");
             await refreshContext();
+            
+            // Redirección limpia
             window.location.replace("/dashboard");
         } catch (err: any) {
             console.error("[AUTH_CALLBACK] Onboarding error:", err);
-            setError({ title: "Error de Configuración", msg: "Tu cuenta está activa pero hubo un fallo al crear tu clínica. Contacta con soporte." });
+            setError({ 
+              title: "Error de Configuración", 
+              msg: "Tu cuenta está activa pero no pudimos inicializar tu base de datos clínica. Contacta con soporte técnico." 
+            });
         }
     }
 
@@ -105,32 +109,73 @@ export default function AuthCallback() {
 
   async function ensureClinicInfrastructure(user: any) {
     const meta = user.user_metadata || {};
-    const clinicName = meta.clinic_name || "Mi Clínica MediClinic";
+    const email = user.email;
+    const clinicName = meta.clinic_name || `Clínica de ${email}`;
     
-    // Verificar si ya existe (Idempotencia)
-    const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', user.id).maybeSingle();
-    
-    if (!clinic) {
-      console.log("[ONBOARDING] Creando nueva clínica para:", user.id);
-      const { data: newC, error: cErr } = await supabase.from('clinics').insert({ name: clinicName, owner_id: user.id }).select('id').single();
-      if (cErr) throw cErr;
+    // 1. Verificar si la clínica ya existe para este dueño (Idempotencia)
+    const { data: existingClinic } = await supabase
+      .from('clinics')
+      .select('id')
+      .eq('owner_id', user.id)
+      .maybeSingle();
+
+    let clinicId = existingClinic?.id;
+
+    if (!clinicId) {
+      // 2. Crear Clínica
+      const { data: newClinic, error: cErr } = await supabase
+        .from('clinics')
+        .insert({ name: clinicName, owner_id: user.id })
+        .select('id')
+        .single();
       
+      if (cErr) throw cErr;
+      clinicId = newClinic.id;
+
+      // 3. Crear Perfil de Usuario Tenant
       await supabase.from('users').upsert({
-        id: user.id, clinic_id: newC.id, full_name: meta.full_name || user.email,
-        role: 'admin', is_active: true, username: user.email.split('@')[0]
+        id: user.id,
+        clinic_id: clinicId,
+        full_name: meta.full_name || email,
+        role: 'admin',
+        is_active: true,
+        username: email.split('@')[0]
       });
 
-      const defaultSettings = { 
-        id: newC.id, name: clinicName, businessName: clinicName, region: "ES", currency: "€", language: "es-ES", scheduleType: "split", 
-        roles: [{ id: 'admin', name: 'Admin', permissions: ['view_dashboard', 'view_all_data', 'can_edit'] }], 
-        labels: { dashboardTitle: "Panel", agendaTitle: "Agenda" }, visuals: { titleFontSize: 32, bodyFontSize: 16 }, 
-        laborSettings: { vacationDaysPerYear: 30, allowCarryOver: false, incidentTypes: [] }, 
-        appointmentPolicy: { confirmationWindow: 24, leadTimeThreshold: 2, autoConfirmShortNotice: true }, 
-        services: [{ id: 'S1', name: 'Consulta Gral', price: 50, duration: 30 }], 
-        aiPhoneSettings: { assistantName: "Sara", clinicDisplayName: clinicName, language: "es-ES", tone: "formal", voiceName: "Zephyr", core_version: "1.0.1", active: true, systemPrompt: "Asistente de " + clinicName, aiEmotion: "Empática", aiStyle: "Concisa", aiRelation: "Formal", aiFocus: "Resolutiva", configVersion: Date.now() } 
+      // 4. Crear Ajustes por Defecto
+      const defaultSettings = {
+        id: clinicId,
+        name: clinicName,
+        businessName: clinicName,
+        region: "ES",
+        currency: "€",
+        language: "es-ES",
+        scheduleType: "split",
+        branchCount: 1,
+        colorTemplate: "ocean",
+        roles: [{ id: 'admin', name: 'Admin', permissions: ['view_dashboard', 'view_all_data', 'can_edit'] }],
+        labels: { dashboardTitle: "Panel", agendaTitle: "Agenda" },
+        visuals: { titleFontSize: 32, bodyFontSize: 16 },
+        laborSettings: { vacationDaysPerYear: 30, allowCarryOver: false, incidentTypes: [] },
+        appointmentPolicy: { confirmationWindow: 24, leadTimeThreshold: 2, autoConfirmShortNotice: true },
+        services: [{ id: 'S1', name: 'Consulta Gral', price: 50, duration: 30 }],
+        aiPhoneSettings: { 
+          assistantName: "Sara", clinicDisplayName: clinicName, language: "es-ES", tone: "formal", 
+          voiceName: "Zephyr", core_version: "1.0.1", active: true, 
+          systemPrompt: "Asistente de " + clinicName, configVersion: Date.now() 
+        },
+        globalSchedule: {
+          'Lunes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+          'Martes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+          'Miércoles': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+          'Jueves': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+          'Viernes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
+          'Sábado': { morning: { start: '09:00', end: '13:00', active: true }, afternoon: { start: '00:00', end: '00:00', active: false } },
+          'Domingo': { morning: { start: '00:00', end: '00:00', active: false }, afternoon: { start: '00:00', end: '00:00', active: false } }
+        }
       };
 
-      await supabase.from('tenant_settings').upsert({ clinic_id: newC.id, settings: defaultSettings });
+      await supabase.from('tenant_settings').upsert({ clinic_id: clinicId, settings: defaultSettings });
     }
   }
 
@@ -140,7 +185,7 @@ export default function AuthCallback() {
         {!error ? (
           <>
             <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8 shadow-lg shadow-primary/20"></div>
-            <h2 className="text-2xl font-display font-black uppercase tracking-tight mb-2">Validando Credenciales</h2>
+            <h2 className="text-2xl font-display font-black uppercase tracking-tight mb-2">Activando Clínica</h2>
             <p className="text-primary font-bold text-[10px] uppercase tracking-[0.2em] animate-pulse">{status}</p>
           </>
         ) : (
@@ -152,12 +197,20 @@ export default function AuthCallback() {
             <div className="bg-rose-500/5 p-6 rounded-2xl border border-rose-500/10 text-slate-400 text-xs font-medium leading-relaxed mb-10 whitespace-pre-wrap text-center">
               {error.msg}
             </div>
-            <button 
-              onClick={() => window.location.replace('/login')} 
-              className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl"
-            >
-              Volver al Login
-            </button>
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={() => window.location.replace('/login')} 
+                className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl"
+              >
+                Ir al Login
+              </button>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="w-full h-12 bg-white/5 text-slate-400 rounded-2xl font-bold uppercase text-[9px] tracking-widest hover:bg-white/10 transition-all"
+              >
+                Reintentar validación
+              </button>
+            </div>
           </>
         )}
       </div>

@@ -27,8 +27,11 @@ const SignUp: React.FC = () => {
     setError('');
 
     try {
+      // Supabase requiere que la URL esté permitida en el Dashboard (Redirect URLs)
+      // Usamos window.location.origin para asegurar que coincida exactamente con el despliegue de Railway
       const redirectTo = `${window.location.origin}/auth/callback`;
-      console.log("[SIGNUP] Initiating with redirect:", redirectTo);
+      
+      console.log("[SIGNUP] Registrando con redirect:", redirectTo);
 
       const { data, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim().toLowerCase(),
@@ -46,8 +49,9 @@ const SignUp: React.FC = () => {
 
       if (data.user) {
         if (!data.session) {
-          setMessage("¡Registro con éxito! Por favor, revisa tu correo electrónico y abre el enlace de activación en ESTE MISMO NAVEGADOR.");
+          setMessage("¡Registro casi completado! Revisa tu email y pulsa en el botón de confirmación. IMPORTANTE: Abre el email en este mismo navegador.");
         } else {
+          // Si el auto-confirm está activado en Supabase (no recomendado para SaaS)
           navigate('/dashboard');
         }
       }
@@ -66,13 +70,13 @@ const SignUp: React.FC = () => {
           <div className="size-24 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-8 shadow-lg shadow-emerald-500/20">
             <span className="material-symbols-outlined text-6xl">mark_email_read</span>
           </div>
-          <h1 className="text-3xl font-display font-black text-white uppercase mb-4 tracking-tight">Activa tu Cuenta</h1>
+          <h1 className="text-3xl font-display font-black text-white uppercase mb-4 tracking-tight">Casi listo</h1>
           <p className="text-slate-400 font-medium mb-10 leading-relaxed italic">{message}</p>
           <button 
             onClick={() => navigate('/login')} 
             className="w-full h-16 bg-white/10 text-white rounded-2xl font-black uppercase text-xs tracking-widest border border-white/5 hover:bg-white/20 transition-all"
           >
-            Ir al Login
+            Volver al Login
           </button>
         </div>
       </div>

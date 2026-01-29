@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { User, ClinicSettings } from "../types";
@@ -20,7 +21,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [settings, setSettings] = useState<ClinicSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Evita ejecuciones simultáneas de fetchTenantContext
   const tenantFetchInFlight = useRef<Promise<void> | null>(null);
   const lastTenantUserId = useRef<string | null>(null);
 
@@ -28,7 +28,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userId = sessionUser?.id;
     if (!userId) return;
 
-    // Si ya estamos trayendo contexto para el mismo usuario, no repitas
     if (tenantFetchInFlight.current && lastTenantUserId.current === userId) {
       await tenantFetchInFlight.current;
       return;
@@ -48,18 +47,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (profile) {
           setTenantUser(profile);
-
           const { data: sData, error: sErr } = await supabase
             .from("tenant_settings")
             .select("settings")
             .eq("clinic_id", profile.clinic_id)
             .maybeSingle();
-
           if (sErr) throw sErr;
-
           setSettings(sData?.settings ?? null);
         } else {
-          // Si no hay perfil aún, limpia (evita estados inconsistentes)
           setTenantUser(null);
           setSettings(null);
         }
@@ -75,25 +70,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const url = new URL(window.location.href);
-
-    // ✅ CLAVE: Si estamos en el callback con ?code=..., NO llamamos a getSession aquí.
-    const isAuthCallbackRoute =
-      url.pathname.startsWith("/auth/callback") && url.searchParams.has("code");
+    // CRÍTICO: Si hay un código en la URL, el contexto NO debe tocar el getSession
+    // para no abortar el intercambio de código en AuthCallback.tsx
+    const isAuthCallbackRoute = url.pathname.includes("/auth/callback") && (url.searchParams.has("code") || url.hash.includes("code="));
 
     const initAuth = async () => {
-      try {
-        if (isAuthCallbackRoute) {
-          // En callback: esperamos a que AuthCallback haga exchange y dispare SIGNED_IN.
-          setLoading(true);
-          return;
-        }
+      if (isAuthCallbackRoute) {
+        console.log("[AUTH_CONTEXT] Callback detectado. Cediendo control a AuthCallback.");
+        setLoading(true); // Mantener en loading hasta que el callback termine
+        return;
+      }
 
+      try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) console.error("[AUTH_CONTEXT] getSession error:", error);
-
         const u = session?.user ?? null;
         setUser(u);
-
         if (u) await fetchTenantContext(u);
       } finally {
         setLoading(false);
@@ -103,24 +95,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      try {
-        const u = session?.user ?? null;
-        setUser(u);
-
-        if (event === "SIGNED_IN" || event === "USER_UPDATED") {
-          if (u) {
-            setLoading(true);
-            await fetchTenantContext(u);
-          }
-        }
-
-        if (event === "SIGNED_OUT") {
-          setTenantUser(null);
-          setSettings(null);
-        }
-      } catch (e) {
-        console.error("[AUTH_CONTEXT] onAuthStateChange error:", e);
-      } finally {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+        if (u) await fetchTenantContext(u);
+        setLoading(false);
+      }
+      if (event === "SIGNED_OUT") {
+        setTenantUser(null);
+        setSettings(null);
         setLoading(false);
       }
     });
@@ -129,13 +112,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const refreshContext = async () => {
-    // Evita getUser (network) si no hace falta. getSession suele ser suficiente.
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (error) console.error("[AUTH_CONTEXT] refresh getSession error:", error);
-
+    const { data: { session } } = await supabase.auth.getSession();
     const u = session?.user ?? null;
     setUser(u);
-
     if (u) await fetchTenantContext(u);
   };
 
