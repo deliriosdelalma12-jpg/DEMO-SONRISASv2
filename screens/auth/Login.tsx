@@ -27,17 +27,14 @@ const Login: React.FC = () => {
     setInfo('');
 
     try {
-      console.info("[LOGIN_ATTEMPT]", { email });
-
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password,
       });
 
       if (authError) {
-        const msg = authError.message.toLowerCase();
-        if (msg.includes("email") && (msg.includes("confirm") || msg.includes("verified"))) {
-          setError("Debes confirmar tu correo antes de iniciar sesión. Por favor, revisa tu bandeja de entrada.");
+        if (authError.message.toLowerCase().includes("email not confirmed")) {
+          setError("Debes confirmar tu correo electrónico. Revisa tu bandeja de entrada o haz clic en reenviar.");
         } else {
           setError(authError.message);
         }
@@ -45,16 +42,11 @@ const Login: React.FC = () => {
         return;
       }
 
-      if (!data.session) {
-        setError("Acceso bloqueado: sesión no iniciada.");
-        setLoading(false);
-        return;
+      if (data.session) {
+        navigate('/dashboard', { replace: true });
       }
-
-      window.location.replace('/#/dashboard');
     } catch (err: any) {
-      console.error("[LOGIN_FATAL]", err);
-      setError("Error inesperado en el acceso. Revisa la consola.");
+      setError("Error crítico de conexión.");
       setLoading(false);
     }
   };
@@ -62,15 +54,14 @@ const Login: React.FC = () => {
   const handleResend = async () => {
     if (!email) { setError("Introduce tu email para reenviar el enlace."); return; }
     setLoading(true);
-    const redirectTo = `${window.location.origin}/auth/callback`;
     const { error } = await supabase.auth.resend({ 
       type: 'signup', 
       email, 
-      options: { emailRedirectTo: redirectTo } 
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` } 
     });
     setLoading(false);
     if (error) setError(error.message);
-    else setInfo("Enlace de verificación reenviado.");
+    else setInfo("Enlace de verificación reenviado con éxito.");
   };
 
   return (
@@ -83,7 +74,7 @@ const Login: React.FC = () => {
             <span className="material-symbols-outlined text-white text-4xl font-bold">hospital</span>
           </div>
           <h1 className="text-3xl font-display font-black text-white uppercase tracking-tighter">MediClinic Cloud</h1>
-          <p className="text-slate-400 text-sm mt-2 font-medium">Gestión Profesional Unificada</p>
+          <p className="text-slate-400 text-sm mt-2 font-medium italic">Gestión Profesional Segura</p>
         </div>
 
         {info && <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-xs font-bold text-center">{info}</div>}
@@ -91,7 +82,7 @@ const Login: React.FC = () => {
           <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center flex flex-col gap-2">
             <span>{error}</span>
             {error.includes("confirmar") && (
-              <button onClick={handleResend} className="text-white underline text-[10px] font-black uppercase">Reenviar email de activación</button>
+              <button onClick={handleResend} className="text-white underline text-[10px] font-black uppercase mt-1">Reenviar activación</button>
             )}
           </div>
         )}
@@ -99,11 +90,11 @@ const Login: React.FC = () => {
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email Profesional</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none" placeholder="ejemplo@clinica.com" />
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none" />
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Contraseña</label>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={loading} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none" placeholder="••••••••" />
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:ring-4 focus:ring-primary/10 transition-all outline-none" />
           </div>
           
           <button type="submit" disabled={loading} className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3">
@@ -111,7 +102,7 @@ const Login: React.FC = () => {
           </button>
         </form>
 
-        <p className="text-center mt-8 text-slate-500 text-xs font-medium">¿No tienes cuenta? <Link to="/signup" className="text-primary font-black hover:underline">Regístrate ahora</Link></p>
+        <p className="text-center mt-8 text-slate-500 text-xs font-medium">¿No tienes cuenta? <Link to="/signup" className="text-primary font-black hover:underline">Regístrate</Link></p>
       </div>
     </div>
   );

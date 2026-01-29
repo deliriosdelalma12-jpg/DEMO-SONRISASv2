@@ -22,18 +22,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   const fetchTenantContext = async (sessionUser: any) => {
-    if (!sessionUser) return;
+    if (!sessionUser?.id) return;
     try {
-      console.log("🔍 [AUTH_CONTEXT] Cargando contexto para:", sessionUser.id);
-      
-      const { data: profile, error: pErr } = await supabase
+      const { data: profile } = await supabase
         .from('users')
         .select('*')
         .eq('id', sessionUser.id)
         .maybeSingle();
       
-      if (pErr) throw pErr;
-
       if (profile) {
         setTenantUser(profile);
         const { data: sData } = await supabase
@@ -45,31 +41,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (sData?.settings) setSettings(sData.settings);
       }
     } catch (e) {
-      console.error("❌ [AUTH_CONTEXT] Error contexto:", e);
+      console.error("[AUTH_CONTEXT] Error:", e);
     }
   };
 
   useEffect(() => {
-    const isCallback = window.location.pathname === '/auth/callback';
-    
-    if (!isCallback) {
-      supabase.auth.getSession()
-        .then(({ data }) => {
-          const u = data?.session?.user ?? null;
-          setUser(u);
-          if (u) fetchTenantContext(u);
-        })
-        .catch(err => console.error("Error recuperando sesión:", err))
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔔 [AUTH_EVENT]:', event);
+    const initAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       const u = session?.user ?? null;
       setUser(u);
-      
+      if (u) await fetchTenantContext(u);
+      setLoading(false);
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         if (u) await fetchTenantContext(u);
       } else if (event === 'SIGNED_OUT') {
@@ -83,14 +72,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const refreshContext = async () => {
-    console.log("♻️ [AUTH_CONTEXT] Refrescando contexto global...");
-    try {
-      const { data } = await supabase.auth.getUser();
-      const sessionUser = data?.user;
-      if (sessionUser) await fetchTenantContext(sessionUser);
-    } catch (e) {
-      console.error("Error en refreshContext:", e);
-    }
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) await fetchTenantContext(currentUser);
   };
 
   const signOut = async () => {
