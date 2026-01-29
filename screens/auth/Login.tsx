@@ -34,9 +34,9 @@ const Login: React.FC = () => {
 
       if (authError) {
         if (authError.message.toLowerCase().includes("email not confirmed")) {
-          setError("Acceso denegado: Debes confirmar tu email antes de iniciar sesión. Revisa tu correo o solicita un reenvío.");
+          setError("Acceso denegado: Debes confirmar tu email antes de entrar.");
         } else if (authError.message.toLowerCase().includes("invalid login")) {
-          setError("Credenciales incorrectas. Verifica tu email y contraseña.");
+          setError("Email o contraseña incorrectos.");
         } else {
           setError(authError.message);
         }
@@ -48,22 +48,31 @@ const Login: React.FC = () => {
         navigate('/dashboard', { replace: true });
       }
     } catch (err: any) {
-      setError("Error de conexión. Inténtalo de nuevo.");
+      setError("Error de red inesperado.");
       setLoading(false);
     }
   };
 
   const handleResend = async () => {
-    if (!email) { setError("Introduce tu email para reenviar el enlace."); return; }
+    if (!email) {
+      setError("Introduce tu email para reenviar el enlace.");
+      return;
+    }
     setLoading(true);
-    const { error } = await supabase.auth.resend({ 
+    setError('');
+    
+    const { error: resendErr } = await supabase.auth.resend({ 
       type: 'signup', 
-      email, 
+      email: email.trim().toLowerCase(),
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` } 
     });
+
     setLoading(false);
-    if (error) setError(error.message);
-    else setInfo("Enlace de activación reenviado. Revisa tu bandeja.");
+    if (resendErr) {
+      setError(resendErr.message);
+    } else {
+      setInfo("¡Email reenviado! RECUERDA: Ábrelo en ESTE MISMO NAVEGADOR para evitar errores de seguridad.");
+    }
   };
 
   return (
@@ -76,15 +85,21 @@ const Login: React.FC = () => {
             <span className="material-symbols-outlined text-white text-4xl font-bold">hospital</span>
           </div>
           <h1 className="text-3xl font-display font-black text-white uppercase tracking-tighter">MediClinic Cloud</h1>
-          <p className="text-slate-400 text-sm mt-2 font-medium italic">Portal de Gestión Segura</p>
+          <p className="text-slate-400 text-sm mt-2 font-medium italic">Gestión Segura de Redes Clínicas</p>
         </div>
 
-        {info && <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-xs font-bold text-center">{info}</div>}
+        {info && <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-[10px] font-black uppercase text-center tracking-widest">{info}</div>}
+        
         {error && (
           <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center flex flex-col gap-3">
             <span>{error}</span>
-            {error.includes("confirmar") && (
-              <button onClick={handleResend} className="text-white bg-rose-500/30 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-rose-500/50 transition-all underline">Reenviar Activación</button>
+            {(error.includes("confirmar") || error.includes("denegado")) && (
+              <button 
+                onClick={handleResend} 
+                className="text-white bg-rose-500/30 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-rose-500/50 transition-all underline decoration-2"
+              >
+                Reenviar email de activación
+              </button>
             )}
           </div>
         )}
@@ -100,12 +115,17 @@ const Login: React.FC = () => {
           </div>
           
           <button type="submit" disabled={loading} className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3">
-            {loading ? <span className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Acceder al Sistema'}
+            {loading ? <span className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Acceder'}
           </button>
         </form>
 
-        <div className="text-center mt-8">
-           <p className="text-slate-500 text-xs font-medium">¿No eres miembro? <Link to="/signup" className="text-primary font-black hover:underline">Regístrate ahora</Link></p>
+        <div className="text-center mt-8 space-y-4">
+           <p className="text-slate-500 text-xs font-medium">
+             ¿No eres miembro? <Link to="/signup" className="text-primary font-black hover:underline">Regístrate ahora</Link>
+           </p>
+           {!error.includes("confirmar") && (
+             <button onClick={handleResend} className="text-slate-600 text-[9px] uppercase font-black hover:text-slate-400 transition-colors">¿Problemas con el email de activación?</button>
+           )}
         </div>
       </div>
     </div>

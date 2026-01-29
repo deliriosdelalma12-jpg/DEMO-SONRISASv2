@@ -6,8 +6,8 @@ import { useAuth } from "../../context/AuthContext";
 export default function AuthCallback() {
   const { refreshContext } = useAuth();
   const ran = useRef(false);
-  const [error, setError] = useState<string | null>(null);
-  const [msg, setMsg] = useState("Iniciando validación de seguridad...");
+  const [error, setError] = useState<{title: string, msg: string, code?: string} | null>(null);
+  const [status, setStatus] = useState("Iniciando validación de seguridad...");
 
   useEffect(() => {
     if (ran.current) return;
@@ -15,67 +15,77 @@ export default function AuthCallback() {
 
     async function handleAuth() {
       try {
-        // DIAGNÓSTICO DE RED E INTERFAZ
-        console.log("[AUTH_CALLBACK] INFO INICIAL:");
-        console.log(" - Full URL:", window.location.href);
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+        
+        // 1. DIAGNÓSTICO DE STORAGE (Buscando PKCE Verifier)
+        const storageKeys = Object.keys(localStorage);
+        const verifierKeys = storageKeys.filter(k => 
+          k.toLowerCase().includes("verifier") || 
+          k.toLowerCase().includes("pkce") ||
+          (k.startsWith("sb-") && k.endsWith("-auth-token-code-verifier"))
+        );
+
+        console.log("[AUTH_CALLBACK] Diagnostic:");
         console.log(" - Origin:", window.location.origin);
-        console.log(" - Pathname:", window.location.pathname);
-        console.log(" - SearchParams:", window.location.search);
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get("code");
-        
-        // Revisión de localStorage para PKCE verifier
-        const storageKeys = Object.keys(localStorage).filter(k => k.includes("supabase.auth.token-code-verifier"));
-        console.log(" - PKCE Verifiers in storage:", storageKeys);
+        console.log(" - PKCE Keys found:", verifierKeys);
+        console.log(" - Code present:", !!code);
 
         if (!code) {
-          throw new Error("Código de activación no encontrado en la URL. Solicita un nuevo enlace desde el login.");
+          throw { title: "Código ausente", msg: "No se encontró el token de activación en la URL." };
         }
 
-        // 1) EXCHANGE CON TIMEOUT (12 segundos)
-        setMsg("Intercambiando código de activación...");
-        console.time("exchange_request");
+        // 2. DETECCIÓN PREVENTIVA DE NAVEGADOR DISTINTO
+        if (verifierKeys.length === 0) {
+          console.warn("[AUTH_CALLBACK] PKCE Verifier missing in this browser context.");
+          setError({
+            title: "Mismo navegador requerido",
+            msg: "Este enlace se abrió en un navegador distinto o se perdió la sesión del registro. Por seguridad, no podemos activar tu cuenta aquí.\n\nSolución: vuelve a la pestaña donde te registraste y pulsa 'Reenviar activación'. Luego abre el email en ese MISMO navegador."
+          });
+          return;
+        }
+
+        // 3. EXCHANGE CON TIMEOUT (Sin AbortController para evitar Signal Aborted interno)
+        setStatus("Canjeando código de activación...");
+        console.time("exchange_time");
         
         const exchangePromise = supabase.auth.exchangeCodeForSession(code);
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("La conexión con Supabase ha tardado demasiado (Timeout 12s). Reintenta la operación.")), 12000)
+          setTimeout(() => reject(new Error("TIMEOUT_ERROR")), 12000)
         );
 
-        const { data, error: exchangeError } = await Promise.race([exchangePromise, timeoutPromise]) as any;
-        console.timeEnd("exchange_request");
+        const result: any = await Promise.race([exchangePromise, timeoutPromise]);
+        console.timeEnd("exchange_time");
 
-        if (exchangeError) {
-          console.error("[AUTH_CALLBACK] Exchange Error Object:", exchangeError);
-          
-          // Detección de error común PKCE por cambio de dominio
-          if (exchangeError.message?.includes("verifier") || storageKeys.length === 0) {
-             throw new Error("ERROR DE SEGURIDAD PKCE: El enlace se está abriendo en un dominio o navegador distinto al de registro. Asegúrate de abrir el email en la misma ventana donde creaste la cuenta.");
-          }
-          throw exchangeError;
-        }
+        if (result.error) throw result.error;
+        if (!result.data?.session) throw new Error("NO_SESSION_RETURNED");
 
-        if (!data.session?.user) {
-          throw new Error("No se ha podido establecer la sesión activa. El código podría haber expirado.");
-        }
-
-        console.log("[AUTH_CALLBACK] Session OK. User ID:", data.session.user.id);
-
-        // 2) ONBOARDING DE NEGOCIO (Idempotente)
-        setMsg("Sincronizando infraestructura clínica...");
-        await ensureClinicInfrastructure(data.session.user);
-
-        // 3) ACTUALIZACIÓN DE CONTEXTO
-        setMsg("Finalizando configuración...");
+        // 4. ONBOARDING Y SINCRONIZACIÓN
+        setStatus("Configurando infraestructura clínica...");
+        await ensureClinicInfrastructure(result.data.session.user);
+        
+        setStatus("Sincronizando acceso...");
         await refreshContext();
 
-        // 4) REDIRECCIÓN LIMPIA
-        console.log("[AUTH_CALLBACK] Redirigiendo a Dashboard...");
+        // REDIRECCIÓN FINAL
         window.location.replace("/dashboard");
 
       } catch (e: any) {
-        console.error("[AUTH_CALLBACK] FATAL ERROR:", e);
-        setError(e?.message || "Error desconocido durante la activación.");
+        console.error("[AUTH_CALLBACK] Fatal error:", e);
+        if (e.message === "TIMEOUT_ERROR") {
+          setError({ title: "Error de red", msg: "La verificación está tardando demasiado. Reintenta en unos momentos." });
+        } else if (e.message?.includes("verifier") || e.name === "AuthPKCEVerifierNotFoundError") {
+          setError({
+            title: "Fallo de Verificación PKCE",
+            msg: "Navegador no reconocido. Por favor, asegúrate de abrir el enlace del email en el mismo navegador donde iniciaste el registro."
+          });
+        } else {
+          setError({ 
+            title: "Fallo de Activación", 
+            msg: e.message || "Error inesperado durante la verificación técnica.",
+            code: e.code 
+          });
+        }
       }
     }
 
@@ -84,120 +94,51 @@ export default function AuthCallback() {
 
   async function ensureClinicInfrastructure(user: any) {
     const meta = user.user_metadata || {};
-    const clinicName = meta.clinic_name || "Clínica MediClinic";
-    const fullName = meta.full_name || user.email;
+    const clinicName = meta.clinic_name || "Mi Clínica MediClinic";
+    
+    const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', user.id).maybeSingle();
+    if (!clinic) {
+      const { data: newC, error: cErr } = await supabase.from('clinics').insert({ name: clinicName, owner_id: user.id }).select('id').single();
+      if (cErr) throw cErr;
+      
+      await supabase.from('users').upsert({
+        id: user.id, clinic_id: newC.id, full_name: meta.full_name || user.email,
+        role: 'admin', is_active: true, username: user.email.split('@')[0]
+      });
 
-    // 1. Verificar existencia de clínica
-    console.log("[ONBOARDING] Buscando clínica para owner_id:", user.id);
-    const { data: clinic, error: clinicSelErr } = await supabase
-      .from("clinics")
-      .select("id")
-      .eq("owner_id", user.id)
-      .maybeSingle();
-
-    if (clinicSelErr) {
-        console.error("[ONBOARDING] Error buscando clínica:", clinicSelErr);
-        throw new Error(`Error de base de datos (RLS/Permissions): ${clinicSelErr.message}`);
+      await supabase.from('tenant_settings').upsert({
+        clinic_id: newC.id,
+        settings: { id: newC.id, name: clinicName, businessName: clinicName, region: "ES", currency: "€", language: "es-ES", scheduleType: "split", roles: [{ id: 'admin', name: 'Admin', permissions: ['view_dashboard', 'view_all_data', 'can_edit'] }], labels: { dashboardTitle: "Panel", agendaTitle: "Agenda" }, visuals: { titleFontSize: 32, bodyFontSize: 16 }, laborSettings: { vacationDaysPerYear: 30, allowCarryOver: false, incidentTypes: [] }, appointmentPolicy: { confirmationWindow: 24, leadTimeThreshold: 2, autoConfirmShortNotice: true }, services: [{ id: 'S1', name: 'Consulta Gral', price: 50, duration: 30 }], aiPhoneSettings: { assistantName: "Sara", clinicDisplayName: clinicName, language: "es-ES", tone: "formal", voiceName: "Zephyr", core_version: "1.0.1", active: true, systemPrompt: "Asistente de " + clinicName, aiEmotion: "Empática", aiStyle: "Concisa", aiRelation: "Formal", aiFocus: "Resolutiva", configVersion: Date.now() } }
+      });
     }
-
-    let clinicId = clinic?.id;
-
-    // 2. Crear clínica si no existe
-    if (!clinicId) {
-      console.log("[ONBOARDING] Creando nueva clínica:", clinicName);
-      const { data: newClinic, error: cErr } = await supabase
-        .from("clinics")
-        .insert({ name: clinicName, owner_id: user.id })
-        .select("id")
-        .single();
-
-      if (cErr) {
-          console.error("[ONBOARDING] Error creando clínica:", cErr);
-          throw cErr;
-      }
-      clinicId = newClinic.id;
-    }
-
-    // 3. Upsert Perfil Usuario
-    console.log("[ONBOARDING] Sincronizando perfil de usuario...");
-    const { error: uErr } = await supabase.from("users").upsert({
-      id: user.id,
-      clinic_id: clinicId,
-      full_name: fullName,
-      role: "admin",
-      is_active: true,
-      username: user.email?.split("@")[0] || `user_${Date.now()}`,
-    });
-    if (uErr) throw uErr;
-
-    // 4. Upsert Tenant Settings
-    console.log("[ONBOARDING] Sincronizando configuración del tenant...");
-    const { error: tErr } = await supabase.from("tenant_settings").upsert({
-      clinic_id: clinicId,
-      settings: {
-        id: clinicId,
-        name: clinicName,
-        businessName: clinicName,
-        region: "ES",
-        currency: "€",
-        language: "es-ES",
-        scheduleType: "split",
-        roles: [{ id: "admin", name: "Admin Global", permissions: ["view_dashboard", "view_all_data", "can_edit"] }],
-        labels: { dashboardTitle: "Panel Ejecutivo", agendaTitle: "Calendario Operativo" },
-        visuals: { titleFontSize: 32, bodyFontSize: 16 },
-        laborSettings: { vacationDaysPerYear: 30, allowCarryOver: false, incidentTypes: [] },
-        appointmentPolicy: { confirmationWindow: 24, leadTimeThreshold: 2, autoConfirmShortNotice: true },
-        services: [{ id: "S1", name: "Consulta General", price: 50, duration: 30 }],
-        aiPhoneSettings: {
-          assistantName: "Sara",
-          clinicDisplayName: clinicName,
-          language: "es-ES",
-          tone: "formal",
-          voiceName: "Zephyr",
-          core_version: "1.0.1",
-          active: true,
-          systemPrompt: `Eres la asistente virtual de ${clinicName}. Responde siempre de forma profesional y breve.`,
-          testSpeechText: "Prueba de voz MediClinic.",
-          instructions: "Gestiona citas de pacientes.",
-          model: "gemini-3-flash-preview",
-          escalation_rules: { transfer_number: "", escalate_on_frustration: true },
-          policy_texts: { cancel_policy: "", privacy_notice: "" },
-          aiEmotion: "Empática",
-          aiStyle: "Concisa",
-          aiRelation: "Formal",
-          aiFocus: "Resolutiva",
-          configVersion: Date.now(),
-        },
-      },
-    });
-    if (tErr) throw tErr;
-    console.log("[ONBOARDING] Infraestructura completada con éxito.");
   }
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-white font-body">
-      <div className="w-full max-w-md bg-slate-900 border border-white/10 rounded-[3rem] p-12 text-center shadow-2xl">
+      <div className="w-full max-w-md bg-slate-900 border border-white/10 rounded-[2.5rem] p-12 text-center shadow-2xl animate-in fade-in zoom-in duration-500">
         {!error ? (
           <>
-            <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8 shadow-lg shadow-primary/20" />
-            <h2 className="text-3xl font-display font-black uppercase tracking-tight mb-2">Validando Acceso</h2>
-            <p className="text-primary font-bold text-xs uppercase tracking-widest animate-pulse">{msg}</p>
+            <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-8 shadow-lg shadow-primary/20"></div>
+            <h2 className="text-2xl font-display font-black uppercase tracking-tight mb-2">Activando Cuenta</h2>
+            <p className="text-primary font-bold text-[10px] uppercase tracking-[0.2em] animate-pulse">{status}</p>
           </>
         ) : (
           <>
-            <div className="size-20 bg-rose-500 text-white rounded-full flex items-center justify-center mx-auto mb-8 shadow-xl">
-              <span className="material-symbols-outlined text-5xl">gpp_maybe</span>
+            <div className="size-24 bg-rose-500/20 text-rose-500 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border-2 border-rose-500/20">
+              <span className="material-symbols-outlined text-6xl">gpp_maybe</span>
             </div>
-            <h2 className="text-3xl font-display font-black uppercase tracking-tight mb-4">Fallo de Activación</h2>
-            <div className="bg-rose-500/10 p-6 rounded-2xl border border-rose-500/20 text-rose-400 text-xs font-bold leading-relaxed mb-8">
-              {error}
+            <h2 className="text-2xl font-display font-black uppercase tracking-tight mb-4 text-rose-500">{error.title}</h2>
+            <div className="bg-rose-500/5 p-6 rounded-2xl border border-rose-500/10 text-slate-400 text-xs font-medium leading-relaxed mb-10 whitespace-pre-wrap">
+              {error.msg}
             </div>
-            <button
-              onClick={() => window.location.replace("/login")}
-              className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-all"
-            >
-              Volver al Login
-            </button>
+            <div className="space-y-3">
+              <button 
+                onClick={() => window.location.replace('/login')} 
+                className="w-full h-14 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl"
+              >
+                Volver al Login
+              </button>
+            </div>
           </>
         )}
       </div>

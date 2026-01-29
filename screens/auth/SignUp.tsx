@@ -28,9 +28,7 @@ const SignUp: React.FC = () => {
 
     try {
       const redirectTo = `${window.location.origin}/auth/callback`;
-      console.log("[SIGNUP] DEBUG INFO:");
-      console.log(" - Origin:", window.location.origin);
-      console.log(" - RedirectTarget:", redirectTo);
+      console.log("[SIGNUP] Initiating with redirect:", redirectTo);
 
       const { data, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim().toLowerCase(),
@@ -48,13 +46,13 @@ const SignUp: React.FC = () => {
 
       if (data.user) {
         if (!data.session) {
-          setMessage("¡Registro con éxito! Revisa tu bandeja de entrada (y la de SPAM) para activar tu cuenta. No cierres esta ventana hasta confirmar el email.");
+          setMessage("¡Registro con éxito! Por favor, revisa tu correo electrónico y abre el enlace de activación en ESTE MISMO NAVEGADOR.");
         } else {
           navigate('/dashboard');
         }
       }
     } catch (e: any) {
-      console.error("[SIGNUP] Fatal Error:", e);
+      console.error("[SIGNUP] Error:", e);
       setError(e.message || "Fallo técnico en el proceso de registro.");
     } finally {
       setLoading(false);
@@ -69,12 +67,12 @@ const SignUp: React.FC = () => {
             <span className="material-symbols-outlined text-6xl">mark_email_read</span>
           </div>
           <h1 className="text-3xl font-display font-black text-white uppercase mb-4 tracking-tight">Activa tu Cuenta</h1>
-          <p className="text-slate-400 font-medium mb-10 leading-relaxed">{message}</p>
+          <p className="text-slate-400 font-medium mb-10 leading-relaxed italic">{message}</p>
           <button 
             onClick={() => navigate('/login')} 
             className="w-full h-16 bg-white/10 text-white rounded-2xl font-black uppercase text-xs tracking-widest border border-white/5 hover:bg-white/20 transition-all"
           >
-            Volver al Login
+            Ir al Login
           </button>
         </div>
       </div>
@@ -86,9 +84,9 @@ const SignUp: React.FC = () => {
       <div className="absolute top-0 right-0 size-[500px] bg-primary/20 rounded-full blur-[120px] translate-x-1/3 -translate-y-1/3"></div>
       
       <div className="w-full max-w-xl bg-slate-900/50 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-10 shadow-2xl relative z-10 animate-in slide-in-from-bottom-8">
-        <div className="mb-10">
+        <div className="mb-10 text-center md:text-left">
           <h1 className="text-4xl font-display font-black text-white uppercase tracking-tighter">Nueva Clínica</h1>
-          <p className="text-slate-400 text-sm mt-2 font-medium italic">Configuración de nodo MediClinic Cloud</p>
+          <p className="text-slate-400 text-sm mt-2 font-medium italic">Acceso inmediato a Mediclinic Cloud</p>
         </div>
 
         {error && (
@@ -104,7 +102,7 @@ const SignUp: React.FC = () => {
               <input type="text" required value={formData.clinicName} onChange={e => setFormData({...formData, clinicName: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:ring-4 focus:ring-primary/10 transition-all" placeholder="Ej: Dental Premium" />
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nombre Propietario</label>
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Tu Nombre</label>
               <input type="text" required value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:ring-4 focus:ring-primary/10 transition-all" placeholder="Ej: Dr. Ruiz" />
             </div>
           </div>
@@ -123,7 +121,7 @@ const SignUp: React.FC = () => {
             </div>
           </div>
           <button type="submit" disabled={loading} className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3">
-            {loading ? <span className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Comenzar Activación'}
+            {loading ? <span className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Crear Cuenta'}
           </button>
         </form>
 
