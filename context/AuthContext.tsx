@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { User, ClinicSettings } from "../types";
 
@@ -21,72 +21,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [settings, setSettings] = useState<ClinicSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const tenantFetchInFlight = useRef<Promise<void> | null>(null);
-  const lastTenantUserId = useRef<string | null>(null);
+  const fetchTenantContext = useCallback(async (userId: string) => {
+    try {
+      const { data: profile, error: pErr } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
 
-  const fetchTenantContext = async (sessionUser: any) => {
-    const userId = sessionUser?.id;
-    if (!userId) return;
-
-    if (tenantFetchInFlight.current && lastTenantUserId.current === userId) {
-      await tenantFetchInFlight.current;
-      return;
-    }
-
-    lastTenantUserId.current = userId;
-
-    tenantFetchInFlight.current = (async () => {
-      try {
-        const { data: profile, error: pErr } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", userId)
+      if (profile) {
+        setTenantUser(profile);
+        const { data: sData } = await supabase
+          .from("tenant_settings")
+          .select("settings")
+          .eq("clinic_id", profile.clinic_id)
           .maybeSingle();
-
-        if (pErr) throw pErr;
-
-        if (profile) {
-          setTenantUser(profile);
-          const { data: sData, error: sErr } = await supabase
-            .from("tenant_settings")
-            .select("settings")
-            .eq("clinic_id", profile.clinic_id)
-            .maybeSingle();
-          if (sErr) throw sErr;
-          setSettings(sData?.settings ?? null);
-        } else {
-          setTenantUser(null);
-          setSettings(null);
-        }
-      } catch (e) {
-        console.error("[AUTH_CONTEXT] fetchTenantContext error:", e);
-      } finally {
-        tenantFetchInFlight.current = null;
+        setSettings(sData?.settings ?? null);
       }
-    })();
-
-    await tenantFetchInFlight.current;
-  };
+    } catch (e) {
+      console.error("[AUTH_CONTEXT] Error:", e);
+    }
+  }, []);
 
   useEffect(() => {
-    const url = new URL(window.location.href);
-    // CRÍTICO: Si hay un código en la URL, el contexto NO debe tocar el getSession
-    // para no abortar el intercambio de código en AuthCallback.tsx
-    const isAuthCallbackRoute = url.pathname.includes("/auth/callback") && (url.searchParams.has("code") || url.hash.includes("code="));
+    const isCallback = window.location.pathname.includes("/auth/callback");
 
     const initAuth = async () => {
-      if (isAuthCallbackRoute) {
-        console.log("[AUTH_CONTEXT] Callback detectado. Cediendo control a AuthCallback.");
-        setLoading(true); // Mantener en loading hasta que el callback termine
-        return;
-      }
+      // Si estamos en el callback, no molestamos al flujo de activación
+      if (isCallback) return;
 
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) console.error("[AUTH_CONTEXT] getSession error:", error);
-        const u = session?.user ?? null;
-        setUser(u);
-        if (u) await fetchTenantContext(u);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          setUser(session.user);
+          await fetchTenantContext(session.user.id);
+        }
       } finally {
         setLoading(false);
       }
@@ -95,33 +64,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (isCallback) return;
+      
       const u = session?.user ?? null;
       setUser(u);
-      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
-        if (u) await fetchTenantContext(u);
-        setLoading(false);
-      }
-      if (event === "SIGNED_OUT") {
+      if (u && event !== "SIGNED_OUT") {
+        await fetchTenantContext(u.id);
+      } else {
         setTenantUser(null);
         setSettings(null);
-        setLoading(false);
       }
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchTenantContext]);
 
-  const refreshContext = async () => {
+  const refreshContext = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    const u = session?.user ?? null;
-    setUser(u);
-    if (u) await fetchTenantContext(u);
-  };
+    if (session?.user) {
+      setUser(session.user);
+      await fetchTenantContext(session.user.id);
+    }
+  }, [fetchTenantContext]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     window.location.replace("/login");
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, tenantUser, settings, loading, setSettings, refreshContext, signOut }}>

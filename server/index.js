@@ -10,21 +10,18 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-
-// Use the port provided by Railway or fallback to 3000 for local development
 const PORT = process.env.PORT || 3000;
 
-// Initialize Supabase with Service Role Key for administrative tasks
-// Note: Service Role Key should NEVER be used on the client-side
+// Cliente Admin para operaciones de base de datos (Railway side)
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_URL || 'https://nylfetawfgvmawagdpir.supabase.co',
   process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
 
 app.use(cors());
 app.use(express.json());
 
-// Middleware: Authenticate via Supabase JWT
+// Middleware: Autenticación via Supabase JWT
 const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -32,35 +29,38 @@ const authenticate = async (req, res, next) => {
   }
 
   const token = authHeader.split(' ')[1];
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-
-  if (error || !user) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) throw new Error('Invalid token');
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Sesión no válida' });
   }
-
-  req.user = user;
-  next();
 };
 
-// API: Ensure Onboarding (Idempotent)
+// API: Asegurar Onboarding (Lógica de Negocio en Railway)
 app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
   const userId = req.user.id;
   const userMetadata = req.user.user_metadata || {};
   const email = req.user.email;
 
-  try {
-    // 1. Check if user already has a clinic
-    const { data: existingUser } = await supabaseAdmin
-      .from('users')
-      .select('clinic_id')
-      .eq('id', userId)
-      .maybeSingle(); // Use maybeSingle to avoid errors if not found
+  console.log(`[SERVER_ONBOARDING] Procesando usuario: ${email} (${userId})`);
 
-    if (existingUser?.clinic_id) {
-      return res.json({ status: 'ok', message: 'User already onboarded', clinic_id: existingUser.clinic_id });
+  try {
+    // 1. Verificar si el usuario ya tiene clínica asignada (Evita duplicados)
+    const { data: existingProfile } = await supabaseAdmin
+      .from('users')
+      .select('clinic_id, clinics(id)')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (existingProfile?.clinic_id) {
+      console.log(`[SERVER_ONBOARDING] Usuario ya configurado. ClinicID: ${existingProfile.clinic_id}`);
+      return res.json({ status: 'ok', clinic_id: existingProfile.clinic_id });
     }
 
-    // 2. Create the Clinic
+    // 2. Crear la Clínica en Railway
     const clinicName = userMetadata.clinic_name || `Clínica de ${email}`;
     const { data: clinic, error: cErr } = await supabaseAdmin
       .from('clinics')
@@ -73,8 +73,8 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
 
     if (cErr) throw cErr;
 
-    // 3. Create Public User Profile
-    await supabaseAdmin.from('users').insert({
+    // 3. Crear Perfil de Usuario vinculado
+    await supabaseAdmin.from('users').upsert({
       id: userId,
       clinic_id: clinic.id,
       full_name: userMetadata.full_name || email,
@@ -83,14 +83,7 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
       username: email.split('@')[0]
     });
 
-    // 4. Create Clinic Membership
-    await supabaseAdmin.from('clinic_members').insert({
-      clinic_id: clinic.id,
-      user_id: userId,
-      role: 'admin'
-    });
-
-    // 5. Initialize default settings for the tenant
+    // 4. Inicializar Configuración del Tenant (JSONB)
     const defaultSettings = {
       id: clinic.id,
       name: clinicName,
@@ -109,13 +102,11 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
       roles: [
         { id: 'admin', name: 'Administrador Global', permissions: ['view_dashboard', 'view_agenda', 'view_patients', 'view_doctors', 'view_branches', 'view_metrics', 'view_settings', 'view_all_data', 'can_edit'] }
       ],
-      labels: { dashboardTitle: "Dashboard Directivo", agendaTitle: "Agenda Centralizada" },
+      labels: { dashboardTitle: "Panel de Gestión", agendaTitle: "Agenda Central" },
       visuals: { titleFontSize: 32, bodyFontSize: 16 },
       laborSettings: { vacationDaysPerYear: 30, allowCarryOver: false, incidentTypes: [] },
       appointmentPolicy: { confirmationWindow: 24, leadTimeThreshold: 2, autoConfirmShortNotice: true },
-      services: [
-        { id: 'S1', name: 'Consulta General', price: 50, duration: 30 }
-      ],
+      services: [{ id: 'S1', name: 'Consulta General', price: 50, duration: 30 }],
       globalSchedule: {
         'Lunes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
         'Martes': { morning: { start: '09:00', end: '14:00', active: true }, afternoon: { start: '16:00', end: '20:00', active: true } },
@@ -133,26 +124,17 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
         voiceName: "Zephyr",
         core_version: "1.0.1",
         active: true,
-        systemPrompt: "Eres la asistente virtual de " + clinicName,
-        initialGreeting: "Hola, bienvenida a " + clinicName + ". ¿En qué puedo ayudarte?",
-        testSpeechText: "Prueba de voz del sistema SaaS.",
-        instructions: "Ayuda a los pacientes a agendar citas.",
-        voice: "default",
-        phoneNumber: "",
-        aiCompanyName: clinicName,
-        voicePitch: 1.0,
-        voiceSpeed: 1.0,
-        temperature: 0.7,
-        accent: "es-ES-Madrid",
+        systemPrompt: "Asistente de " + clinicName,
+        initialGreeting: "Hola, bienvenida a " + clinicName,
+        testSpeechText: "Prueba de voz.",
+        instructions: "Gestiona citas médicas.",
+        voice: "default", phoneNumber: "", aiCompanyName: clinicName,
+        voicePitch: 1.0, voiceSpeed: 1.0, temperature: 0.7, accent: "es-ES-Madrid",
         model: "gemini-3-flash-preview",
         escalation_rules: { transfer_number: "", escalate_on_frustration: true },
         policy_texts: { cancel_policy: "", privacy_notice: "" },
-        prompt_overrides: {},
-        aiEmotion: "Empática",
-        aiStyle: "Concisa",
-        aiRelation: "Formal (Usted)",
-        aiFocus: "Resolutiva",
-        configVersion: Date.now()
+        prompt_overrides: {}, aiEmotion: "Empática", aiStyle: "Concisa",
+        aiRelation: "Formal (Usted)", aiFocus: "Resolutiva", configVersion: Date.now()
       }
     };
 
@@ -161,31 +143,16 @@ app.post('/api/onboarding/ensure', authenticate, async (req, res) => {
       settings: defaultSettings
     });
 
-    // 6. Subscription setup (Free Plan)
-    await supabaseAdmin.from('subscriptions').insert({
-      clinic_id: clinic.id,
-      plan: 'free',
-      status: 'active',
-      limits: { max_patients: 50, max_calls_monthly: 10 }
-    });
-
+    console.log(`[SERVER_ONBOARDING] Infraestructura creada con éxito para ${email}`);
     res.json({ status: 'created', clinic_id: clinic.id });
 
   } catch (error) {
-    console.error('Onboarding failed:', error);
+    console.error('[SERVER_ONBOARDING_ERROR]', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Serve frontend dist folder
 app.use(express.static(path.join(__dirname, '../dist')));
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../dist/index.html')));
 
-// Fallback to index.html for SPA routing
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
-
-// Binding to 0.0.0.0 is often required for cloud platforms like Railway
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server SaaS active on port ${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => console.log(`Railway Server Active on port ${PORT}`));
