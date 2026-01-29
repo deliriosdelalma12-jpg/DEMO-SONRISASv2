@@ -28,15 +28,14 @@ const SignUp: React.FC = () => {
     setError('');
 
     try {
-      // BLOQUE 2: redirectTo exacto y estable
-      const EMAIL_REDIRECT_TO = `${window.location.origin}/auth/callback`;
-      console.log("[SIGNUP_ATTEMPT]", { email: formData.email, redirectTo: EMAIL_REDIRECT_TO });
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      console.info("[SIGNUP_ATTEMPT]", { email: formData.email, redirectTo });
 
       const { data, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
         options: {
-          emailRedirectTo: EMAIL_REDIRECT_TO,
+          emailRedirectTo: redirectTo,
           data: {
             clinic_name: formData.clinicName.trim(),
             full_name: formData.fullName.trim(),
@@ -45,8 +44,6 @@ const SignUp: React.FC = () => {
         }
       });
 
-      console.log("[SIGNUP_RESULT]", { data, error: authError });
-
       if (authError) {
         setError(authError.message);
         setLoading(false);
@@ -54,11 +51,10 @@ const SignUp: React.FC = () => {
       }
 
       if (data.user) {
-        setMessage("¡Registro con éxito! Te hemos enviado un correo para confirmar tu cuenta. Por favor, revisa tu bandeja de entrada y spam.");
+        setMessage("¡Registro con éxito! Revisa tu correo para confirmar tu cuenta. Si no lo recibes, revisa tu carpeta de spam.");
       } else {
         setError("El servidor no pudo procesar la creación del usuario.");
       }
-
     } catch (e: any) {
       console.error("[SIGNUP_FATAL]", e);
       setError("Fallo crítico de conexión al servidor de autenticación.");
@@ -67,16 +63,32 @@ const SignUp: React.FC = () => {
     }
   };
 
+  const handleResend = async () => {
+    setLoading(true);
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const { error } = await supabase.auth.resend({ 
+      type: 'signup', 
+      email: formData.email, 
+      options: { emailRedirectTo: redirectTo } 
+    });
+    setLoading(false);
+    if (error) setError(error.message);
+    else setMessage("Enlace de verificación reenviado.");
+  };
+
   if (message) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 animate-in fade-in zoom-in">
         <div className="w-full max-w-md bg-slate-900 border border-emerald-500/20 rounded-[2.5rem] p-12 text-center shadow-2xl">
-          <div className="size-20 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-8 shadow-lg shadow-emerald-500/20">
+          <div className="size-20 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-8 shadow-lg">
             <span className="material-symbols-outlined text-5xl">mark_email_read</span>
           </div>
-          <h1 className="text-3xl font-display font-black text-white uppercase tracking-tighter mb-4">¡Revisa tu correo!</h1>
+          <h1 className="text-3xl font-display font-black text-white uppercase tracking-tighter mb-4">Verifica tu email</h1>
           <p className="text-slate-400 font-medium leading-relaxed mb-8">{message}</p>
-          <button onClick={() => navigate('/login')} className="w-full h-14 bg-white/10 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/20 transition-all border border-white/5">Ir al Login</button>
+          <div className="space-y-4">
+            <button onClick={() => navigate('/login')} className="w-full h-14 bg-white/10 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/20 transition-all border border-white/5">Ir al Login</button>
+            <button onClick={handleResend} disabled={loading} className="w-full text-primary font-bold text-xs uppercase hover:underline">Reenviar correo de verificación</button>
+          </div>
         </div>
       </div>
     );
@@ -123,8 +135,7 @@ const SignUp: React.FC = () => {
             </div>
           </div>
           <button type="submit" disabled={loading} className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3">
-            {loading && <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
-            {loading ? 'Sincronizando...' : 'Crear mi Clínica'}
+            {loading ? <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Crear mi Clínica'}
           </button>
         </form>
 

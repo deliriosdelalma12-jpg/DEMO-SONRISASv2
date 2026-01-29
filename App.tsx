@@ -80,7 +80,7 @@ const AppContent: React.FC = () => {
   // Detector de bloqueo de sincronización
   useEffect(() => {
     let timer: any;
-    if (user && !tenantUser) {
+    if (user && !tenantUser && window.location.pathname !== '/auth/callback') {
         timer = setTimeout(() => setSyncTimeout(true), 12000);
     } else {
         setSyncTimeout(false);

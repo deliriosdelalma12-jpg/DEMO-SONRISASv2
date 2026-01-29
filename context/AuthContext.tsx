@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .eq('clinic_id', profile.clinic_id)
           .maybeSingle();
           
-        if (sData) setSettings(sData.settings);
+        if (sData?.settings) setSettings(sData.settings);
       }
     } catch (e) {
       console.error("❌ [AUTH_CONTEXT] Error contexto:", e);
@@ -50,19 +50,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // BLOQUE 1: Ceder control total si estamos en la ruta de callback
     const isCallback = window.location.pathname === '/auth/callback';
     
     if (!isCallback) {
       supabase.auth.getSession()
-        .then(({ data: { session } }) => {
-          const u = session?.user ?? null;
+        .then(({ data }) => {
+          const u = data?.session?.user ?? null;
           setUser(u);
           if (u) fetchTenantContext(u);
         })
+        .catch(err => console.error("Error recuperando sesión:", err))
         .finally(() => setLoading(false));
     } else {
-      console.log("🚥 [AUTH_CONTEXT] Ruta de callback activa. Standby...");
       setLoading(false);
     }
 
@@ -85,8 +84,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshContext = async () => {
     console.log("♻️ [AUTH_CONTEXT] Refrescando contexto global...");
-    const { data: { user: sessionUser } } = await supabase.auth.getUser();
-    if (sessionUser) await fetchTenantContext(sessionUser);
+    try {
+      const { data } = await supabase.auth.getUser();
+      const sessionUser = data?.user;
+      if (sessionUser) await fetchTenantContext(sessionUser);
+    } catch (e) {
+      console.error("Error en refreshContext:", e);
+    }
   };
 
   const signOut = async () => {

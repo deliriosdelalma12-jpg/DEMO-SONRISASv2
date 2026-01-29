@@ -10,6 +10,9 @@ interface PatientMedicalProps {
 
 const PillSection = ({ title, icon, pills = [], onAdd, onRemove, isEditing, color = 'primary' }: any) => {
   const [inputValue, setInputValue] = useState('');
+  
+  // Aseguramos que pills sea siempre un array para evitar "pills.length is not a function" o similar
+  const safePills = Array.isArray(pills) ? pills : [];
 
   const handleAdd = () => {
     if (!inputValue.trim()) return;
@@ -37,11 +40,11 @@ const PillSection = ({ title, icon, pills = [], onAdd, onRemove, isEditing, colo
         <h4 className={`text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-3 ${color === 'danger' ? 'text-rose-500' : 'text-primary'}`}>
           <span className="material-symbols-outlined text-lg">{icon}</span> {title}
         </h4>
-        <span className="text-[9px] font-black bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-slate-400 uppercase tracking-widest">{pills.length} Registros</span>
+        <span className="text-[9px] font-black bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-slate-400 uppercase tracking-widest">{safePills.length} Registros</span>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {pills.map((pill: string, idx: number) => (
+        {safePills.map((pill: string, idx: number) => (
           <div key={idx} className={`group flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${colorClasses[color] || colorClasses.primary}`}>
             <span>{pill}</span>
             {isEditing && (
@@ -51,7 +54,7 @@ const PillSection = ({ title, icon, pills = [], onAdd, onRemove, isEditing, colo
             )}
           </div>
         ))}
-        {pills.length === 0 && (
+        {safePills.length === 0 && (
           <p className="text-xs text-slate-400 font-medium italic py-2">Ningún registro informado.</p>
         )}
       </div>
@@ -81,14 +84,14 @@ const PillSection = ({ title, icon, pills = [], onAdd, onRemove, isEditing, colo
 export const PatientMedical: React.FC<PatientMedicalProps> = ({ editData, setEditData, isEditing }) => {
   
   const addPill = (field: keyof Patient, val: string) => {
-    const current = (editData[field] as string[]) || [];
+    const current = Array.isArray(editData[field]) ? (editData[field] as string[]) : [];
     if (!current.includes(val)) {
         setEditData({ ...editData, [field]: [...current, val] });
     }
   };
 
   const removePill = (field: keyof Patient, idx: number) => {
-    const current = (editData[field] as string[]) || [];
+    const current = Array.isArray(editData[field]) ? (editData[field] as string[]) : [];
     setEditData({ ...editData, [field]: current.filter((_, i) => i !== idx) });
   };
 
@@ -159,10 +162,10 @@ export const PatientMedical: React.FC<PatientMedicalProps> = ({ editData, setEdi
             <h4 className="text-[11px] font-black text-primary uppercase tracking-[0.3em] flex items-center gap-3 mb-8"><span className="material-symbols-outlined text-sm">assignment</span> Observaciones Clínicas Generales</h4>
             <textarea 
                 disabled={!isEditing} 
-                value={editData.medicalHistory} 
+                value={editData.medicalHistory || ""} 
                 onChange={(e) => setEditData({...editData, medicalHistory: e.target.value})} 
                 className="w-full bg-slate-50 dark:bg-bg-dark border border-slate-200 dark:border-slate-800 rounded-3xl p-6 text-sm font-bold min-h-[160px] focus:ring-4 focus:ring-primary/10 transition-all outline-none resize-none leading-relaxed" 
-                placeholder="Añadir notas clínicas adicionales o detalles que no encajen en las píldoras..."
+                placeholder="Añadir notas clínicas adicionales..."
             />
         </div>
     </div>

@@ -27,17 +27,14 @@ const Login: React.FC = () => {
     setInfo('');
 
     try {
-      console.log("[LOGIN_ATTEMPT]", { email });
+      console.info("[LOGIN_ATTEMPT]", { email });
 
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      console.log("[LOGIN_RESULT]", { data, error: authError });
-
       if (authError) {
-        // BLOQUE 5: Detección de email no confirmado
         const msg = authError.message.toLowerCase();
         if (msg.includes("email") && (msg.includes("confirm") || msg.includes("verified"))) {
           setError("Debes confirmar tu correo antes de iniciar sesión. Por favor, revisa tu bandeja de entrada.");
@@ -54,12 +51,26 @@ const Login: React.FC = () => {
         return;
       }
 
-      navigate('/dashboard');
+      window.location.replace('/#/dashboard');
     } catch (err: any) {
       console.error("[LOGIN_FATAL]", err);
       setError("Error inesperado en el acceso. Revisa la consola.");
       setLoading(false);
     }
+  };
+
+  const handleResend = async () => {
+    if (!email) { setError("Introduce tu email para reenviar el enlace."); return; }
+    setLoading(true);
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const { error } = await supabase.auth.resend({ 
+      type: 'signup', 
+      email, 
+      options: { emailRedirectTo: redirectTo } 
+    });
+    setLoading(false);
+    if (error) setError(error.message);
+    else setInfo("Enlace de verificación reenviado.");
   };
 
   return (
@@ -68,7 +79,7 @@ const Login: React.FC = () => {
       
       <div className="w-full max-w-md bg-slate-900/50 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-10 shadow-2xl relative z-10 animate-in fade-in zoom-in duration-500">
         <div className="text-center mb-10">
-          <div className="size-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/20">
+          <div className="size-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
             <span className="material-symbols-outlined text-white text-4xl font-bold">hospital</span>
           </div>
           <h1 className="text-3xl font-display font-black text-white uppercase tracking-tighter">MediClinic Cloud</h1>
@@ -76,7 +87,14 @@ const Login: React.FC = () => {
         </div>
 
         {info && <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-xs font-bold text-center">{info}</div>}
-        {error && <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center">{error}</div>}
+        {error && (
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold text-center flex flex-col gap-2">
+            <span>{error}</span>
+            {error.includes("confirmar") && (
+              <button onClick={handleResend} className="text-white underline text-[10px] font-black uppercase">Reenviar email de activación</button>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
@@ -89,8 +107,7 @@ const Login: React.FC = () => {
           </div>
           
           <button type="submit" disabled={loading} className="w-full h-16 bg-primary text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3">
-            {loading ? <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : null}
-            {loading ? 'Validando...' : 'Entrar al Sistema'}
+            {loading ? <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Entrar al Sistema'}
           </button>
         </form>
 
